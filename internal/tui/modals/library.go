@@ -40,13 +40,14 @@ type Library struct {
 	width  int
 	height int
 
-	allArtists         []string
-	allAlbums          []string
-	artists            []string
-	albums             []string
-	albumTracks        []models.Track
-	focusPane          FocusPane
-	browseMode         BrowseMode
+	allArtists  []string
+	allAlbums   []string
+	artists     []string
+	albums      []string
+	albumTracks []models.Track
+	focusPane   FocusPane
+	browseMode  BrowseMode
+
 	artistCursor       int
 	artistScrollOffset int
 	albumCursor        int
@@ -109,6 +110,42 @@ func (l *Library) LoadAlbumsForArtist() {
 	l.albumTracks = nil
 	l.trackCursor = 0
 	l.trackScrollOffset = 0
+	l.loadTracksForAlbum()
+}
+
+func (l *Library) loadTracksForAlbum() {
+	if l.db == nil || len(l.albums) == 0 || l.albumCursor >= len(l.albums) {
+		l.albumTracks = nil
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
+		return
+	}
+	if l.browseMode == BrowseGenres {
+		album := l.albums[l.albumCursor]
+		tracks, err := l.db.GetTracksByAlbum(album)
+		if err == nil && len(tracks) > 0 {
+			l.albumTracks = tracks
+			l.trackCursor = 0
+			l.trackScrollOffset = 0
+		} else {
+			l.albumTracks = nil
+			l.trackCursor = 0
+			l.trackScrollOffset = 0
+		}
+		return
+	}
+	artist := l.artists[l.artistCursor]
+	album := l.albums[l.albumCursor]
+	tracks, err := l.db.GetTracksByArtistAndAlbum(artist, album)
+	if err == nil && len(tracks) > 0 {
+		l.albumTracks = tracks
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
+	} else {
+		l.albumTracks = nil
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
+	}
 }
 
 func (l *Library) Update(msg tea.Msg) tea.Cmd {
@@ -141,7 +178,7 @@ func (l *Library) Update(msg tea.Msg) tea.Cmd {
 			l.jumpEnd()
 		case "h", "left":
 			l.focusLeft()
-		case "l":
+		case "l", "right":
 			if l.filterText != "" {
 				l.appendToFilter("l")
 				return nil
@@ -267,23 +304,8 @@ func (l *Library) handleEnter() tea.Cmd {
 			}
 		}
 	case FocusAlbums:
-		if len(l.albums) > 0 && l.albumCursor < len(l.albums) && l.db != nil {
-			var tracks []models.Track
-			var err error
-			if l.browseMode == BrowseGenres {
-				album := l.albums[l.albumCursor]
-				tracks, err = l.db.GetTracksByAlbum(album)
-			} else {
-				artist := l.artists[l.artistCursor]
-				album := l.albums[l.albumCursor]
-				tracks, err = l.db.GetTracksByArtistAndAlbum(artist, album)
-			}
-			if err == nil && len(tracks) > 0 {
-				l.albumTracks = tracks
-				l.trackCursor = 0
-				l.trackScrollOffset = 0
-				l.focusPane = FocusTracks
-			}
+		if len(l.albumTracks) > 0 {
+			l.focusPane = FocusTracks
 		}
 	case FocusTracks:
 		if len(l.albumTracks) > 0 && l.trackCursor < len(l.albumTracks) {
@@ -310,19 +332,9 @@ func (l *Library) handleEnqueue() tea.Cmd {
 		}
 	case FocusAlbums:
 		if len(l.albums) > 0 && l.albumCursor < len(l.albums) && l.db != nil {
-			var tracks []models.Track
-			var err error
-			if l.browseMode == BrowseGenres {
-				album := l.albums[l.albumCursor]
-				tracks, err = l.db.GetTracksByAlbum(album)
-			} else {
-				artist := l.artists[l.artistCursor]
-				album := l.albums[l.albumCursor]
-				tracks, err = l.db.GetTracksByArtistAndAlbum(artist, album)
-			}
-			if err == nil && len(tracks) > 0 {
+			if len(l.albumTracks) > 0 {
 				return func() tea.Msg {
-					return LibraryModalMsg{Enqueue: tracks}
+					return LibraryModalMsg{Enqueue: l.albumTracks}
 				}
 			}
 		}
@@ -377,7 +389,7 @@ func (l *Library) moveDown() {
 		if len(l.albums) > 0 && l.albumCursor < len(l.albums)-1 {
 			l.albumCursor++
 			ensureVisible(&l.albumCursor, &l.albumScrollOffset, len(l.albums), l.paneHeight())
-			l.albumTracks = nil
+			l.loadTracksForAlbum()
 		}
 	case FocusTracks:
 		if len(l.albumTracks) > 0 && l.trackCursor < len(l.albumTracks)-1 {
@@ -407,7 +419,7 @@ func (l *Library) moveUp() {
 		if l.albumCursor > 0 {
 			l.albumCursor--
 			ensureVisible(&l.albumCursor, &l.albumScrollOffset, len(l.albums), l.paneHeight())
-			l.albumTracks = nil
+			l.loadTracksForAlbum()
 		}
 	case FocusTracks:
 		if l.trackCursor > 0 {
@@ -438,7 +450,7 @@ func (l *Library) pageDown() {
 		if len(l.albums) > 0 {
 			l.albumCursor = min(l.albumCursor+ps, len(l.albums)-1)
 			ensureVisible(&l.albumCursor, &l.albumScrollOffset, len(l.albums), l.paneHeight())
-			l.albumTracks = nil
+			l.loadTracksForAlbum()
 		}
 	case FocusTracks:
 		if len(l.albumTracks) > 0 {
@@ -464,7 +476,7 @@ func (l *Library) pageUp() {
 	case FocusAlbums:
 		l.albumCursor = max(l.albumCursor-ps, 0)
 		ensureVisible(&l.albumCursor, &l.albumScrollOffset, len(l.albums), l.paneHeight())
-		l.albumTracks = nil
+		l.loadTracksForAlbum()
 	case FocusTracks:
 		l.trackCursor = max(l.trackCursor-ps, 0)
 		ensureVisible(&l.trackCursor, &l.trackScrollOffset, len(l.albumTracks), l.paneHeight())
@@ -486,7 +498,7 @@ func (l *Library) jumpHome() {
 	case FocusAlbums:
 		l.albumCursor = 0
 		l.albumScrollOffset = 0
-		l.albumTracks = nil
+		l.loadTracksForAlbum()
 	case FocusTracks:
 		l.trackCursor = 0
 		l.trackScrollOffset = 0
@@ -513,7 +525,7 @@ func (l *Library) jumpEnd() {
 		if len(l.albums) > 0 {
 			l.albumCursor = len(l.albums) - 1
 			ensureVisible(&l.albumCursor, &l.albumScrollOffset, len(l.albums), l.paneHeight())
-			l.albumTracks = nil
+			l.loadTracksForAlbum()
 		}
 	case FocusTracks:
 		if len(l.albumTracks) > 0 {
@@ -526,29 +538,20 @@ func (l *Library) jumpEnd() {
 func (l *Library) focusLeft() {
 	if l.focusPane > FocusArtists {
 		l.focusPane--
-		if l.focusPane == FocusArtists && l.browseMode == BrowseGenres {
-			l.albumTracks = nil
-			l.trackCursor = 0
-			l.trackScrollOffset = 0
-		}
 	}
 }
 
 func (l *Library) focusRight() {
-	switch l.focusPane {
-	case FocusArtists:
-		if l.browseMode == BrowseGenres {
+	if l.focusPane < FocusTracks {
+		switch l.focusPane {
+		case FocusArtists:
 			if len(l.albums) > 0 {
 				l.focusPane = FocusAlbums
 			}
-		} else {
-			if len(l.albums) > 0 {
-				l.focusPane = FocusAlbums
+		case FocusAlbums:
+			if len(l.albumTracks) > 0 {
+				l.focusPane = FocusTracks
 			}
-		}
-	case FocusAlbums:
-		if len(l.albumTracks) > 0 {
-			l.focusPane = FocusTracks
 		}
 	}
 }
@@ -611,6 +614,7 @@ func (l *Library) loadAlbumsForGenre() {
 	albums, err := l.db.GetAlbumsByGenre(genre)
 	if err != nil || len(albums) == 0 {
 		l.albums = nil
+		l.allAlbums = nil
 		l.albumTracks = nil
 		l.albumCursor = 0
 		l.albumScrollOffset = 0
@@ -626,10 +630,11 @@ func (l *Library) loadAlbumsForGenre() {
 	l.albumTracks = nil
 	l.trackCursor = 0
 	l.trackScrollOffset = 0
+	l.loadTracksForAlbum()
 }
 
 func (l *Library) paneHeight() int {
-	return l.height - 4
+	return l.height - 3
 }
 
 func (l Library) View() string {
@@ -640,65 +645,147 @@ func (l Library) View() string {
 		return l.styles.MutedStyle.Render("Library empty - press R to rescan")
 	}
 
-	leftWidth := l.width / 3
-	if leftWidth < 20 {
-		leftWidth = 20
+	colWidth := (l.width - 4) / 3
+	if colWidth < 16 {
+		colWidth = 16
 	}
-	rightWidth := l.width - leftWidth - 3
 	height := l.paneHeight()
 	if height < 3 {
 		height = 3
 	}
 
-	var leftList string
+	var col1, col2, col3 string
 	if l.browseMode == BrowseGenres {
-		leftList = l.renderGenreList(leftWidth, height)
+		col1 = l.renderGenreList(colWidth, height)
 	} else {
-		leftList = l.renderArtistList(leftWidth, height)
+		col1 = l.renderArtistList(colWidth, height)
 	}
-	rightPane := l.renderRightPane(rightWidth, height)
+	col2 = l.renderAlbumColumn(colWidth, height)
+	col3 = l.renderTrackColumn(colWidth, height)
 
-	sep := l.styles.MutedStyle.Render("|")
+	sep1 := l.styles.MutedStyle.Render("│")
 	if l.focusPane == FocusArtists {
-		sep = l.styles.AccentStyle.Render("|")
+		sep1 = l.styles.AccentStyle.Render("│")
+	}
+	sep2 := l.styles.MutedStyle.Render("│")
+	if l.focusPane == FocusAlbums || l.focusPane == FocusTracks {
+		sep2 = l.styles.AccentStyle.Render("│")
 	}
 
-	content := leftList + " " + sep + " " + rightPane
+	col1Lines := strings.Split(col1, "\n")
+	col2Lines := strings.Split(col2, "\n")
+	col3Lines := strings.Split(col3, "\n")
+	maxLines := max(len(col1Lines), len(col2Lines), len(col3Lines), height)
 
-	focusStr := "[artists]"
-	if l.browseMode == BrowseGenres {
-		focusStr = "[genres]"
-	}
-	switch l.focusPane {
-	case FocusAlbums:
-		focusStr = "[albums]"
-	case FocusTracks:
-		focusStr = "[tracks]"
+	var b strings.Builder
+	for i := 0; i < maxLines; i++ {
+		var c1, c2, c3 string
+		if i < len(col1Lines) {
+			c1 = col1Lines[i]
+		}
+		if i < len(col2Lines) {
+			c2 = col2Lines[i]
+		}
+		if i < len(col3Lines) {
+			c3 = col3Lines[i]
+		}
+		c1 = l.padOrTruncateLine(c1, colWidth)
+		c2 = l.padOrTruncateLine(c2, colWidth)
+		c3 = l.padOrTruncateLine(c3, colWidth)
+		b.WriteString(c1)
+		b.WriteString(" ")
+		b.WriteString(sep1)
+		b.WriteString(" ")
+		b.WriteString(c2)
+		b.WriteString(" ")
+		b.WriteString(sep2)
+		b.WriteString(" ")
+		b.WriteString(c3)
+		if i < maxLines-1 {
+			b.WriteString("\n")
+		}
 	}
 
-	helpParts := "up/dn navigate h/l focus enter play e enqueue g genre"
-	if l.filterText != "" {
-		helpParts = "type to filter backspace del esc clear"
-	}
-	helpLine := l.styles.MutedStyle.Render(fmt.Sprintf("%s %s", helpParts, focusStr))
+	topBar := l.renderTopBar()
+	helpLine := l.renderHelpLine()
+	inner := topBar + b.String() + "\n" + helpLine
+	return lipgloss.NewStyle().Width(l.width).Render(inner)
+}
 
-	var topBar string
+func (l Library) padOrTruncateLine(line string, width int) string {
+	visualWidth := lipgloss.Width(line)
+	if visualWidth > width {
+		return ansi.Truncate(line, width, "")
+	}
+	if visualWidth < width {
+		return line + strings.Repeat(" ", width-visualWidth)
+	}
+	return line
+}
+
+func (l Library) renderTopBar() string {
 	modeLabel := "artists"
 	if l.browseMode == BrowseGenres {
 		modeLabel = "genres"
 	}
+	var topBar string
 	if l.filterText != "" {
 		filterDisplay := l.filterText
 		if len(filterDisplay) > 30 {
 			filterDisplay = filterDisplay[:30] + "…"
 		}
-		topBar = l.styles.AccentStyle.Render(fmt.Sprintf("filter: %s [%s]", filterDisplay, modeLabel)) + "\n"
+		topBar = l.styles.AccentStyle.Render(fmt.Sprintf("filter: %s", filterDisplay)) +
+			l.styles.MutedStyle.Render(fmt.Sprintf(" [%s]", modeLabel)) + "\n"
 	} else {
 		topBar = l.styles.MutedStyle.Render(fmt.Sprintf("[%s]", modeLabel)) + "\n"
 	}
+	return topBar
+}
 
-	inner := topBar + content + "\n" + helpLine
-	return lipgloss.NewStyle().Width(l.width).Render(inner)
+func (l Library) renderHelpLine() string {
+	helpPairs := []struct {
+		key  string
+		desc string
+	}{
+		{"↑/↓", "nav"},
+		{"h/l", "focus"},
+		{"enter", "play"},
+		{"e", "enqueue"},
+		{"g", "genre"},
+		{"esc", "close"},
+	}
+	if l.filterText != "" {
+		helpPairs = []struct {
+			key  string
+			desc string
+		}{
+			{"type", "filter"},
+			{"bksp", "del"},
+			{"esc", "clear"},
+		}
+	}
+	focusName := "artists"
+	if l.browseMode == BrowseGenres {
+		focusName = "genres"
+	}
+	switch l.focusPane {
+	case FocusAlbums:
+		focusName = "albums"
+	case FocusTracks:
+		focusName = "tracks"
+	}
+
+	var b strings.Builder
+	for i, p := range helpPairs {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		b.WriteString(l.styles.AccentStyle.Render(p.key))
+		b.WriteString(l.styles.MutedStyle.Render(p.desc))
+	}
+	b.WriteString(" ")
+	b.WriteString(l.styles.MutedStyle.Render(fmt.Sprintf("[%s]", focusName)))
+	return b.String()
 }
 
 func (l Library) renderArtistList(width, height int) string {
@@ -706,6 +793,9 @@ func (l Library) renderArtistList(width, height int) string {
 	items := l.artists
 	maxRows := min(height, len(items)-l.artistScrollOffset)
 	if maxRows < 1 {
+		if len(items) == 0 {
+			return l.styles.MutedStyle.Render("  No artists")
+		}
 		maxRows = 1
 	}
 	focused := l.focusPane == FocusArtists
@@ -714,7 +804,7 @@ func (l Library) renderArtistList(width, height int) string {
 		if idx >= len(items) {
 			break
 		}
-		name := ansi.Truncate(items[idx], width-2, "...")
+		name := ansi.Truncate(items[idx], width-2, "…")
 		if idx == l.artistCursor && focused {
 			name = l.styles.CursorStyle.Render("> " + name)
 		} else if idx == l.artistCursor {
@@ -735,6 +825,9 @@ func (l Library) renderGenreList(width, height int) string {
 	items := l.genres
 	maxRows := min(height, len(items)-l.genreScrollOffset)
 	if maxRows < 1 {
+		if len(items) == 0 {
+			return l.styles.MutedStyle.Render("  No genres")
+		}
 		maxRows = 1
 	}
 	focused := l.focusPane == FocusArtists
@@ -743,7 +836,7 @@ func (l Library) renderGenreList(width, height int) string {
 		if idx >= len(items) {
 			break
 		}
-		name := ansi.Truncate(items[idx], width-2, "...")
+		name := ansi.Truncate(items[idx], width-2, "…")
 		if idx == l.genreCursor && focused {
 			name = l.styles.CursorStyle.Render("> " + name)
 		} else if idx == l.genreCursor {
@@ -759,27 +852,14 @@ func (l Library) renderGenreList(width, height int) string {
 	return b.String()
 }
 
-func (l Library) renderRightPane(width, height int) string {
-	if len(l.albumTracks) > 0 && l.focusPane == FocusTracks {
-		return l.renderTrackList(l.albumTracks, width, height, true)
-	}
-	if len(l.albums) > 0 {
-		return l.renderAlbumList(width, height)
-	}
-	if l.browseMode == BrowseGenres {
-		return l.styles.MutedStyle.Render("Select a genre")
-	}
-	if len(l.artists) > 0 && l.artistCursor < len(l.artists) && l.db != nil {
-		artist := l.artists[l.artistCursor]
-		tracks, err := l.db.GetTracksByArtist(artist)
-		if err == nil && len(tracks) > 0 {
-			return l.renderTrackList(tracks, width, height, false)
+func (l Library) renderAlbumColumn(width, height int) string {
+	if len(l.albums) == 0 {
+		if l.browseMode == BrowseGenres {
+			return l.styles.MutedStyle.Render("  Select a genre")
 		}
+		return l.styles.MutedStyle.Render("  Select an artist")
 	}
-	return l.styles.MutedStyle.Render("Select an artist")
-}
 
-func (l Library) renderAlbumList(width, height int) string {
 	var b strings.Builder
 	items := l.albums
 	maxRows := min(height, len(items)-l.albumScrollOffset)
@@ -792,7 +872,7 @@ func (l Library) renderAlbumList(width, height int) string {
 		if idx >= len(items) {
 			break
 		}
-		name := ansi.Truncate(items[idx], width-2, "...")
+		name := ansi.Truncate(items[idx], width-2, "…")
 		if idx == l.albumCursor && focused {
 			name = l.styles.CursorStyle.Render("> " + name)
 		} else if idx == l.albumCursor {
@@ -808,13 +888,22 @@ func (l Library) renderAlbumList(width, height int) string {
 	return b.String()
 }
 
-func (l Library) renderTrackList(tracks []models.Track, width, height int, focused bool) string {
-	var b strings.Builder
+func (l Library) renderTrackColumn(width, height int) string {
+	if len(l.albumTracks) == 0 {
+		if len(l.albums) > 0 {
+			return l.styles.MutedStyle.Render("  Select an album")
+		}
+		return ""
+	}
+
+	focused := l.focusPane == FocusTracks
+	tracks := l.albumTracks
 	start := l.trackScrollOffset
 	maxRows := min(height, len(tracks)-start)
 	if maxRows < 1 {
 		maxRows = 1
 	}
+	var b strings.Builder
 	for i := 0; i < maxRows; i++ {
 		idx := start + i
 		if idx >= len(tracks) {
@@ -823,11 +912,11 @@ func (l Library) renderTrackList(tracks []models.Track, width, height int, focus
 		t := tracks[idx]
 		dur := t.GetDurationFormatted()
 		label := fmt.Sprintf("%2d. %s", t.TrackNum, t.Title)
-		avail := width - len(dur) - 4
+		avail := width - len(dur) - 5
 		if avail < 10 {
 			avail = 10
 		}
-		label = ansi.Truncate(label, avail, "...")
+		label = ansi.Truncate(label, avail, "…")
 		var prefix string
 		if idx == l.trackCursor && focused {
 			prefix = l.styles.CursorStyle.Render("> ")
