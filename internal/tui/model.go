@@ -36,6 +36,7 @@ const (
 	ModalLibrary
 	ModalSearch
 	ModalHelp
+	ModalGallery
 )
 
 type Model struct {
@@ -78,10 +79,10 @@ type Model struct {
 	syncedLyrics  []api.SyncedLyric
 	lyricsLoading bool
 
-	artistBio        string
-	artistBioTitle   string
-	artistBioURL     string
-	artistBioLoading bool
+	artistInfo        *models.ArtistInfo
+	artistInfoLoading bool
+	artistInfoEventID int64
+	artistCache       map[string]*models.ArtistInfo
 
 	statusMsg   string
 	statusIsErr bool
@@ -102,6 +103,8 @@ type Model struct {
 	logoArtHeight  int
 	logoArtLoaded  bool
 
+	notifSentForSong bool
+
 	songStartTime        time.Time
 	scrobbleEligible     bool
 	prevTrack            *models.Track
@@ -120,6 +123,7 @@ type Model struct {
 	libraryModal *modals.Library
 	searchModal  *modals.Search
 	helpModal    *modals.Help
+	galleryModal *modals.Gallery
 }
 
 func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool) Model {
@@ -141,6 +145,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		sleepRemaining: sleepTimer,
 		bottomViewMode: BottomPlaylist,
 		activeModal:    ModalNone,
+		artistCache:    make(map[string]*models.ArtistInfo),
 	}
 
 	m.header = widgets.NewHeader(styles.Header, "must - MUSic TUI")
@@ -152,8 +157,20 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 	m.helpModal = modals.NewHelp(styles, defaultHelpEntries())
 
 	if cfg.ShowAlbumArt && cfg.Layout != "compact" {
-		m.imageRenderer = pkgimage.NewRenderer()
-		m.imageProtocol = termimg.DetectProtocol()
+		m.imageRenderer = pkgimage.NewRendererWithProtocol(cfg.ForceProtocol)
+
+		switch cfg.ForceProtocol {
+		case "kitty":
+			m.imageProtocol = termimg.Kitty
+		case "sixel":
+			m.imageProtocol = termimg.Sixel
+		case "halfblocks":
+			m.imageProtocol = termimg.Halfblocks
+		case "iterm2":
+			m.imageProtocol = termimg.ITerm2
+		default:
+			m.imageProtocol = termimg.DetectProtocol()
+		}
 
 		features := termimg.QueryTerminalFeatures()
 		fontW, fontH := features.FontWidth, features.FontHeight
@@ -228,7 +245,7 @@ func (m *Model) updatePlaylist() {
 	}
 	rows := widgets.BuildPlaylistRows(m.playlist, m.currentIndex)
 	m.playlistWidget.SetRows(rows)
-	m.playlistWidget.SetCursor(m.currentIndex)
+	m.playlistWidget.SetCurrentIndex(m.currentIndex)
 }
 
 func defaultHelpEntries() []modals.HelpEntry {
@@ -249,6 +266,7 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "u", Desc: "plain lyrics"},
 		{Key: "U", Desc: "synced lyrics"},
 		{Key: "i", Desc: "artist bio"},
+		{Key: "I", Desc: "artist gallery"},
 		{Key: "?", Desc: "help"},
 		{Key: "q/ctrl+c", Desc: "quit"},
 	}
