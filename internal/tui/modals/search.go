@@ -273,15 +273,5 @@ func (s Search) View() string {
 		b.WriteString(s.styles.MutedStyle.Render("Type to search (supports artist:name, album:name, genre:term, year:1997)"))
 	}
 
-	contentWidth := s.width - 4
-	if contentWidth < 30 {
-		contentWidth = 30
-	}
-	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(s.styles.AccentStyle.GetForeground()).
-		Padding(0, 1).
-		Width(contentWidth)
-
-	return modalStyle.Render(b.String())
+	return lipgloss.NewStyle().Width(s.width).Render(b.String())
 }

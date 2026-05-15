@@ -4,6 +4,7 @@ import (
 	"image"
 	"time"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	termimg "github.com/blacktop/go-termimg"
 	"github.com/pdfrg/must/assets"
@@ -120,10 +121,12 @@ type Model struct {
 	playlistWidget *widgets.Playlist
 	footer         *widgets.Footer
 
-	libraryModal *modals.Library
-	searchModal  *modals.Search
-	helpModal    *modals.Help
-	galleryModal *modals.Gallery
+	libraryModal  *modals.Library
+	searchModal   *modals.Search
+	helpModal     *modals.Help
+	galleryModal  *modals.Gallery
+	viewport      viewport.Model
+	viewportReady bool
 }
 
 func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool) Model {
