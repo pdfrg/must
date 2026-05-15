@@ -35,9 +35,21 @@ func mp3Duration(f *os.File) (float64, error) {
 		return 0, fmt.Errorf("invalid MPEG frame header: %w", err)
 	}
 
+	versionBits := (frameHeader[1] >> 3) & 0x03
+	layerBits := (frameHeader[1] >> 1) & 0x03
+	layer := mpegLayer(layerBits)
+	channelMode := frameHeader[3] >> 6
 	sideInfoSize := 32
-	if (frameHeader[1]>>3)&0x03 != 3 {
-		sideInfoSize = 17
+	if versionBits == 3 {
+		if channelMode == 3 {
+			sideInfoSize = 17
+		}
+	} else {
+		if channelMode == 3 {
+			sideInfoSize = 9
+		} else {
+			sideInfoSize = 17
+		}
 	}
 	xingOffset := 4 + sideInfoSize
 
@@ -52,14 +64,14 @@ func mp3Duration(f *os.File) (float64, error) {
 
 	marker := string(markerBuf)
 	if marker == "Xing" || marker == "Info" {
-		return parseXingHeader(f, sampleRate)
+		return parseXingHeader(f, int(versionBits), int(layer), sampleRate)
 	}
 
 	if marker == "VBRI" {
-		return parseVBRIHeader(f, sampleRate)
+		return parseVBRIHeader(f, int(versionBits), int(layer), sampleRate)
 	}
 
-	return estimateMP3Duration(f, int64(audioOffset), frameSize, sampleRate)
+	return estimateMP3Duration(f, int64(audioOffset), frameSize, int(versionBits), int(layer), sampleRate)
 }
 
 func findID3v2Tag(f *os.File) (int, error) {
@@ -76,7 +88,7 @@ func findID3v2Tag(f *os.File) (int, error) {
 	return 10 + size, nil
 }
 
-func parseXingHeader(f *os.File, sampleRate int) (float64, error) {
+func parseXingHeader(f *os.File, versionBits, layer, sampleRate int) (float64, error) {
 	flagsBuf := make([]byte, 4)
 	if _, err := io.ReadFull(f, flagsBuf); err != nil {
 		return 0, err
@@ -92,7 +104,7 @@ func parseXingHeader(f *os.File, sampleRate int) (float64, error) {
 		}
 		numFrames := binary.BigEndian.Uint32(frameBytes)
 
-		samplesPerFrame := mp3SamplesPerFrame(sampleRate)
+		samplesPerFrame := mp3SamplesPerFrame(byte(versionBits), byte(layer))
 		if sampleRate == 0 || samplesPerFrame == 0 {
 			return 0, fmt.Errorf("invalid mp3 parameters: rate=%d spf=%d", sampleRate, samplesPerFrame)
 		}
@@ -104,7 +116,7 @@ func parseXingHeader(f *os.File, sampleRate int) (float64, error) {
 	return 0, fmt.Errorf("xing header without frame count")
 }
 
-func parseVBRIHeader(f *os.File, sampleRate int) (float64, error) {
+func parseVBRIHeader(f *os.File, versionBits, layer, sampleRate int) (float64, error) {
 	if _, err := f.Seek(6, io.SeekCurrent); err != nil {
 		return 0, err
 	}
@@ -119,7 +131,7 @@ func parseVBRIHeader(f *os.File, sampleRate int) (float64, error) {
 		return 0, fmt.Errorf("vbri header with zero frames")
 	}
 
-	samplesPerFrame := mp3SamplesPerFrame(sampleRate)
+	samplesPerFrame := mp3SamplesPerFrame(byte(versionBits), byte(layer))
 	return float64(uint64(numFrames)*uint64(samplesPerFrame)) / float64(sampleRate), nil
 }
 
@@ -139,14 +151,32 @@ func parseMPEGFrameHeader(data []byte) (frameSize int, sampleRate int, err error
 	}
 
 	sr := mpegSampleRate(versionBits, sampleRateIdx)
-	br := mpegBitrate(versionBits, layerBits, bitrateIdx)
+	layer := mpegLayer(layerBits)
+	br := mpegBitrate(versionBits, layer, bitrateIdx)
 
 	if sr == 0 || br == 0 {
 		return 0, 0, fmt.Errorf("invalid sample rate or bitrate")
 	}
 
-	frameSize = (144*br*1000)/sr + int(padding)
+	if layer == 1 {
+		frameSize = (12*br*1000)/sr + 4*int(padding)
+	} else {
+		frameSize = (144*br*1000)/sr + int(padding)
+	}
 	return frameSize, sr, nil
+}
+
+func mpegLayer(layerBits byte) byte {
+	switch layerBits {
+	case 1:
+		return 3
+	case 2:
+		return 2
+	case 3:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func mpegSampleRate(versionBits, idx byte) int {
@@ -187,25 +217,100 @@ func mpegBitrate(versionBits, layerBits, idx byte) int {
 	return 0
 }
 
-func mp3SamplesPerFrame(sampleRate int) int {
-	if sampleRate >= 32000 {
+func mp3SamplesPerFrame(versionBits, layer byte) int {
+	switch layer {
+	case 1:
+		return 384
+	case 2:
 		return 1152
+	case 3:
+		if versionBits == 3 {
+			return 1152
+		}
+		return 576
+	default:
+		return 0
 	}
-	return 576
 }
 
-func estimateMP3Duration(f *os.File, audioOffset int64, frameSize int, sampleRate int) (float64, error) {
+func estimateMP3Duration(f *os.File, audioOffset int64, firstFrameSize int, versionBits, layer, sampleRate int) (float64, error) {
 	info, err := f.Stat()
 	if err != nil {
 		return 0, err
 	}
 
-	if frameSize == 0 || sampleRate == 0 {
+	if firstFrameSize == 0 || sampleRate == 0 {
 		return 0, fmt.Errorf("cannot estimate mp3 duration")
 	}
 
 	audioSize := info.Size() - audioOffset
-	samplesPerFrame := mp3SamplesPerFrame(sampleRate)
-	approxFrames := int(audioSize) / frameSize
-	return float64(approxFrames*samplesPerFrame) / float64(sampleRate), nil
+	samplesPerFrame := mp3SamplesPerFrame(byte(versionBits), byte(layer))
+
+	avgFrameSize, numScanned, err := scanAverageFrameSize(f, audioOffset, info.Size())
+	if err != nil || numScanned == 0 {
+		approxFrames := int(audioSize) / firstFrameSize
+		return float64(approxFrames*samplesPerFrame) / float64(sampleRate), nil
+	}
+
+	approxFrames := float64(audioSize) / avgFrameSize
+	return approxFrames * float64(samplesPerFrame) / float64(sampleRate), nil
+}
+
+func scanAverageFrameSize(f *os.File, audioOffset int64, fileSize int64) (float64, int, error) {
+	const maxScanFrames = 2000
+	curOffset := audioOffset
+	totalSize := 0
+	numFrames := 0
+
+	for i := 0; i < maxScanFrames && curOffset < fileSize-4; i++ {
+		if _, err := f.Seek(curOffset, io.SeekStart); err != nil {
+			break
+		}
+
+		header := make([]byte, 4)
+		if _, err := io.ReadFull(f, header); err != nil {
+			break
+		}
+
+		if header[0] != 0xFF || (header[1]&0xE0) != 0xE0 {
+			break
+		}
+
+		versionBits := (header[1] >> 3) & 0x03
+		layerBits := (header[1] >> 1) & 0x03
+		bitrateIdx := (header[2] >> 4) & 0x0F
+		sampleRateIdx := (header[2] >> 2) & 0x03
+		padding := (header[2] >> 1) & 0x01
+
+		if versionBits == 1 || layerBits == 0 || bitrateIdx == 0 || bitrateIdx == 15 || sampleRateIdx == 3 {
+			break
+		}
+
+		sr := mpegSampleRate(versionBits, sampleRateIdx)
+		layer := mpegLayer(layerBits)
+		br := mpegBitrate(versionBits, layer, bitrateIdx)
+		if sr == 0 || br == 0 {
+			break
+		}
+
+		var frameSize int
+		if layer == 1 {
+			frameSize = (12*br*1000)/sr + 4*int(padding)
+		} else {
+			frameSize = (144*br*1000)/sr + int(padding)
+		}
+		if frameSize == 0 {
+			break
+		}
+
+		totalSize += frameSize
+		numFrames++
+		curOffset += int64(frameSize)
+	}
+
+	if numFrames == 0 {
+		return 0, 0, fmt.Errorf("no frames scanned")
+	}
+
+	return float64(totalSize) / float64(numFrames), numFrames, nil
 }
