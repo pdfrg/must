@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/pdfrg/must/internal/config"
@@ -212,19 +213,33 @@ func (ld *LibraryDB) GetAllArtists() ([]string, error) {
 	}
 	defer func() { _ = rows.Close() }()
 
+	seen := make(map[string]bool)
 	var artists []string
 	for rows.Next() {
 		var a string
 		if err := rows.Scan(&a); err != nil {
 			return nil, err
 		}
-		artists = append(artists, a)
+		clean := stripFeat(a)
+		if clean != "" && !seen[clean] {
+			seen[clean] = true
+			artists = append(artists, clean)
+		}
 	}
 	return artists, rows.Err()
 }
 
+func stripFeat(name string) string {
+	for _, sep := range []string{" feat.", " feat ", " ft.", " ft ", " featuring ", " Featuring "} {
+		if idx := strings.Index(strings.ToLower(name), sep); idx > 0 {
+			return strings.TrimSpace(name[:idx])
+		}
+	}
+	return name
+}
+
 func (ld *LibraryDB) GetAlbumsByArtist(artist string) ([]string, error) {
-	rows, err := ld.db.Query(`SELECT DISTINCT album FROM tracks WHERE COALESCE(NULLIF(album_artist, ''), artist) = ? AND album != '' ORDER BY album`, artist)
+	rows, err := ld.db.Query(`SELECT DISTINCT album FROM tracks WHERE (COALESCE(NULLIF(album_artist, ''), artist) = ? OR COALESCE(NULLIF(album_artist, ''), artist) LIKE ?) AND album != '' ORDER BY album`, artist, artist+" feat.%")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query albums: %w", err)
 	}
@@ -244,10 +259,10 @@ func (ld *LibraryDB) GetAlbumsByArtist(artist string) ([]string, error) {
 func (ld *LibraryDB) GetTracksByArtistAndAlbum(artist, album string) ([]models.Track, error) {
 	rows, err := ld.db.Query(`
 	SELECT id, path, title, artist, album, album_artist, year, genre,
-		track_num, disc_num, duration, has_cover_art, file_mod_time
+	track_num, disc_num, duration, has_cover_art, file_mod_time
 	FROM tracks
-	WHERE COALESCE(NULLIF(album_artist, ''), artist) = ? AND album = ?
-	ORDER BY disc_num, track_num`, artist, album)
+	WHERE (COALESCE(NULLIF(album_artist, ''), artist) = ? OR COALESCE(NULLIF(album_artist, ''), artist) LIKE ?) AND album = ?
+	ORDER BY disc_num, track_num`, artist, artist+" feat.%", album)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tracks: %w", err)
 	}
@@ -259,10 +274,10 @@ func (ld *LibraryDB) GetTracksByArtistAndAlbum(artist, album string) ([]models.T
 func (ld *LibraryDB) GetTracksByArtist(artist string) ([]models.Track, error) {
 	rows, err := ld.db.Query(`
 	SELECT id, path, title, artist, album, album_artist, year, genre,
-		track_num, disc_num, duration, has_cover_art, file_mod_time
+	track_num, disc_num, duration, has_cover_art, file_mod_time
 	FROM tracks
-	WHERE COALESCE(NULLIF(album_artist, ''), artist) = ?
-	ORDER BY album, disc_num, track_num`, artist)
+	WHERE COALESCE(NULLIF(album_artist, ''), artist) = ? OR COALESCE(NULLIF(album_artist, ''), artist) LIKE ?
+	ORDER BY album, disc_num, track_num`, artist, artist+" feat.%")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tracks: %w", err)
 	}
@@ -272,25 +287,49 @@ func (ld *LibraryDB) GetTracksByArtist(artist string) ([]models.Track, error) {
 }
 
 func (ld *LibraryDB) GetGenres() ([]string, error) {
-	rows, err := ld.db.Query(`SELECT DISTINCT genre FROM tracks WHERE genre != '' ORDER BY genre`)
+	rows, err := ld.db.Query(`SELECT DISTINCT genre FROM tracks WHERE genre != ''`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query genres: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
+	seen := make(map[string]bool)
 	var genres []string
 	for rows.Next() {
 		var g string
 		if err := rows.Scan(&g); err != nil {
 			return nil, err
 		}
-		genres = append(genres, g)
+		for _, part := range splitGenre(g) {
+			part = strings.TrimSpace(part)
+			if part != "" && !seen[part] {
+				seen[part] = true
+				genres = append(genres, part)
+			}
+		}
 	}
+	slices.Sort(genres)
 	return genres, rows.Err()
 }
 
+func splitGenre(genre string) []string {
+	var parts []string
+	for _, sep := range []string{";", "/"} {
+		if strings.Contains(genre, sep) {
+			for _, p := range strings.Split(genre, sep) {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					parts = append(parts, p)
+				}
+			}
+			return parts
+		}
+	}
+	return []string{genre}
+}
+
 func (ld *LibraryDB) GetAlbumsByGenre(genre string) ([]string, error) {
-	rows, err := ld.db.Query(`SELECT DISTINCT album FROM tracks WHERE genre = ? AND album != '' ORDER BY album`, genre)
+	rows, err := ld.db.Query(`SELECT DISTINCT album FROM tracks WHERE (genre = ? OR genre LIKE ? OR genre LIKE ? OR genre LIKE ?) AND album != '' ORDER BY album`, genre, genre+";%", "%; "+genre, "%; "+genre+";%")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query albums by genre: %w", err)
 	}
