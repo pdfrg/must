@@ -62,6 +62,7 @@ func (m Model) View() tea.View {
 	b.WriteString("\n")
 
 	currentHeight := lipgloss.Height(b.String())
+	m.bottomSectionStartRow = currentHeight + 1
 	footerView := m.renderFooter()
 	footerHeight := lipgloss.Height(footerView)
 	if footerHeight == 0 {
@@ -154,12 +155,33 @@ func (m Model) renderBottomSection(height int) string {
 
 	case BottomArtistBio:
 		content := m.renderArtistBioContent()
+		vpWidth := m.width
+		if m.artistArtLoaded && m.artistArtStr != "" {
+			imgGap := m.artistArtWidth + 5
+			vpWidth = m.width - imgGap
+			if vpWidth < 30 {
+				vpWidth = 30
+			}
+		}
 		m.viewport.SetContent(content)
-		m.viewport.SetWidth(m.width)
+		m.viewport.SetWidth(vpWidth)
 		m.viewport.SetHeight(height)
 		m.viewport.SoftWrap = true
 		m.viewportReady = true
-		return m.viewport.View()
+
+		viewContent := m.viewport.View()
+		if m.artistArtLoaded && m.artistArtStr != "" {
+			availableSpace := height
+			if availableSpace >= m.artistArtHeight {
+				leftPad := strings.Repeat(" ", m.artistArtWidth+5)
+				vpLines := strings.Split(viewContent, "\n")
+				for i, line := range vpLines {
+					vpLines[i] = leftPad + line
+				}
+				viewContent = strings.Join(vpLines, "\n")
+			}
+		}
+		return viewContent
 
 	case BottomOff:
 		return ""
@@ -260,15 +282,20 @@ func (m Model) renderSyncedLyrics(height int) string {
 
 func (m Model) renderArtistBioContent() string {
 	if m.artistInfoLoading {
-		return m.styles.MutedStyle.Render(" Loading artist info...")
+		return m.styles.MutedStyle.Render("Loading artist info...")
 	}
 
 	if m.artistInfo == nil {
-		return m.styles.MutedStyle.Render(" No artist info available")
+		return m.styles.MutedStyle.Render("No artist info available")
 	}
 
 	info := m.artistInfo
 	var b strings.Builder
+
+	indent := " "
+	if m.artistArtLoaded && m.artistArtStr != "" {
+		indent = ""
+	}
 
 	var title string
 	if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
@@ -280,6 +307,9 @@ func (m Model) renderArtistBioContent() string {
 	}
 
 	lineWidth := m.width - 4
+	if m.artistArtLoaded && m.artistArtStr != "" {
+		lineWidth = m.width - m.artistArtWidth - 5 - 4
+	}
 	if lineWidth < 20 {
 		lineWidth = 20
 	}
@@ -290,7 +320,7 @@ func (m Model) renderArtistBioContent() string {
 		for _, w := range words {
 			test := line + " " + w
 			if lipgloss.Width(test) > lineWidth && line != "" {
-				b.WriteString(m.styles.ForegroundStyle.Render(" " + strings.TrimSpace(line)))
+				b.WriteString(m.styles.ForegroundStyle.Render(indent + strings.TrimSpace(line)))
 				b.WriteString("\n")
 				line = w
 			} else {
@@ -298,20 +328,20 @@ func (m Model) renderArtistBioContent() string {
 			}
 		}
 		if line != "" {
-			b.WriteString(m.styles.ForegroundStyle.Render(" " + strings.TrimSpace(line)))
+			b.WriteString(m.styles.ForegroundStyle.Render(indent + strings.TrimSpace(line)))
 		}
 	} else if info.Bio == "No biography found." {
-		b.WriteString(m.styles.MutedStyle.Render(" No bio available"))
+		b.WriteString(m.styles.MutedStyle.Render(indent + "No bio available"))
 	}
 
 	if info.BioSource != "" {
 		b.WriteString("\n")
-		b.WriteString(m.styles.MutedStyle.Render(" Source: " + info.BioSource))
+		b.WriteString(m.styles.MutedStyle.Render(indent + "Source: " + info.BioSource))
 	}
 
 	if info.Discography != "" {
 		b.WriteString("\n\n")
-		b.WriteString(m.styles.AccentStyle.Render(" Discography"))
+		b.WriteString(m.styles.AccentStyle.Render(indent + "Discography"))
 		if info.DiscoSource != "" {
 			b.WriteString(m.styles.MutedStyle.Render(" (" + info.DiscoSource + ")"))
 		}
@@ -319,19 +349,19 @@ func (m Model) renderArtistBioContent() string {
 
 		discoLines := strings.Split(info.Discography, "\n")
 		for _, dl := range discoLines {
-			b.WriteString(m.styles.ForegroundStyle.Render(" " + dl))
+			b.WriteString(m.styles.ForegroundStyle.Render(indent + dl))
 			b.WriteString("\n")
 		}
 	}
 
 	if info.PageURL != "" {
 		b.WriteString("\n")
-		b.WriteString(m.styles.MutedStyle.Render(" " + info.PageURL))
+		b.WriteString(m.styles.MutedStyle.Render(indent + info.PageURL))
 	}
 
 	if len(info.GalleryURLs) > 0 {
 		b.WriteString("\n")
-		galleryHint := fmt.Sprintf(" %d images — press I for gallery", len(info.GalleryURLs))
+		galleryHint := fmt.Sprintf("%s%d images — press I for gallery", indent, len(info.GalleryURLs))
 		b.WriteString(m.styles.MutedStyle.Render(galleryHint))
 	}
 

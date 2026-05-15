@@ -37,6 +37,15 @@ type imageLoadedMsg struct {
 
 type renderAlbumArtMsg struct{}
 
+type artistImageLoadedMsg struct {
+	eventID   int64
+	imageData []byte
+	trackPath string
+	err       error
+}
+
+type renderArtistArtMsg struct{}
+
 type onlineArtFetchedMsg struct {
 	trackPath string
 	err       error
@@ -74,6 +83,12 @@ func tickProgressCmd() tea.Cmd {
 func tickSleepTimerCmd() tea.Cmd {
 	return tea.Tick(time.Minute, func(t time.Time) tea.Msg {
 		return sleepTimerTickMsg(t)
+	})
+}
+
+func renderArtistArtAfterDelay() tea.Cmd {
+	return tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
+		return renderArtistArtMsg{}
 	})
 }
 

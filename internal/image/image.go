@@ -81,6 +81,30 @@ func (r *Renderer) GetArtForTrack(trackPath string) (image.Image, error) {
 	return nil, fmt.Errorf("no album art found for %s", trackPath)
 }
 
+func GetArtistImage(artistName string, trackPath string) (image.Image, error) {
+	if trackPath == "" {
+		return nil, fmt.Errorf("no track path for artist image lookup")
+	}
+
+	artistDir := filepath.Dir(filepath.Dir(trackPath))
+
+	artistNames := []string{
+		"artist.jpg", "artist.jpeg", "artist.png",
+	}
+
+	for _, name := range artistNames {
+		path := filepath.Join(artistDir, name)
+		if _, err := os.Stat(path); err == nil {
+			img, err := LoadImageFromPath(path)
+			if err == nil && img != nil {
+				return img, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("no local artist image for %s", artistName)
+}
+
 func (r *Renderer) getEmbeddedArt(path string) (image.Image, error) {
 	f, err := os.Open(path)
 	if err != nil {
