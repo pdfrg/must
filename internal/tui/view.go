@@ -140,13 +140,25 @@ func (m Model) renderBottomSection(height int) string {
 		return m.playlistWidget.View()
 
 	case BottomLyrics:
-		return m.renderLyrics(height)
+		content := m.renderLyricsContent()
+		m.viewport.SetContent(content)
+		m.viewport.SetWidth(m.width)
+		m.viewport.SetHeight(height)
+		m.viewport.SoftWrap = true
+		m.viewportReady = true
+		return m.viewport.View()
 
 	case BottomSyncedLyrics:
 		return m.renderSyncedLyrics(height)
 
 	case BottomArtistBio:
-		return m.renderArtistBio(height)
+		content := m.renderArtistBioContent()
+		m.viewport.SetContent(content)
+		m.viewport.SetWidth(m.width)
+		m.viewport.SetHeight(height)
+		m.viewport.SoftWrap = true
+		m.viewportReady = true
+		return m.viewport.View()
 
 	case BottomOff:
 		return ""
@@ -182,31 +194,10 @@ func (m Model) renderModal() string {
 }
 
 func (m Model) renderWithModal(modalView string) tea.View {
-	modalLines := strings.Split(modalView, "\n")
-	modalHeight := len(modalLines)
-	modalWidth := 0
-	for _, line := range modalLines {
-		if w := lipgloss.Width(line); w > modalWidth {
-			modalWidth = w
-		}
-	}
-
-	padTop := max(0, (m.height-modalHeight)/2)
-	padLeft := max(0, (m.width-modalWidth)/2)
-	leftPad := strings.Repeat(" ", padLeft)
-
-	var b strings.Builder
-	for i := 0; i < padTop; i++ {
-		b.WriteString("\n")
-	}
-	for _, line := range modalLines {
-		b.WriteString(leftPad + line + "\n")
-	}
-
-	return m.altView(b.String())
+	return m.altView(modalView)
 }
 
-func (m Model) renderLyrics(height int) string {
+func (m Model) renderLyricsContent() string {
 	if m.lyricsLoading {
 		return m.styles.MutedStyle.Render(" Loading lyrics...")
 	}
@@ -216,11 +207,10 @@ func (m Model) renderLyrics(height int) string {
 
 	var b strings.Builder
 	lines := strings.Split(m.lyrics, "\n")
-	maxLines := min(height, len(lines))
-	for i := 0; i < maxLines; i++ {
+	for i, line := range lines {
 		b.WriteString(" ")
-		b.WriteString(m.styles.ForegroundStyle.Render(lines[i]))
-		if i < maxLines-1 {
+		b.WriteString(m.styles.ForegroundStyle.Render(line))
+		if i < len(lines)-1 {
 			b.WriteString("\n")
 		}
 	}
@@ -267,7 +257,7 @@ func (m Model) renderSyncedLyrics(height int) string {
 	return b.String()
 }
 
-func (m Model) renderArtistBio(height int) string {
+func (m Model) renderArtistBioContent() string {
 	if m.artistInfoLoading {
 		return m.styles.MutedStyle.Render(" Loading artist info...")
 	}
@@ -292,11 +282,6 @@ func (m Model) renderArtistBio(height int) string {
 	if lineWidth < 20 {
 		lineWidth = 20
 	}
-	lineCount := 0
-	maxBioLines := height - 2
-	if info.Discography != "" {
-		maxBioLines = max(5, height/2-1)
-	}
 
 	if info.Bio != "" && info.Bio != "No biography found." {
 		words := strings.Fields(info.Bio)
@@ -307,31 +292,24 @@ func (m Model) renderArtistBio(height int) string {
 				b.WriteString(m.styles.ForegroundStyle.Render(" " + strings.TrimSpace(line)))
 				b.WriteString("\n")
 				line = w
-				lineCount++
-				if lineCount >= maxBioLines {
-					break
-				}
 			} else {
 				line = test
 			}
 		}
-		if lineCount < maxBioLines && line != "" {
+		if line != "" {
 			b.WriteString(m.styles.ForegroundStyle.Render(" " + strings.TrimSpace(line)))
-			lineCount++
 		}
 	} else if info.Bio == "No biography found." {
 		b.WriteString(m.styles.MutedStyle.Render(" No bio available"))
-		lineCount++
 	}
 
 	if info.BioSource != "" {
 		b.WriteString("\n")
 		b.WriteString(m.styles.MutedStyle.Render(" Source: " + info.BioSource))
-		lineCount++
 	}
 
-	if info.Discography != "" && lineCount < height-3 {
-		b.WriteString("\n")
+	if info.Discography != "" {
+		b.WriteString("\n\n")
 		b.WriteString(m.styles.AccentStyle.Render(" Discography"))
 		if info.DiscoSource != "" {
 			b.WriteString(m.styles.MutedStyle.Render(" (" + info.DiscoSource + ")"))
@@ -340,16 +318,12 @@ func (m Model) renderArtistBio(height int) string {
 
 		discoLines := strings.Split(info.Discography, "\n")
 		for _, dl := range discoLines {
-			if lineCount >= height-2 {
-				break
-			}
 			b.WriteString(m.styles.ForegroundStyle.Render(" " + dl))
 			b.WriteString("\n")
-			lineCount++
 		}
 	}
 
-	if info.PageURL != "" && lineCount < height-1 {
+	if info.PageURL != "" {
 		b.WriteString("\n")
 		b.WriteString(m.styles.MutedStyle.Render(" " + info.PageURL))
 	}

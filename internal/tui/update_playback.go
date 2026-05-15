@@ -514,6 +514,10 @@ func (m Model) handleImageLoaded(msg imageLoadedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) renderImagesCmd() tea.Cmd {
+	if m.activeModal != ModalNone {
+		return nil
+	}
+
 	hasAlbumArt := m.cfg.ShowAlbumArt && m.albumArtLoaded && m.albumArtStr != "" && m.cfg.Layout != "compact"
 	hasLogoArt := !hasAlbumArt && m.logoArtLoaded && m.logoArtStr != "" && m.cfg.ShowAlbumArt && m.cfg.Layout != "compact"
 

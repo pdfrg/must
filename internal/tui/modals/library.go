@@ -697,14 +697,8 @@ func (l Library) View() string {
 		topBar = l.styles.MutedStyle.Render(fmt.Sprintf("[%s]", modeLabel)) + "\n"
 	}
 
-	modalStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(l.styles.AccentStyle.GetForeground()).
-		Padding(0, 1).
-		Width(l.width - 4)
-
 	inner := topBar + content + "\n" + helpLine
-	return modalStyle.Render(inner)
+	return lipgloss.NewStyle().Width(l.width).Render(inner)
 }
 
 func (l Library) renderArtistList(width, height int) string {

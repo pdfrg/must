@@ -4,6 +4,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	termimg "github.com/blacktop/go-termimg"
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/db"
 	"github.com/pdfrg/must/internal/models"
@@ -74,6 +75,17 @@ func tickSleepTimerCmd() tea.Cmd {
 	return tea.Tick(time.Minute, func(t time.Time) tea.Msg {
 		return sleepTimerTickMsg(t)
 	})
+}
+
+func clearKittyImagesCmd() tea.Cmd {
+	return tea.Raw(termimg.ClearAllString())
+}
+
+func clearKittyImagesCmdIf(protocol termimg.Protocol) tea.Cmd {
+	if protocol != termimg.Kitty {
+		return nil
+	}
+	return clearKittyImagesCmd()
 }
 
 func setStatus(m *Model, msg string, isError bool) tea.Cmd {
