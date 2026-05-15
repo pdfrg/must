@@ -12,6 +12,7 @@ import (
 	"github.com/dhowden/tag"
 	"github.com/pdfrg/must/internal/db"
 	"github.com/pdfrg/must/internal/duration"
+	imgpkg "github.com/pdfrg/must/internal/image"
 	"github.com/pdfrg/must/internal/models"
 )
 
@@ -55,7 +56,37 @@ func (s *Scanner) Scan(musicDir string) (*ScanResult, error) {
 	start := time.Now()
 	result := &ScanResult{}
 
+	resetCount, resetErr := s.db.ResetZeroDurationModTimes()
+	if resetErr != nil && logger != nil {
+		logger.Printf("Warning: failed to reset zero-duration tracks: %v", resetErr)
+	}
+	if resetCount > 0 && logger != nil {
+		logger.Printf("Resetting modtime for %d tracks with zero duration (will re-scan)", resetCount)
+	}
+
 	existingPaths := make(map[string]bool)
+	var batch []*models.Track
+	var batchIsUpdate []bool
+
+	flushBatch := func() {
+		if len(batch) == 0 {
+			return
+		}
+		inserted, err := s.db.InsertTracksBatch(batch)
+		if err != nil && logger != nil {
+			logger.Printf("Error in batch insert: %v", err)
+		}
+		result.Errors += len(batch) - inserted
+		for _, isUpdate := range batchIsUpdate {
+			if isUpdate {
+				result.UpdatedFiles++
+			} else {
+				result.NewFiles++
+			}
+		}
+		batch = batch[:0]
+		batchIsUpdate = batchIsUpdate[:0]
+	}
 
 	err := filepath.WalkDir(musicDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -108,22 +139,16 @@ func (s *Scanner) Scan(musicDir string) (*ScanResult, error) {
 			return nil
 		}
 
-		if _, err := s.db.InsertTrack(track); err != nil {
-			if logger != nil {
-				logger.Printf("Error inserting %s: %v", path, err)
-			}
-			result.Errors++
-			return nil
-		}
-
-		if existing != nil {
-			result.UpdatedFiles++
-		} else {
-			result.NewFiles++
+		batch = append(batch, track)
+		batchIsUpdate = append(batchIsUpdate, existing != nil)
+		if len(batch) >= batchSize {
+			flushBatch()
 		}
 
 		return nil
 	})
+
+	flushBatch()
 
 	if err != nil && err.Error() != "scan stopped" {
 		return result, err
@@ -167,6 +192,11 @@ func (s *Scanner) readTrack(path string, modTime int64) (*models.Track, error) {
 		track.DiscNum = discNum
 		_, _ = totalTracks, totalDiscs
 		track.HasCoverArt = tags.Picture() != nil
+		if track.HasCoverArt {
+			if err := imgpkg.CacheArtData(path, tags.Picture().Data); err != nil && logger != nil {
+				logger.Printf("Warning: could not cache art for %s: %v", path, err)
+			}
+		}
 	}
 
 	if track.Title == "" {
@@ -178,7 +208,10 @@ func (s *Scanner) readTrack(path string, modTime int64) (*models.Track, error) {
 		if logger != nil {
 			logger.Printf("Warning: could not get duration for %s: %v", path, err)
 		}
-		dur = 0
+	} else if dur <= 0 {
+		if logger != nil {
+			logger.Printf("Warning: zero duration for %s", path)
+		}
 	}
 	track.Duration = dur
 
