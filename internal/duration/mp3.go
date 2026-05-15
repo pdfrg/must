@@ -8,37 +8,58 @@ import (
 )
 
 func mp3Duration(f *os.File) (float64, error) {
+	audioOffset := 0
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return 0, err
 	}
 
 	if offset, err := findID3v2Tag(f); err == nil && offset > 0 {
-		if _, err := f.Seek(int64(offset), io.SeekStart); err != nil {
-			return 0, err
-		}
-	} else {
-		if _, err := f.Seek(0, io.SeekStart); err != nil {
-			return 0, err
-		}
+		audioOffset = offset
 	}
 
-	buf := make([]byte, 4)
-	if _, err := io.ReadFull(f, buf); err != nil {
+	if _, err := f.Seek(int64(audioOffset), io.SeekStart); err != nil {
+		return 0, err
+	}
+
+	frameHeader := make([]byte, 4)
+	if _, err := io.ReadFull(f, frameHeader); err != nil {
 		return 0, fmt.Errorf("reading mp3 header: %w", err)
 	}
 
-	if buf[0] == 'X' && buf[1] == 'i' && buf[2] == 'n' && buf[3] == 'g' {
-		return parseXingHeader(f)
+	if frameHeader[0] != 0xFF || (frameHeader[1]&0xE0) != 0xE0 {
+		return 0, fmt.Errorf("no valid MPEG frame at audio offset %d", audioOffset)
 	}
 
-	if buf[0] == 'V' && buf[1] == 'B' && buf[2] == 'R' && buf[3] == 'I' {
-		return parseVBRIHeader(f)
+	frameSize, sampleRate, err := parseMPEGFrameHeader(frameHeader)
+	if err != nil || frameSize == 0 || sampleRate == 0 {
+		return 0, fmt.Errorf("invalid MPEG frame header: %w", err)
 	}
 
-	if _, err := f.Seek(-4, io.SeekCurrent); err != nil {
+	sideInfoSize := 32
+	if (frameHeader[1]>>3)&0x03 != 3 {
+		sideInfoSize = 17
+	}
+	xingOffset := 4 + sideInfoSize
+
+	if _, err := f.Seek(int64(audioOffset+xingOffset), io.SeekStart); err != nil {
 		return 0, err
 	}
-	return estimateMP3Duration(f)
+
+	markerBuf := make([]byte, 4)
+	if _, err := io.ReadFull(f, markerBuf); err != nil {
+		return 0, fmt.Errorf("reading xing marker: %w", err)
+	}
+
+	marker := string(markerBuf)
+	if marker == "Xing" || marker == "Info" {
+		return parseXingHeader(f, sampleRate)
+	}
+
+	if marker == "VBRI" {
+		return parseVBRIHeader(f, sampleRate)
+	}
+
+	return estimateMP3Duration(f, int64(audioOffset), frameSize, sampleRate)
 }
 
 func findID3v2Tag(f *os.File) (int, error) {
@@ -55,13 +76,14 @@ func findID3v2Tag(f *os.File) (int, error) {
 	return 10 + size, nil
 }
 
-func parseXingHeader(f *os.File) (float64, error) {
-	flags := make([]byte, 4)
-	if _, err := io.ReadFull(f, flags); err != nil {
+func parseXingHeader(f *os.File, sampleRate int) (float64, error) {
+	flagsBuf := make([]byte, 4)
+	if _, err := io.ReadFull(f, flagsBuf); err != nil {
 		return 0, err
 	}
+	flags := binary.BigEndian.Uint32(flagsBuf)
 
-	hasFrames := flags[0]&0x01 != 0
+	hasFrames := flags&0x01 != 0
 
 	if hasFrames {
 		frameBytes := make([]byte, 4)
@@ -70,30 +92,20 @@ func parseXingHeader(f *os.File) (float64, error) {
 		}
 		numFrames := binary.BigEndian.Uint32(frameBytes)
 
-		if _, err := f.Seek(0, io.SeekStart); err != nil {
-			return 0, err
-		}
-
-		frameSize, sampleRate, err := findFirstMP3FrameInfo(f)
-		if err != nil {
-			return 0, err
-		}
-
 		samplesPerFrame := mp3SamplesPerFrame(sampleRate)
 		if sampleRate == 0 || samplesPerFrame == 0 {
 			return 0, fmt.Errorf("invalid mp3 parameters: rate=%d spf=%d", sampleRate, samplesPerFrame)
 		}
 
 		totalSamples := uint64(numFrames) * uint64(samplesPerFrame)
-		_ = frameSize
 		return float64(totalSamples) / float64(sampleRate), nil
 	}
 
 	return 0, fmt.Errorf("xing header without frame count")
 }
 
-func parseVBRIHeader(f *os.File) (float64, error) {
-	if _, err := f.Seek(10, io.SeekCurrent); err != nil {
+func parseVBRIHeader(f *os.File, sampleRate int) (float64, error) {
+	if _, err := f.Seek(6, io.SeekCurrent); err != nil {
 		return 0, err
 	}
 
@@ -103,45 +115,12 @@ func parseVBRIHeader(f *os.File) (float64, error) {
 	}
 	numFrames := binary.BigEndian.Uint32(frameBytes)
 
-	if _, err := f.Seek(6, io.SeekCurrent); err != nil {
-		return 0, err
+	if numFrames == 0 {
+		return 0, fmt.Errorf("vbri header with zero frames")
 	}
 
-	sampleRateBytes := make([]byte, 4)
-	if _, err := io.ReadFull(f, sampleRateBytes); err != nil {
-		return 0, err
-	}
-	sampleRate := binary.BigEndian.Uint32(sampleRateBytes)
-
-	if sampleRate == 0 {
-		return 0, fmt.Errorf("invalid VBRI sample rate")
-	}
-
-	samplesPerFrame := mp3SamplesPerFrame(int(sampleRate))
+	samplesPerFrame := mp3SamplesPerFrame(sampleRate)
 	return float64(uint64(numFrames)*uint64(samplesPerFrame)) / float64(sampleRate), nil
-}
-
-func findFirstMP3FrameInfo(f *os.File) (int, int, error) {
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return 0, 0, err
-	}
-
-	buf := make([]byte, 4096)
-	n, err := f.Read(buf)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	for i := 0; i < n-3; i++ {
-		if buf[i] == 0xFF && (buf[i+1]&0xE0) == 0xE0 {
-			frameSize, sampleRate, err := parseMPEGFrameHeader(buf[i:])
-			if err == nil && frameSize > 0 && sampleRate > 0 {
-				return frameSize, sampleRate, nil
-			}
-		}
-	}
-
-	return 0, 0, fmt.Errorf("no valid MPEG frame found")
 }
 
 func parseMPEGFrameHeader(data []byte) (frameSize int, sampleRate int, err error) {
@@ -162,21 +141,10 @@ func parseMPEGFrameHeader(data []byte) (frameSize int, sampleRate int, err error
 	sr := mpegSampleRate(versionBits, sampleRateIdx)
 	br := mpegBitrate(versionBits, layerBits, bitrateIdx)
 
-	var samplesPerFrame int
-	switch layerBits {
-	case 1:
-		samplesPerFrame = 384
-	case 2:
-		samplesPerFrame = 1152
-	default:
-		if versionBits == 3 {
-			samplesPerFrame = 1152
-		} else {
-			samplesPerFrame = 576
-		}
+	if sr == 0 || br == 0 {
+		return 0, 0, fmt.Errorf("invalid sample rate or bitrate")
 	}
 
-	_ = samplesPerFrame
 	frameSize = (144*br*1000)/sr + int(padding)
 	return frameSize, sr, nil
 }
@@ -226,13 +194,8 @@ func mp3SamplesPerFrame(sampleRate int) int {
 	return 576
 }
 
-func estimateMP3Duration(f *os.File) (float64, error) {
+func estimateMP3Duration(f *os.File, audioOffset int64, frameSize int, sampleRate int) (float64, error) {
 	info, err := f.Stat()
-	if err != nil {
-		return 0, err
-	}
-
-	frameSize, sampleRate, err := findFirstMP3FrameInfo(f)
 	if err != nil {
 		return 0, err
 	}
@@ -241,7 +204,8 @@ func estimateMP3Duration(f *os.File) (float64, error) {
 		return 0, fmt.Errorf("cannot estimate mp3 duration")
 	}
 
+	audioSize := info.Size() - audioOffset
 	samplesPerFrame := mp3SamplesPerFrame(sampleRate)
-	approxFrames := int(info.Size()) / frameSize
+	approxFrames := int(audioSize) / frameSize
 	return float64(approxFrames*samplesPerFrame) / float64(sampleRate), nil
 }
