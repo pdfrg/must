@@ -13,6 +13,7 @@ import (
 	termimg "github.com/blacktop/go-termimg"
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
+	imgpkg "github.com/pdfrg/must/internal/image"
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/mpv"
 )
@@ -75,28 +76,18 @@ func (m Model) handleProgressTick(msg progressTickMsg) (tea.Model, tea.Cmd) {
 	m.paused = m.mpvBackend.QueryPauseState()
 
 	mpvPos, mpvErr := m.mpvBackend.GetPlaylistPosition()
-	if mpvErr == nil && mpvPos >= 0 && mpvPos != m.currentIndex {
-		if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-			track := m.playlist[m.currentIndex]
-			m.prevTrack = &track
-			m.prevSongStartTime = m.songStartTime
-			m.prevScrobbleEligible = m.scrobbleEligible
-		}
-		if m.shuffle && len(m.shuffleOrder) > 0 {
-			if mpvPos >= 0 && mpvPos < len(m.shuffleOrder) {
-				absIdx := m.shuffleOrder[mpvPos]
-				if absIdx != m.currentIndex && absIdx >= 0 && absIdx < len(m.playlist) {
-					m.currentIndex = absIdx
-					m.updatePlaylist()
-					cmds = append(cmds, m.trackChangedCmds())
-				}
+	if mpvErr == nil && mpvPos >= 0 {
+		playlistIdx := m.mpvIndexToPlaylistIndex(mpvPos)
+		if playlistIdx != m.currentIndex && playlistIdx >= 0 && playlistIdx < len(m.playlist) {
+			if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+				track := m.playlist[m.currentIndex]
+				m.prevTrack = &track
+				m.prevSongStartTime = m.songStartTime
+				m.prevScrobbleEligible = m.scrobbleEligible
 			}
-		} else {
-			if mpvPos >= 0 && mpvPos < len(m.playlist) {
-				m.currentIndex = mpvPos
-				m.updatePlaylist()
-				cmds = append(cmds, m.trackChangedCmds())
-			}
+			m.currentIndex = playlistIdx
+			m.updatePlaylist()
+			cmds = append(cmds, m.trackChangedCmds())
 		}
 	}
 
@@ -125,28 +116,31 @@ func (m Model) handleProgressTick(msg progressTickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handlePlaybackEnded() (tea.Model, tea.Cmd) {
-	m.playing = false
-	m.paused = false
-
 	switch m.repeatMode {
 	case "one":
 		if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-			return m, m.playTrack(m.currentIndex)
+			paths := m.buildMPVPlaylistPaths()
+			mpvIdx := m.playlistIndexToMPVIndex(m.currentIndex)
+			return m, tea.Batch(
+				startPlaybackCmd(m.mpvBackend, paths, mpvIdx),
+				m.trackChangedCmds(),
+			)
 		}
 	case "all":
 		if len(m.playlist) > 0 {
-			next := m.currentIndex + 1
-			if next >= len(m.playlist) {
-				next = 0
+			paths := m.buildMPVPlaylistPaths()
+			if m.shuffle {
+				m.shuffleOrder = shuffleIndices(len(m.playlist))
 			}
-			return m, m.playTrack(next)
-		}
-	default:
-		if m.currentIndex < len(m.playlist)-1 {
-			return m, m.playTrack(m.currentIndex + 1)
+			return m, tea.Batch(
+				startPlaybackCmd(m.mpvBackend, paths, 0),
+				m.trackChangedCmds(),
+			)
 		}
 	}
 
+	m.playing = false
+	m.paused = false
 	return m, nil
 }
 
@@ -158,16 +152,18 @@ func (m Model) skipNext() (tea.Model, tea.Cmd) {
 	if m.shuffle && len(m.shuffleOrder) > 0 {
 		mpvPos, err := m.mpvBackend.GetPlaylistPosition()
 		if err == nil && mpvPos >= 0 && mpvPos < len(m.shuffleOrder)-1 {
-			next := m.shuffleOrder[mpvPos+1]
-			return m, m.playTrack(next)
+			nextMPVIdx := mpvPos + 1
+			nextPlaylistIdx := m.shuffleOrder[nextMPVIdx]
+			m.currentIndex = nextPlaylistIdx
+			m.updatePlaylist()
+			_ = m.mpvBackend.PlaylistPlayIndex(nextMPVIdx)
+			return m, m.trackChangedCmds()
 		}
 		if m.repeatMode == "all" {
 			m.shuffleOrder = shuffleIndices(len(m.playlist))
-			paths := make([]string, len(m.playlist))
-			for i, idx := range m.shuffleOrder {
-				paths[i] = m.playlist[idx].Path
-			}
-			return m, tea.Batch(setStatus(&m, "Shuffle: restart", false), startPlaybackCmd(m.mpvBackend, paths, 0))
+			m.updatePlaylist()
+			paths := m.buildMPVPlaylistPaths()
+			return m, tea.Batch(setStatus(&m, "Shuffle: restart", false), startPlaybackCmd(m.mpvBackend, paths, 0), m.trackChangedCmds())
 		}
 		return m, setStatus(&m, "End of playlist", false)
 	}
@@ -181,7 +177,13 @@ func (m Model) skipNext() (tea.Model, tea.Cmd) {
 		}
 	}
 
-	return m, m.playTrack(next)
+	if m.mpvBackend.IsRunning() {
+		_ = m.mpvBackend.SkipNext()
+	}
+
+	m.currentIndex = next
+	m.updatePlaylist()
+	return m, m.trackChangedCmds()
 }
 
 func (m Model) skipPrev() (tea.Model, tea.Cmd) {
@@ -203,20 +205,43 @@ func (m Model) skipPrev() (tea.Model, tea.Cmd) {
 		}
 	}
 
-	return m, m.playTrack(prev)
+	if m.mpvBackend.IsRunning() {
+		_ = m.mpvBackend.SkipPrev()
+	}
+
+	m.currentIndex = prev
+	m.updatePlaylist()
+	return m, m.trackChangedCmds()
 }
 
 func (m Model) seekForward() (tea.Model, tea.Cmd) {
-	if m.mpvBackend.IsRunning() {
-		_ = m.mpvBackend.SeekRelative(5)
+	if !m.mpvBackend.IsRunning() {
+		return m, nil
 	}
+	if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+		dur := m.playlist[m.currentIndex].Duration
+		if dur > 0 {
+			remaining := dur - m.playbackPos.TimePos - 0.5
+			delta := min(5.0, remaining)
+			if delta > 0 {
+				_ = m.mpvBackend.SeekRelative(delta)
+			}
+			return m, nil
+		}
+	}
+	_ = m.mpvBackend.SeekRelative(5)
 	return m, nil
 }
 
 func (m Model) seekBackward() (tea.Model, tea.Cmd) {
-	if m.mpvBackend.IsRunning() {
-		_ = m.mpvBackend.SeekRelative(-5)
+	if !m.mpvBackend.IsRunning() {
+		return m, nil
 	}
+	delta := -5.0
+	if m.playbackPos.TimePos+delta < 0 {
+		delta = -m.playbackPos.TimePos
+	}
+	_ = m.mpvBackend.SeekRelative(delta)
 	return m, nil
 }
 
@@ -242,10 +267,25 @@ func (m Model) toggleShuffle() (tea.Model, tea.Cmd) {
 	m.shuffle = !m.shuffle
 	if m.shuffle {
 		m.shuffleOrder = shuffleIndices(len(m.playlist))
-		return m, setStatus(&m, "Shuffle on", false)
+	} else {
+		m.shuffleOrder = nil
 	}
-	m.shuffleOrder = nil
-	return m, setStatus(&m, "Shuffle off", false)
+
+	if m.playing && m.mpvBackend.IsRunning() && len(m.playlist) > 0 {
+		paths := m.buildMPVPlaylistPaths()
+		playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
+		_ = m.mpvBackend.Stop()
+		return m, tea.Batch(
+			startPlaybackCmd(m.mpvBackend, paths, playIdx),
+			setStatus(&m, fmt.Sprintf("Shuffle %s", map[bool]string{true: "on", false: "off"}[m.shuffle]), false),
+		)
+	}
+
+	shuffleStr := "off"
+	if m.shuffle {
+		shuffleStr = "on"
+	}
+	return m, setStatus(&m, "Shuffle "+shuffleStr, false)
 }
 
 func (m Model) playTrack(index int) tea.Cmd {
@@ -263,14 +303,17 @@ func (m Model) playTrack(index int) tea.Cmd {
 	m.currentIndex = index
 	m.updatePlaylist()
 
-	var paths []string
-	var playIdx int
-
-	if m.shuffle && len(m.shuffleOrder) > 0 {
-		paths = make([]string, len(m.playlist))
-		for i, idx := range m.shuffleOrder {
-			paths[i] = m.playlist[idx].Path
+	if m.playing && m.mpvBackend.IsRunning() {
+		mpvIdx := m.playlistIndexToMPVIndex(index)
+		if mpvIdx >= 0 {
+			_ = m.mpvBackend.PlaylistPlayIndex(mpvIdx)
 		}
+		return m.trackChangedCmds()
+	}
+
+	paths := m.buildMPVPlaylistPaths()
+	var playIdx int
+	if m.shuffle && len(m.shuffleOrder) > 0 {
 		for i, idx := range m.shuffleOrder {
 			if idx == index {
 				playIdx = i
@@ -278,11 +321,7 @@ func (m Model) playTrack(index int) tea.Cmd {
 			}
 		}
 	} else {
-		paths = make([]string, len(m.playlist)-index)
-		for i := index; i < len(m.playlist); i++ {
-			paths[i-index] = m.playlist[i].Path
-		}
-		playIdx = 0
+		playIdx = index
 	}
 
 	return tea.Batch(
@@ -291,15 +330,50 @@ func (m Model) playTrack(index int) tea.Cmd {
 	)
 }
 
+func (m *Model) buildMPVPlaylistPaths() []string {
+	if m.shuffle && len(m.shuffleOrder) > 0 {
+		paths := make([]string, len(m.playlist))
+		for i, idx := range m.shuffleOrder {
+			paths[i] = m.playlist[idx].Path
+		}
+		return paths
+	}
+	paths := make([]string, len(m.playlist))
+	for i, t := range m.playlist {
+		paths[i] = t.Path
+	}
+	return paths
+}
+
+func (m *Model) playlistIndexToMPVIndex(playlistIdx int) int {
+	if m.shuffle && len(m.shuffleOrder) > 0 {
+		for i, idx := range m.shuffleOrder {
+			if idx == playlistIdx {
+				return i
+			}
+		}
+		return -1
+	}
+	return playlistIdx
+}
+
+func (m *Model) mpvIndexToPlaylistIndex(mpvIdx int) int {
+	if m.shuffle && len(m.shuffleOrder) > 0 {
+		if mpvIdx >= 0 && mpvIdx < len(m.shuffleOrder) {
+			return m.shuffleOrder[mpvIdx]
+		}
+		return -1
+	}
+	return mpvIdx
+}
+
 func startPlaybackCmd(backend *mpv.MPVBackend, paths []string, startIndex int) tea.Cmd {
 	return func() tea.Msg {
-		if startIndex > 0 {
-			temp := make([]string, len(paths)-startIndex)
-			copy(temp, paths[startIndex:])
-			paths = temp
-		}
 		if err := backend.Start(paths); err != nil {
 			return statusClearMsg{}
+		}
+		if startIndex > 0 {
+			_ = backend.PlaylistPlayIndex(startIndex)
 		}
 		return trackChangedMsg{}
 	}
@@ -322,6 +396,7 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 
 	m.albumArtStr = ""
 	m.albumArtLoaded = false
+	m.notifSentForSong = false
 
 	m.lyrics = ""
 	m.syncedLyrics = nil
@@ -363,16 +438,33 @@ func (m Model) handleTrackChanged(msg trackChangedMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleImageLoaded(msg imageLoadedMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil || msg.imageData == nil {
+		if m.cfg.NotificationsEnabled && !m.notifSentForSong && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) && m.playlist[m.currentIndex].Path == msg.trackPath {
+			return m, sendNotificationCmd(m.cfg, m.playlist[m.currentIndex], false)
+		}
+		if msg.trackPath != "" && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) && m.playlist[m.currentIndex].Path == msg.trackPath {
+			return m, fetchOnlineArtCmd(m.cfg, m.playlist[m.currentIndex])
+		}
 		return m, nil
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(msg.imageData))
 	if err != nil {
+		if m.cfg.NotificationsEnabled && !m.notifSentForSong && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) && m.playlist[m.currentIndex].Path == msg.trackPath {
+			return m, sendNotificationCmd(m.cfg, m.playlist[m.currentIndex], false)
+		}
 		return m, nil
 	}
 
 	if m.cfg.CopyAlbumArt && m.cfg.AlbumArtPath != "" {
 		_ = os.WriteFile(m.cfg.AlbumArtPath, msg.imageData, 0644)
+	}
+
+	if m.cfg.NotificationsEnabled && m.cfg.NotificationsShowArt && msg.trackPath != "" {
+		api.SaveNotifyArt(msg.imageData)
+	}
+
+	if msg.trackPath != "" && m.imageRenderer != nil {
+		_ = imgpkg.CacheArtData(msg.trackPath, msg.imageData)
 	}
 
 	termimg.ClearResizeCache()
@@ -413,7 +505,12 @@ func (m Model) handleImageLoaded(msg imageLoadedMsg) (tea.Model, tea.Cmd) {
 		m.albumArtHeight = height
 	}
 
-	return m, renderAlbumArtAfterDelay()
+	var cmd tea.Cmd
+	if m.cfg.NotificationsEnabled && !m.notifSentForSong && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) && m.playlist[m.currentIndex].Path == msg.trackPath {
+		cmd = sendNotificationCmd(m.cfg, m.playlist[m.currentIndex], true)
+	}
+
+	return m, tea.Batch(renderAlbumArtAfterDelay(), cmd)
 }
 
 func (m Model) renderImagesCmd() tea.Cmd {
