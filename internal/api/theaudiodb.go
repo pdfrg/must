@@ -73,3 +73,29 @@ func GetAlbumsByArtistIDTheAudioDB(apiKey, artistID string) ([]TheAudioDBAlbum, 
 
 	return resp.Album, nil
 }
+
+func FetchAlbumArtURLTheAudioDB(apiKey, artist, album string) (string, error) {
+	a, err := SearchArtistTheAudioDB(apiKey, artist)
+	if err != nil {
+		return "", err
+	}
+
+	albums, err := GetAlbumsByArtistIDTheAudioDB(apiKey, a.IDArtist)
+	if err != nil {
+		return "", err
+	}
+
+	for _, al := range albums {
+		if al.StrAlbum == album && al.StrAlbumThumb != "" {
+			return al.StrAlbumThumb, nil
+		}
+	}
+
+	for _, al := range albums {
+		if al.StrAlbumThumb != "" {
+			return al.StrAlbumThumb, nil
+		}
+	}
+
+	return "", fmt.Errorf("no album art found on TheAudioDB for %s - %s", artist, album)
+}
