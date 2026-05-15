@@ -105,7 +105,7 @@ func (m *MPVBackend) Start(paths []string) error {
 		"--no-video",
 		"--force-window=no",
 		"--no-terminal",
-		"--gapless-audio=weak",
+		"--gapless-audio=yes",
 		fmt.Sprintf("--input-ipc-server=%s", m.socketPath),
 	}
 	if m.pulseServer != "" {
@@ -305,6 +305,45 @@ func (m *MPVBackend) SkipPrev() error {
 	return err
 }
 
+func (m *MPVBackend) PlaylistPlayIndex(index int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.process == nil {
+		return fmt.Errorf("MPV not running")
+	}
+	_, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"set_property", "playlist-pos", index}})
+	return err
+}
+
+func (m *MPVBackend) RemoveFromPlaylist(index int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.process == nil {
+		return fmt.Errorf("MPV not running")
+	}
+	_, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"playlist-remove", index}})
+	return err
+}
+
+func (m *MPVBackend) GetPlaylistCount() (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.process == nil {
+		return 0, fmt.Errorf("MPV not running")
+	}
+	resp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "playlist-count"}})
+	if err != nil {
+		return 0, err
+	}
+	if resp == nil || resp.Data == nil {
+		return 0, nil
+	}
+	if count, ok := resp.Data.(float64); ok {
+		return int(count), nil
+	}
+	return 0, nil
+}
+
 func (m *MPVBackend) SeekRelative(delta float64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -312,6 +351,9 @@ func (m *MPVBackend) SeekRelative(delta float64) error {
 		return fmt.Errorf("MPV not running")
 	}
 	_, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"seek", delta, "relative"}})
+	if err != nil && m.reconnectLocked() {
+		_, err = m.sendIPCCommandLocked(IPCCommand{Command: []any{"seek", delta, "relative"}})
+	}
 	return err
 }
 
@@ -322,6 +364,9 @@ func (m *MPVBackend) SeekAbsolute(pos float64) error {
 		return fmt.Errorf("MPV not running")
 	}
 	_, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"seek", pos, "absolute"}})
+	if err != nil && m.reconnectLocked() {
+		_, err = m.sendIPCCommandLocked(IPCCommand{Command: []any{"seek", pos, "absolute"}})
+	}
 	return err
 }
 
@@ -357,7 +402,12 @@ func (m *MPVBackend) GetPlaybackPosition() (PlaybackPosition, error) {
 
 	timeResp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "time-pos"}})
 	if err != nil {
-		return PlaybackPosition{}, err
+		if m.reconnectLocked() {
+			timeResp, err = m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "time-pos"}})
+		}
+		if err != nil {
+			return m.lastPos, err
+		}
 	}
 	timePos := 0.0
 	if timeResp != nil && timeResp.Data != nil {
@@ -368,7 +418,7 @@ func (m *MPVBackend) GetPlaybackPosition() (PlaybackPosition, error) {
 
 	percentResp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "percent-pos"}})
 	if err != nil {
-		return PlaybackPosition{}, err
+		return PlaybackPosition{TimePos: timePos, PercentPos: 0}, nil
 	}
 	percentPos := 0.0
 	if percentResp != nil && percentResp.Data != nil {
