@@ -30,10 +30,18 @@ type audioInfoMsg struct {
 
 type imageLoadedMsg struct {
 	imageData []byte
+	trackPath string
 	err       error
 }
 
 type renderAlbumArtMsg struct{}
+
+type onlineArtFetchedMsg struct {
+	trackPath string
+	err       error
+}
+
+type notificationSentMsg struct{}
 
 type themeChangedMsg struct {
 	path string
@@ -47,9 +55,13 @@ type lyricsFetchedMsg struct {
 
 type sleepTimerTickMsg time.Time
 
-type artistBioFetchedMsg struct {
-	summary *api.WikipediaSummary
-	err     error
+type artistInfoFetchedMsg struct {
+	eventID int64
+	info    *models.ArtistInfo
+}
+
+type restorePlaybackMsg struct {
+	position float64
 }
 
 func tickProgressCmd() tea.Cmd {

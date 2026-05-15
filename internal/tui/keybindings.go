@@ -32,6 +32,7 @@ type KeyMap struct {
 	Lyrics        key.Binding
 	SyncedLyrics  key.Binding
 	ArtistBio     key.Binding
+	Gallery       key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -40,7 +41,7 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("q", "quit"),
 	),
 	PlayPause: key.NewBinding(
-		key.WithKeys(" "),
+		key.WithKeys("space"),
 		key.WithHelp("space", "play/pause"),
 	),
 	Next: key.NewBinding(
@@ -100,8 +101,8 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("e", "enqueue"),
 	),
 	CycleView: key.NewBinding(
-		key.WithKeys("tab"),
-		key.WithHelp("tab", "switch view"),
+		key.WithKeys("v", "tab"),
+		key.WithHelp("v", "switch view"),
 	),
 	Search: key.NewBinding(
 		key.WithKeys("/"),
@@ -143,6 +144,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("i"),
 		key.WithHelp("i", "artist bio"),
 	),
+	Gallery: key.NewBinding(
+		key.WithKeys("I"),
+		key.WithHelp("I", "gallery"),
+	),
 }
 
 func (k KeyMap) PlaybackBindings() []key.Binding {
@@ -166,6 +171,6 @@ func (k KeyMap) GlobalBindings() []key.Binding {
 	return []key.Binding{
 		k.Quit, k.Search, k.Help, k.Escape,
 		k.Rescan, k.ClearPlaylist, k.DeleteTrack,
-		k.Lyrics, k.SyncedLyrics, k.ArtistBio,
+		k.Lyrics, k.SyncedLyrics, k.ArtistBio, k.Gallery,
 	}
 }
