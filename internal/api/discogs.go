@@ -16,6 +16,30 @@ type DiscogsArtist struct {
 	ReleasesURL string         `json:"releases_url"`
 }
 
+func (d *DiscogsArtist) PrimaryImage() string {
+	for _, img := range d.ImageURLs {
+		if img.Type == "primary" && img.URI != "" {
+			return img.URI
+		}
+	}
+	for _, img := range d.ImageURLs {
+		if img.URI != "" {
+			return img.URI
+		}
+	}
+	return ""
+}
+
+func (d *DiscogsArtist) GalleryURLs() []string {
+	var urls []string
+	for _, img := range d.ImageURLs {
+		if img.URI != "" {
+			urls = append(urls, img.URI)
+		}
+	}
+	return urls
+}
+
 type DiscogsImage struct {
 	Type   string `json:"type"`
 	URI    string `json:"uri"`

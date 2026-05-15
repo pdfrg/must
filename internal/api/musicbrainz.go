@@ -3,9 +3,17 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
+	"time"
 )
 
 const musicbrainzBaseURL = "https://musicbrainz.org/ws/2"
+
+type MBAlbum struct {
+	Title string
+	Year  string
+}
 
 type MusicBrainzArtist struct {
 	ID             string `json:"id"`
@@ -57,41 +65,195 @@ type MusicBrainzURL struct {
 }
 
 func SearchArtistMusicBrainz(artist string) (*MusicBrainzArtist, error) {
-	url := buildURL(musicbrainzBaseURL+"/artist", map[string]string{
-		"query": fmt.Sprintf("artist:\"%s\"", artist),
-		"fmt":   "json",
-		"limit": "1",
-	})
-
-	headers := map[string]string{
-		"Accept": "application/json",
-	}
-
-	body, err := fetchJSON(url, headers)
+	result, err := searchArtistMB(artist)
 	if err != nil {
-		return nil, fmt.Errorf("musicbrainz search failed: %w", err)
+		return nil, err
 	}
-
-	var resp MusicBrainzArtistResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("musicbrainz parse error: %w", err)
-	}
-
-	if len(resp.Artists) == 0 {
+	if len(result) == 0 {
 		return nil, fmt.Errorf("artist not found on musicbrainz: %s", artist)
 	}
+	return &MusicBrainzArtist{
+		ID:             result[0].ID,
+		Name:           result[0].Name,
+		Disambiguation: result[0].Disambiguation,
+		Country:        result[0].Country,
+	}, nil
+}
 
-	return &resp.Artists[0], nil
+func searchArtistMB(artistName string) ([]mbArtistEntry, error) {
+	doSearch := func(query string) ([]mbArtistEntry, error) {
+		reqURL := fmt.Sprintf("%s/artist/?query=%s&fmt=json&limit=10",
+			musicbrainzBaseURL, url.QueryEscape(query))
+
+		headers := map[string]string{"Accept": "application/json"}
+		body, err := fetchJSON(reqURL, headers)
+		if err != nil {
+			return nil, err
+		}
+
+		var result struct {
+			Artists []struct {
+				ID             string `json:"id"`
+				Name           string `json:"name"`
+				Score          int    `json:"score"`
+				Type           string `json:"type"`
+				Disambiguation string `json:"disambiguation"`
+				Country        string `json:"country"`
+			} `json:"artists"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, err
+		}
+
+		var entries []mbArtistEntry
+		for _, a := range result.Artists {
+			entries = append(entries, mbArtistEntry{
+				ID: a.ID, Name: a.Name, Score: a.Score,
+				Type: a.Type, Disambiguation: a.Disambiguation, Country: a.Country,
+			})
+		}
+		return entries, nil
+	}
+
+	artists, err := doSearch(fmt.Sprintf("artist:\"%s\"", artistName))
+	if err != nil {
+		return nil, err
+	}
+
+	if len(artists) == 0 {
+		return nil, nil
+	}
+
+	artistLower := strings.ToLower(artistName)
+	artistNorm := normalizeForCompare(artistLower)
+
+	for _, a := range artists {
+		if strings.ToLower(a.Name) == artistLower {
+			return []mbArtistEntry{a}, nil
+		}
+	}
+	for _, a := range artists {
+		if normalizeForCompare(strings.ToLower(a.Name)) == artistNorm {
+			return []mbArtistEntry{a}, nil
+		}
+	}
+	for _, a := range artists {
+		if strings.Contains(strings.ToLower(a.Name), artistLower) {
+			return []mbArtistEntry{a}, nil
+		}
+	}
+	for _, a := range artists {
+		if a.Type == "Person" || a.Type == "Group" {
+			return []mbArtistEntry{a}, nil
+		}
+	}
+
+	return artists, nil
+}
+
+type mbArtistEntry struct {
+	ID             string
+	Name           string
+	Score          int
+	Type           string
+	Disambiguation string
+	Country        string
+}
+
+func GetDiscographyMusicBrainz(artistName string, album string) (string, []MBAlbum, error) {
+	entries, err := searchArtistMB(artistName)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(entries) == 0 {
+		return "", nil, nil
+	}
+
+	mbID := entries[0].ID
+	matchedName := entries[0].Name
+
+	time.Sleep(1 * time.Second)
+
+	mbQuery := fmt.Sprintf("arid:%s AND primarytype:Album NOT secondarytype:* AND status:official", mbID)
+	reqURL := fmt.Sprintf("%s/release-group/?query=%s&fmt=json&limit=100",
+		musicbrainzBaseURL, strings.ReplaceAll(mbQuery, " ", "%20"))
+
+	headers := map[string]string{"Accept": "application/json"}
+	body, err := fetchJSON(reqURL, headers)
+	if err != nil {
+		return "", nil, err
+	}
+
+	var rgResult struct {
+		ReleaseGroups []struct {
+			Title            string `json:"title"`
+			FirstReleaseDate string `json:"first-release-date"`
+		} `json:"release-groups"`
+	}
+	if err := json.Unmarshal(body, &rgResult); err != nil {
+		return "", nil, err
+	}
+
+	type entry struct {
+		title string
+		year  string
+	}
+	seen := make(map[string]bool)
+	var entries2 []entry
+	for _, rg := range rgResult.ReleaseGroups {
+		key := strings.ToLower(rg.Title)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+
+		year := ""
+		if len(rg.FirstReleaseDate) >= 4 {
+			year = rg.FirstReleaseDate[:4]
+		}
+		entries2 = append(entries2, entry{rg.Title, year})
+	}
+
+	for i := 1; i < len(entries2); i++ {
+		for j := i; j > 0; j-- {
+			if entries2[j].year == "" {
+				continue
+			}
+			if entries2[j-1].year == "" || entries2[j].year < entries2[j-1].year {
+				entries2[j], entries2[j-1] = entries2[j-1], entries2[j]
+			}
+		}
+	}
+
+	if !strings.EqualFold(matchedName, artistName) && album != "" {
+		hasMatch := false
+		for _, rg := range rgResult.ReleaseGroups {
+			if AlbumNamesMatch(album, rg.Title) {
+				hasMatch = true
+				break
+			}
+		}
+		if !hasMatch {
+			return "", nil, nil
+		}
+	}
+
+	var albums []MBAlbum
+	for _, e := range entries2 {
+		albums = append(albums, MBAlbum{Title: e.title, Year: e.year})
+	}
+
+	return mbID, albums, nil
 }
 
 func GetArtistMusicBrainz(mbid string) (*MusicBrainzLookupResponse, error) {
-	url := fmt.Sprintf("%s/artist/%s?fmt=json&inc=url-rels+tags", musicbrainzBaseURL, mbid)
+	apiURL := fmt.Sprintf("%s/artist/%s?fmt=json&inc=url-rels+tags", musicbrainzBaseURL, mbid)
 
 	headers := map[string]string{
 		"Accept": "application/json",
 	}
 
-	body, err := fetchJSON(url, headers)
+	body, err := fetchJSON(apiURL, headers)
 	if err != nil {
 		return nil, fmt.Errorf("musicbrainz lookup failed: %w", err)
 	}
