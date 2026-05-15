@@ -3,6 +3,8 @@ package tui
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/json"
+	"fmt"
 	"image"
 	"image/jpeg"
 	"math/big"
@@ -20,6 +22,56 @@ import (
 	"github.com/pdfrg/must/internal/playlist"
 	"github.com/pdfrg/must/internal/scanner"
 )
+
+type PlaybackState struct {
+	PlaylistPaths []string `json:"playlist_paths"`
+	CurrentIndex  int      `json:"current_index"`
+	Position      float64  `json:"position"`
+	Shuffle       bool     `json:"shuffle"`
+	RepeatMode    string   `json:"repeat_mode"`
+}
+
+func SavePlaybackState(playlist []models.Track, currentIndex int, position float64, shuffle bool, repeatMode string) {
+	state := PlaybackState{
+		PlaylistPaths: make([]string, len(playlist)),
+		CurrentIndex:  currentIndex,
+		Position:      position,
+		Shuffle:       shuffle,
+		RepeatMode:    repeatMode,
+	}
+	for i, t := range playlist {
+		state.PlaylistPaths[i] = t.Path
+	}
+
+	data, err := json.Marshal(state)
+	if err != nil {
+		return
+	}
+
+	statePath := config.GetStatePath()
+	_ = os.MkdirAll(filepath.Dir(statePath), 0755)
+	_ = os.WriteFile(statePath, data, 0644)
+}
+
+func LoadPlaybackState() *PlaybackState {
+	statePath := config.GetStatePath()
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		return nil
+	}
+
+	var state PlaybackState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil
+	}
+
+	return &state
+}
+
+func ClearPlaybackState() {
+	statePath := config.GetStatePath()
+	_ = os.Remove(statePath)
+}
 
 func scanLibraryCmd(cfg *config.Config) tea.Cmd {
 	return func() tea.Msg {
@@ -142,15 +194,15 @@ func loadAlbumArtCmd(renderer *imgpkg.Renderer, trackPath string) tea.Cmd {
 	return func() tea.Msg {
 		img, err := renderer.GetArtForTrack(trackPath)
 		if err != nil {
-			return imageLoadedMsg{err: err}
+			return imageLoadedMsg{err: err, trackPath: trackPath}
 		}
 
 		var buf bytes.Buffer
 		if err := encodeImage(&buf, img); err != nil {
-			return imageLoadedMsg{err: err}
+			return imageLoadedMsg{err: err, trackPath: trackPath}
 		}
 
-		return imageLoadedMsg{imageData: buf.Bytes()}
+		return imageLoadedMsg{imageData: buf.Bytes(), trackPath: trackPath}
 	}
 }
 
@@ -190,12 +242,176 @@ func fetchLyricsCmd(track models.Track) tea.Cmd {
 	}
 }
 
-func fetchArtistBioCmd(artist string) tea.Cmd {
-	return func() tea.Msg {
-		summary, err := api.GetArtistSummary(artist)
-		if err != nil {
-			return artistBioFetchedMsg{err: err}
+func fetchArtistInfoCmd(cfg *config.Config, artist, album string, eventID int64, cache map[string]*models.ArtistInfo) tea.Cmd {
+	if cache != nil {
+		if cached, ok := cache[strings.ToLower(artist)]; ok {
+			return func() tea.Msg {
+				return artistInfoFetchedMsg{eventID: eventID, info: cached}
+			}
 		}
-		return artistBioFetchedMsg{summary: summary}
+	}
+
+	return func() tea.Msg {
+		info := &models.ArtistInfo{}
+
+		type tadbResult struct {
+			artist *api.TheAudioDBArtist
+			err    error
+		}
+		type mbResult struct {
+			mbid   string
+			albums []api.MBAlbum
+			err    error
+		}
+
+		tadbCh := make(chan tadbResult, 1)
+		mbCh := make(chan mbResult, 1)
+
+		go func() {
+			a, e := api.SearchArtistTheAudioDB(cfg.TheAudioDBApiKey, artist)
+			tadbCh <- tadbResult{a, e}
+		}()
+
+		go func() {
+			mbid, a, e := api.GetDiscographyMusicBrainz(artist, album)
+			mbCh <- mbResult{mbid, a, e}
+		}()
+
+		tadb := <-tadbCh
+		mb := <-mbCh
+
+		if tadb.artist != nil {
+			if tadb.artist.StrBiographyEN != "" {
+				info.Bio = tadb.artist.StrBiographyEN
+				info.BioSource = "theaudiodb"
+			}
+			if tadb.artist.StrArtistThumb != "" {
+				info.ThumbnailURL = tadb.artist.StrArtistThumb
+				info.ThumbSource = "theaudiodb"
+			}
+			if tadb.artist.StrArtistFanart != "" {
+				info.GalleryURLs = []string{tadb.artist.StrArtistFanart}
+				info.GallerySource = "theaudiodb"
+			}
+		}
+
+		if len(mb.albums) > 0 {
+			var b strings.Builder
+			for _, a := range mb.albums {
+				if a.Year != "" {
+					fmt.Fprintf(&b, "%s (%s)\n", a.Title, a.Year)
+				} else {
+					b.WriteString(a.Title + "\n")
+				}
+			}
+			info.Discography = strings.TrimSpace(b.String())
+			info.DiscoSource = "musicbrainz"
+		}
+
+		hasDiscogsAuth := cfg.DiscogsToken != "" || (cfg.DiscogsKey != "" && cfg.DiscogsSecret != "")
+		if info.Bio == "" || hasDiscogsAuth {
+			discogsArtist, err := api.SearchArtistDiscogs(cfg.DiscogsToken, cfg.DiscogsKey, cfg.DiscogsSecret, artist)
+			if err == nil && discogsArtist != nil {
+				if info.Bio == "" && discogsArtist.Profile != "" {
+					info.Bio = discogsArtist.Profile
+					info.BioSource = "discogs"
+				}
+				if primaryImg := discogsArtist.PrimaryImage(); primaryImg != "" {
+					info.ThumbnailURL = primaryImg
+					info.ThumbSource = "discogs"
+				}
+				if galleryURLs := discogsArtist.GalleryURLs(); len(galleryURLs) > 0 {
+					info.GalleryURLs = galleryURLs
+					info.GallerySource = "discogs"
+				}
+			}
+		}
+
+		if info.Bio == "" || info.ThumbnailURL == "" || info.Discography == "" {
+			summary, err := api.GetArtistSummary(artist)
+			if err == nil && summary != nil {
+				if info.Bio == "" && summary.Extract != "" {
+					info.Bio = summary.Extract
+					info.BioSource = "wikipedia"
+				}
+				if info.ThumbnailURL == "" && summary.Thumbnail != nil && summary.Thumbnail.Source != "" {
+					info.ThumbnailURL = summary.Thumbnail.Source
+					info.ThumbSource = "wikipedia"
+				}
+				if info.PageURL == "" && summary.URL != "" {
+					info.PageURL = summary.URL
+				}
+			}
+		}
+
+		if cfg.Lidarr.Enabled && cfg.Lidarr.URL != "" && cfg.Lidarr.APIKey != "" && mb.mbid != "" {
+			info.LidarrMBID = mb.mbid
+			lidarrClient := api.NewLidarrClient(cfg.Lidarr.URL, cfg.Lidarr.APIKey, cfg.Lidarr.Enabled)
+			lidarrStatus, lidErr := lidarrClient.GetArtistByMBID(mb.mbid)
+			if lidErr != nil {
+				info.LidarrError = lidarrStatus.Error
+			} else if lidarrStatus.InLidarr {
+				info.LidarrInLidarr = true
+				info.LidarrMonitored = lidarrStatus.Monitored
+				info.LidarrArtistID = lidarrStatus.ArtistID
+				info.LidarrArtistName = lidarrStatus.ArtistName
+
+				if info.Discography != "" {
+					var mbTitles []string
+					for _, line := range strings.Split(info.Discography, "\n") {
+						line = strings.TrimSpace(line)
+						if line == "" {
+							continue
+						}
+						if idx := strings.LastIndex(line, " ("); idx > 0 {
+							mbTitles = append(mbTitles, line[:idx])
+						} else {
+							mbTitles = append(mbTitles, line)
+						}
+					}
+					if len(mbTitles) > 0 {
+						lidarrAlbums, albErr := lidarrClient.GetArtistAlbums(lidarrStatus.ArtistID, mbTitles)
+						if albErr == nil && len(lidarrAlbums) > 0 {
+							info.LidarrAlbums = make(map[string]models.LidarrAlbumInfo)
+							for title, status := range lidarrAlbums {
+								info.LidarrAlbums[title] = models.LidarrAlbumInfo{
+									InLidarr:        status.InLidarr,
+									Monitored:       status.Monitored,
+									HasFiles:        status.HasFiles,
+									PercentOfTracks: status.PercentOfTracks,
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if info.Bio == "" {
+			info.Bio = "No biography found."
+		}
+
+		return artistInfoFetchedMsg{eventID: eventID, info: info}
+	}
+}
+
+func fetchOnlineArtCmd(cfg *config.Config, track models.Track) tea.Cmd {
+	return func() tea.Msg {
+		if cfg.TheAudioDBApiKey != "" {
+			artURL, err := api.FetchAlbumArtURLTheAudioDB(cfg.TheAudioDBApiKey, track.Artist, track.Album)
+			if err == nil && artURL != "" {
+				if err := imgpkg.DownloadAndCacheArt(track.Path, artURL); err == nil {
+					return onlineArtFetchedMsg{trackPath: track.Path}
+				}
+			}
+		}
+		return onlineArtFetchedMsg{err: fmt.Errorf("no online art found")}
+	}
+}
+
+func sendNotificationCmd(cfg *config.Config, track models.Track, withImage bool) tea.Cmd {
+	return func() tea.Msg {
+		api.SendDesktopNotification(&track, cfg, withImage)
+		return notificationSentMsg{}
 	}
 }
