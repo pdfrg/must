@@ -23,7 +23,9 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 
 	var restoreCmd tea.Cmd
 	if len(m.playlist) == 0 && len(m.paths) == 0 {
-		restoreCmd = m.restorePlaybackState()
+		if !m.noRestore && m.cfg.RestoreOnStart {
+			restoreCmd = m.restorePlaybackState()
+		}
 	}
 
 	if m.searchModal != nil {
@@ -32,6 +34,10 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 
 	if m.randomMode && len(m.paths) == 0 && m.libraryDB != nil && restoreCmd == nil {
 		return m.handleRandomPlay()
+	}
+
+	if m.autoplay && len(m.paths) == 0 && restoreCmd == nil && !m.randomMode && m.libraryDB != nil {
+		return m.handleAutoplay()
 	}
 
 	artists, err := m.libraryDB.GetAllArtists()
@@ -171,6 +177,40 @@ func (m Model) handleRandomPlay() (tea.Model, tea.Cmd) {
 		m.playlist = tracks
 	}
 
+	if m.shuffle {
+		m.shuffleOrder = shuffleIndices(len(m.playlist))
+	}
+
+	m.updatePlaylist()
+	return m, m.playTrack(0)
+}
+
+func (m Model) handleAutoplay() (tea.Model, tea.Cmd) {
+	if m.libraryDB == nil {
+		return m, nil
+	}
+
+	artists, err := m.libraryDB.GetAllArtists()
+	if err != nil || len(artists) == 0 {
+		return m, setStatus(&m, "No artists in library", true)
+	}
+	m.artists = artists
+
+	randArtistIdx := randInt(len(artists))
+	artist := artists[randArtistIdx]
+
+	albums, err := m.libraryDB.GetAlbumsByArtist(artist)
+	if err != nil || len(albums) == 0 {
+		return m, setStatus(&m, "No albums found for autoplay", true)
+	}
+
+	album := albums[0]
+	tracks, err := m.libraryDB.GetTracksByArtistAndAlbum(artist, album)
+	if err != nil || len(tracks) == 0 {
+		return m, setStatus(&m, "No tracks found for autoplay", true)
+	}
+
+	m.playlist = tracks
 	if m.shuffle {
 		m.shuffleOrder = shuffleIndices(len(m.playlist))
 	}
