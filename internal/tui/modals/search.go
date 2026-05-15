@@ -47,6 +47,10 @@ func NewSearch(styles *config.ThemeStyles, libraryDB *db.LibraryDB) *Search {
 	}
 }
 
+func (s *Search) SetDB(libraryDB *db.LibraryDB) {
+	s.db = libraryDB
+}
+
 func (s *Search) SetSize(width, height int) {
 	s.width = width
 	s.height = height
@@ -84,7 +88,7 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 				}
 			}
 			return nil
-		case "e":
+		case "ctrl+e":
 			if len(s.results) > 0 && s.cursor < len(s.results) {
 				return func() tea.Msg {
 					return SearchModalMsg{
@@ -93,7 +97,7 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 				}
 			}
 			return nil
-		case "down", "j":
+		case "down", "ctrl+n":
 			if len(s.results) > 0 && s.cursor < len(s.results)-1 {
 				s.cursor++
 				maxVisible := s.height - 6
@@ -105,7 +109,7 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 				}
 			}
 			return nil
-		case "up", "k":
+		case "up", "ctrl+p":
 			if s.cursor > 0 {
 				s.cursor--
 				if s.cursor < s.scrollOffset {
@@ -140,8 +144,8 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 
 func (s *Search) executeSearch(query string) tea.Cmd {
 	return func() tea.Msg {
-		ftsQuery := buildSearchFTSQuery(query)
-		results, err := s.db.SearchFTS(ftsQuery)
+		sq := buildSearchQuery(query)
+		results, err := s.db.SearchWithYearRange(sq.FTSQuery, sq.YearMin, sq.YearMax)
 		if err != nil {
 			results, err = s.db.SearchLike(query)
 			if err != nil {
@@ -166,20 +170,55 @@ func debounceSearchModalCmd(query string) tea.Cmd {
 	})
 }
 
-func buildSearchFTSQuery(input string) string {
+type SearchQuery struct {
+	FTSQuery string
+	YearMin  int
+	YearMax  int
+}
+
+func buildSearchQuery(input string) SearchQuery {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return ""
+		return SearchQuery{}
 	}
-	if strings.Contains(input, ":") || strings.Contains(input, "*") {
-		return input
+
+	var yearMin, yearMax int
+	ftsParts := input
+
+	if strings.Contains(input, "year:") {
+		terms := strings.Fields(input)
+		var ftsTerms []string
+		for _, t := range terms {
+			if strings.HasPrefix(t, "year:") {
+				yearVal := strings.TrimPrefix(t, "year:")
+				if dashIdx := strings.Index(yearVal, "-"); dashIdx >= 0 {
+					_, _ = fmt.Sscanf(yearVal[:dashIdx], "%d", &yearMin)
+					_, _ = fmt.Sscanf(yearVal[dashIdx+1:], "%d", &yearMax)
+				} else {
+					_, _ = fmt.Sscanf(yearVal, "%d", &yearMin)
+					yearMax = yearMin
+				}
+			} else {
+				ftsTerms = append(ftsTerms, t)
+			}
+		}
+		ftsParts = strings.Join(ftsTerms, " ")
 	}
-	terms := strings.Fields(input)
-	parts := make([]string, len(terms))
-	for i, t := range terms {
-		parts[i] = t + "*"
+
+	if !strings.Contains(ftsParts, ":") && !strings.Contains(ftsParts, "*") && ftsParts != "" {
+		terms := strings.Fields(ftsParts)
+		parts := make([]string, len(terms))
+		for i, t := range terms {
+			parts[i] = t + "*"
+		}
+		ftsParts = strings.Join(parts, " ")
 	}
-	return strings.Join(parts, " ")
+
+	return SearchQuery{
+		FTSQuery: ftsParts,
+		YearMin:  yearMin,
+		YearMax:  yearMax,
+	}
 }
 
 func (s Search) View() string {
@@ -227,7 +266,7 @@ func (s Search) View() string {
 			}
 		}
 		b.WriteString("\n")
-		b.WriteString(s.styles.MutedStyle.Render(fmt.Sprintf("%d results ↑/↓ navigate enter play e enqueue esc close", len(s.results))))
+		b.WriteString(s.styles.MutedStyle.Render(fmt.Sprintf("%d results ↑/↓ navigate enter play ^e enqueue esc close", len(s.results))))
 	} else if s.input.Value() != "" {
 		b.WriteString(s.styles.MutedStyle.Render("No results found"))
 	} else {
