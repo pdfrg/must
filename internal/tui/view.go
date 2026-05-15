@@ -67,7 +67,7 @@ func (m Model) View() tea.View {
 	if footerHeight == 0 {
 		footerHeight = 1
 	}
-	remainingHeight := m.height - currentHeight - footerHeight
+	remainingHeight := m.height - currentHeight - footerHeight - 1
 
 	if remainingHeight > 0 {
 		bottomView := m.renderBottomSection(remainingHeight)
@@ -80,6 +80,7 @@ func (m Model) View() tea.View {
 		}
 	}
 
+	b.WriteString("\n")
 	b.WriteString(footerView)
 
 	return m.altView(b.String())

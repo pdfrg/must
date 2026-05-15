@@ -21,6 +21,7 @@ type KeyMap struct {
 	End           key.Binding
 	Enter         key.Binding
 	Enqueue       key.Binding
+	EnqueueNext   key.Binding
 	CycleView     key.Binding
 	Search        key.Binding
 	Library       key.Binding
@@ -33,6 +34,9 @@ type KeyMap struct {
 	SyncedLyrics  key.Binding
 	ArtistBio     key.Binding
 	Gallery       key.Binding
+	MoveTrackUp   key.Binding
+	MoveTrackDown key.Binding
+	SavePlaylist  key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -148,6 +152,22 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("I"),
 		key.WithHelp("I", "gallery"),
 	),
+	MoveTrackUp: key.NewBinding(
+		key.WithKeys("K"),
+		key.WithHelp("K", "move up"),
+	),
+	MoveTrackDown: key.NewBinding(
+		key.WithKeys("J"),
+		key.WithHelp("J", "move down"),
+	),
+	SavePlaylist: key.NewBinding(
+		key.WithKeys("S"),
+		key.WithHelp("S", "save playlist"),
+	),
+	EnqueueNext: key.NewBinding(
+		key.WithKeys("E"),
+		key.WithHelp("E", "enqueue next"),
+	),
 }
 
 func (k KeyMap) PlaybackBindings() []key.Binding {
@@ -162,7 +182,7 @@ func (k KeyMap) NavigationBindings() []key.Binding {
 	return []key.Binding{
 		k.CursorUp, k.CursorDown,
 		k.PageUp, k.PageDown, k.Home, k.End,
-		k.Enter, k.Enqueue,
+		k.Enter, k.Enqueue, k.EnqueueNext,
 		k.CycleView, k.Library,
 	}
 }
@@ -172,5 +192,6 @@ func (k KeyMap) GlobalBindings() []key.Binding {
 		k.Quit, k.Search, k.Help, k.Escape,
 		k.Rescan, k.ClearPlaylist, k.DeleteTrack,
 		k.Lyrics, k.SyncedLyrics, k.ArtistBio, k.Gallery,
+		k.MoveTrackUp, k.MoveTrackDown, k.SavePlaylist,
 	}
 }

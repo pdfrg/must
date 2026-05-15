@@ -14,6 +14,8 @@ type Config struct {
 	MusicDir              string                `toml:"music_dir" comment:"root directory for library scanning (default: ~/Music)"`
 	RepeatMode            string                `toml:"repeat_mode" comment:"repeat mode: off, all, one (default: off)"`
 	Shuffle               bool                  `toml:"shuffle" comment:"shuffle playback order (default: false)"`
+	RestoreOnStart        bool                  `toml:"restore_on_start" comment:"restore last session's playlist and position on startup (default: true)"`
+	Autoplay              bool                  `toml:"autoplay" comment:"auto-play a random album when launched with no paths (default: false)"`
 	ShowAlbumArt          bool                  `toml:"show_album_art" comment:"display album art for each song\nuses the best supported image protocol with auto fallback\nkitty > iterm2 > sixel > unicode (default: true)"`
 	CopyAlbumArt          bool                  `toml:"copy_album_art" comment:"save album art to file, useful for desktop/statusbar widgets (default: false)"`
 	AlbumArtPath          string                `toml:"album_art_path" comment:"file path for album art copy, needed if copy_album_art is true (default: /tmp/cover.jpg)"`
@@ -75,12 +77,14 @@ type VisualizerConfig struct {
 func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
 	return &Config{
-		MusicDir:     filepath.Join(homeDir, "Music"),
-		RepeatMode:   "off",
-		Shuffle:      false,
-		ShowAlbumArt: true,
-		AlbumArtPath: filepath.Join(os.TempDir(), "cover.jpg"),
-		CopyAlbumArt: false,
+		MusicDir:       filepath.Join(homeDir, "Music"),
+		RepeatMode:     "off",
+		Shuffle:        false,
+		RestoreOnStart: true,
+		Autoplay:       false,
+		ShowAlbumArt:   true,
+		AlbumArtPath:   filepath.Join(os.TempDir(), "cover.jpg"),
+		CopyAlbumArt:   false,
 		Visualizer: VisualizerConfig{
 			Mode:         "Segmented",
 			ShowInfo:     "fade",
@@ -227,6 +231,14 @@ func GetMPVSocketPath() string {
 		runtimeDir = os.TempDir()
 	}
 	return filepath.Join(runtimeDir, "mpv", "must-socket")
+}
+
+func GetPlaylistSaveDir() string {
+	return filepath.Join(xdg.CacheHome, "must", "playlists")
+}
+
+func GetPlaylistSavePath(name string) string {
+	return filepath.Join(GetPlaylistSaveDir(), name+".m3u")
 }
 
 func InSSHSession() bool {

@@ -47,6 +47,8 @@ type Model struct {
 	keyMap     KeyMap
 	paths      []string
 	randomMode bool
+	noRestore  bool
+	autoplay   bool
 
 	width  int
 	height int
@@ -129,7 +131,7 @@ type Model struct {
 	viewportReady bool
 }
 
-func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool) Model {
+func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool, noRestore bool, autoplay bool) Model {
 	styles := config.NewThemeStyles(theme, cfg.TransparentBackground, cfg.DisableTheme, cfg.TerminalPalette)
 
 	m := Model{
@@ -139,6 +141,8 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		keyMap:         DefaultKeyMap,
 		paths:          paths,
 		randomMode:     randomMode,
+		noRestore:      noRestore,
+		autoplay:       autoplay,
 		playlist:       []models.Track{},
 		currentIndex:   -1,
 		repeatMode:     cfg.RepeatMode,
@@ -263,8 +267,11 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "/", Desc: "search library"},
 		{Key: "l", Desc: "library browser"},
 		{Key: "e", Desc: "enqueue track/album"},
+		{Key: "E", Desc: "enqueue next"},
 		{Key: "d", Desc: "delete track from playlist"},
 		{Key: "D", Desc: "clear playlist"},
+		{Key: "J/K", Desc: "move track down/up"},
+		{Key: "S", Desc: "save playlist"},
 		{Key: "R", Desc: "rescan library"},
 		{Key: "u", Desc: "plain lyrics"},
 		{Key: "U", Desc: "synced lyrics"},

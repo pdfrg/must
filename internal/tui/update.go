@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/pdfrg/must/internal/config"
+	"github.com/pdfrg/must/internal/playlist"
 	"github.com/pdfrg/must/internal/tui/modals"
 )
 
@@ -248,6 +249,18 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.ClearPlaylist):
 		return m.clearPlaylist()
 
+	case key.Matches(msg, m.keyMap.MoveTrackUp):
+		return m.moveTrackUp()
+
+	case key.Matches(msg, m.keyMap.MoveTrackDown):
+		return m.moveTrackDown()
+
+	case key.Matches(msg, m.keyMap.SavePlaylist):
+		return m.savePlaylist()
+
+	case key.Matches(msg, m.keyMap.EnqueueNext):
+		return m.openLibraryEnqueueNext()
+
 	case key.Matches(msg, m.keyMap.Rescan):
 		return m.rescanLibrary()
 
@@ -422,6 +435,48 @@ func (m Model) handleLibraryModalMsg(msg modals.LibraryModalMsg) (tea.Model, tea
 		return m, setStatus(&m, fmt.Sprintf("Enqueued %d track(s)", len(msg.Enqueue)), false)
 	}
 
+	if len(msg.EnqueueNext) > 0 {
+		wasPlaying := m.playing && m.mpvBackend.IsRunning()
+		insertAt := m.currentIndex + 1
+		if insertAt > len(m.playlist) {
+			insertAt = len(m.playlist)
+		}
+
+		newTracks := msg.EnqueueNext
+		m.playlist = append(m.playlist[:insertAt], append(newTracks, m.playlist[insertAt:]...)...)
+
+		if m.currentIndex >= insertAt {
+			m.currentIndex += len(newTracks)
+		}
+
+		m.updatePlaylist()
+		m.activeModal = ModalNone
+
+		if wasPlaying {
+			mpvInsertAt := m.playlistIndexToMPVIndex(m.currentIndex)
+			newPaths := make([]string, len(newTracks))
+			for i, t := range newTracks {
+				newPaths[i] = t.Path
+			}
+			_ = m.mpvBackend.InsertInPlaylist(newPaths, mpvInsertAt)
+			return m, tea.Batch(
+				setStatus(&m, fmt.Sprintf("Enqueued next %d track(s)", len(newTracks)), false),
+				renderAlbumArtAfterDelay(),
+			)
+		} else if len(m.playlist) > 0 {
+			paths := m.buildMPVPlaylistPaths()
+			playIdx := m.playlistIndexToMPVIndex(insertAt)
+			return m, tea.Batch(
+				startPlaybackCmd(m.mpvBackend, paths, playIdx),
+				m.trackChangedCmds(),
+				setStatus(&m, fmt.Sprintf("Enqueued next %d track(s) — playing", len(newTracks)), false),
+				renderAlbumArtAfterDelay(),
+			)
+		}
+
+		return m, setStatus(&m, fmt.Sprintf("Enqueued next %d track(s)", len(newTracks)), false)
+	}
+
 	return m, nil
 }
 
@@ -479,6 +534,49 @@ func (m Model) handleSearchModalMsg(msg modals.SearchModalMsg) (tea.Model, tea.C
 		}
 
 		return m, setStatus(&m, "Track enqueued", false)
+	}
+
+	if len(msg.EnqueueNext) > 0 {
+		wasPlaying := m.playing && m.mpvBackend.IsRunning()
+		insertAt := m.currentIndex + 1
+		if insertAt > len(m.playlist) {
+			insertAt = len(m.playlist)
+		}
+
+		newTracks := msg.EnqueueNext
+		m.playlist = append(m.playlist[:insertAt], append(newTracks, m.playlist[insertAt:]...)...)
+
+		if m.currentIndex >= insertAt {
+			m.currentIndex += len(newTracks)
+		}
+
+		m.updatePlaylist()
+		m.activeModal = ModalNone
+		m.searchModal.Blur()
+
+		if wasPlaying {
+			mpvInsertAt := m.playlistIndexToMPVIndex(m.currentIndex)
+			newPaths := make([]string, len(newTracks))
+			for i, t := range newTracks {
+				newPaths[i] = t.Path
+			}
+			_ = m.mpvBackend.InsertInPlaylist(newPaths, mpvInsertAt)
+			return m, tea.Batch(
+				setStatus(&m, "Track enqueued next", false),
+				renderAlbumArtAfterDelay(),
+			)
+		} else if len(m.playlist) > 0 {
+			paths := m.buildMPVPlaylistPaths()
+			playIdx := m.playlistIndexToMPVIndex(insertAt)
+			return m, tea.Batch(
+				startPlaybackCmd(m.mpvBackend, paths, playIdx),
+				m.trackChangedCmds(),
+				setStatus(&m, "Track enqueued next — playing", false),
+				renderAlbumArtAfterDelay(),
+			)
+		}
+
+		return m, setStatus(&m, "Track enqueued next", false)
 	}
 
 	return m, nil
@@ -659,4 +757,99 @@ func (m Model) togglePause() (tea.Model, tea.Cmd) {
 	}
 	m.paused = !m.paused
 	return m, nil
+}
+
+func (m Model) moveTrackUp() (tea.Model, tea.Cmd) {
+	cursor := m.playlistWidget.GetCursor()
+	if len(m.playlist) < 2 || cursor <= 0 {
+		return m, nil
+	}
+
+	m.playlist[cursor-1], m.playlist[cursor] = m.playlist[cursor], m.playlist[cursor-1]
+
+	if m.currentIndex == cursor {
+		m.currentIndex = cursor - 1
+	} else if m.currentIndex == cursor-1 {
+		m.currentIndex = cursor
+	}
+
+	m.playlistWidget.SetCursor(cursor - 1)
+	m.updatePlaylist()
+
+	if m.mpvBackend.IsRunning() && m.playing {
+		paths := m.buildMPVPlaylistPaths()
+		playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
+		_ = m.mpvBackend.Stop()
+		return m, tea.Batch(
+			startPlaybackCmd(m.mpvBackend, paths, playIdx),
+			setStatus(&m, "Moved up", false),
+		)
+	}
+
+	return m, setStatus(&m, "Moved up", false)
+}
+
+func (m Model) moveTrackDown() (tea.Model, tea.Cmd) {
+	cursor := m.playlistWidget.GetCursor()
+	if len(m.playlist) < 2 || cursor < 0 || cursor >= len(m.playlist)-1 {
+		return m, nil
+	}
+
+	m.playlist[cursor], m.playlist[cursor+1] = m.playlist[cursor+1], m.playlist[cursor]
+
+	if m.currentIndex == cursor {
+		m.currentIndex = cursor + 1
+	} else if m.currentIndex == cursor+1 {
+		m.currentIndex = cursor
+	}
+
+	m.playlistWidget.SetCursor(cursor + 1)
+	m.updatePlaylist()
+
+	if m.mpvBackend.IsRunning() && m.playing {
+		paths := m.buildMPVPlaylistPaths()
+		playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
+		_ = m.mpvBackend.Stop()
+		return m, tea.Batch(
+			startPlaybackCmd(m.mpvBackend, paths, playIdx),
+			setStatus(&m, "Moved down", false),
+		)
+	}
+
+	return m, setStatus(&m, "Moved down", false)
+}
+
+func (m Model) savePlaylist() (tea.Model, tea.Cmd) {
+	if len(m.playlist) == 0 {
+		return m, setStatus(&m, "No tracks to save", true)
+	}
+
+	paths := make([]string, len(m.playlist))
+	for i, t := range m.playlist {
+		paths[i] = t.Path
+	}
+
+	ts := time.Now().Format("20060102-150405")
+	savePath := config.GetPlaylistSavePath(ts)
+
+	if err := playlist.Save(savePath, paths); err != nil {
+		return m, setStatus(&m, fmt.Sprintf("Save error: %v", err), true)
+	}
+
+	return m, setStatus(&m, fmt.Sprintf("Playlist saved to %s", savePath), false)
+}
+
+func (m Model) openLibraryEnqueueNext() (tea.Model, tea.Cmd) {
+	if !m.libraryReady || m.libraryDB == nil {
+		return m, setStatus(&m, "Library not ready", true)
+	}
+	m.activeModal = ModalLibrary
+	if m.libraryModal == nil {
+		m.libraryModal = modals.NewLibrary(m.styles, m.libraryDB)
+	}
+	m.libraryModal.SetArtists(m.artists)
+	m.libraryModal.LoadAlbumsForArtist()
+	m.libraryModal.SetSize(m.width, m.height)
+	m.libraryModal.SetEnqueueNextMode(true)
+	return m, clearKittyImagesCmdIf(m.imageProtocol)
 }

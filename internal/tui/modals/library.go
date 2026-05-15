@@ -13,10 +13,11 @@ import (
 )
 
 type LibraryModalMsg struct {
-	PlayTracks []models.Track
-	PlayIndex  int
-	Enqueue    []models.Track
-	Closed     bool
+	PlayTracks  []models.Track
+	PlayIndex   int
+	Enqueue     []models.Track
+	EnqueueNext []models.Track
+	Closed      bool
 }
 
 type FocusPane int
@@ -64,6 +65,7 @@ type Library struct {
 	filteredArtists []string
 	filteredAlbums  []string
 	filteredGenres  []string
+	enqueueNextMode bool
 }
 
 func NewLibrary(styles *config.ThemeStyles, libraryDB *db.LibraryDB) *Library {
@@ -72,6 +74,10 @@ func NewLibrary(styles *config.ThemeStyles, libraryDB *db.LibraryDB) *Library {
 		db:        libraryDB,
 		focusPane: FocusArtists,
 	}
+}
+
+func (l *Library) SetEnqueueNextMode(next bool) {
+	l.enqueueNextMode = next
 }
 
 func (l *Library) SetSize(width, height int) {
@@ -157,12 +163,14 @@ func (l *Library) Update(msg tea.Msg) tea.Cmd {
 				l.clearFilter()
 				return nil
 			}
+			l.enqueueNextMode = false
 			return func() tea.Msg { return LibraryModalMsg{Closed: true} }
 		case "q":
 			if l.filterText != "" {
 				l.clearFilter()
 				return nil
 			}
+			l.enqueueNextMode = false
 			return func() tea.Msg { return LibraryModalMsg{Closed: true} }
 		case "up", "k":
 			l.moveUp()
@@ -191,6 +199,11 @@ func (l *Library) Update(msg tea.Msg) tea.Cmd {
 			return l.handleEnter()
 		case "e":
 			return l.handleEnqueue()
+		case "E":
+			l.enqueueNextMode = true
+			cmd := l.handleEnqueue()
+			l.enqueueNextMode = false
+			return cmd
 		case "g":
 			l.toggleBrowseMode()
 		case "backspace":
@@ -321,52 +334,48 @@ func (l *Library) handleEnter() tea.Cmd {
 }
 
 func (l *Library) handleEnqueue() tea.Cmd {
+	var tracks []models.Track
+
 	switch l.focusPane {
 	case FocusTracks:
 		if len(l.albumTracks) > 0 && l.trackCursor < len(l.albumTracks) {
-			return func() tea.Msg {
-				return LibraryModalMsg{
-					Enqueue: []models.Track{l.albumTracks[l.trackCursor]},
-				}
-			}
+			tracks = []models.Track{l.albumTracks[l.trackCursor]}
 		}
 	case FocusAlbums:
 		if len(l.albums) > 0 && l.albumCursor < len(l.albums) && l.db != nil {
 			if len(l.albumTracks) > 0 {
-				return func() tea.Msg {
-					return LibraryModalMsg{Enqueue: l.albumTracks}
-				}
+				tracks = l.albumTracks
 			}
 		}
 	case FocusArtists:
 		if l.browseMode == BrowseGenres {
 			if len(l.genres) > 0 && l.genreCursor < len(l.genres) && l.db != nil && len(l.albums) > 0 {
-				var allTracks []models.Track
 				for _, album := range l.albums {
-					tracks, err := l.db.GetTracksByAlbum(album)
+					t, err := l.db.GetTracksByAlbum(album)
 					if err == nil {
-						allTracks = append(allTracks, tracks...)
-					}
-				}
-				if len(allTracks) > 0 {
-					return func() tea.Msg {
-						return LibraryModalMsg{Enqueue: allTracks}
+						tracks = append(tracks, t...)
 					}
 				}
 			}
 		} else {
 			if len(l.artists) > 0 && l.artistCursor < len(l.artists) && l.db != nil {
 				artist := l.artists[l.artistCursor]
-				tracks, err := l.db.GetTracksByArtist(artist)
-				if err == nil && len(tracks) > 0 {
-					return func() tea.Msg {
-						return LibraryModalMsg{Enqueue: tracks}
-					}
+				t, err := l.db.GetTracksByArtist(artist)
+				if err == nil && len(t) > 0 {
+					tracks = t
 				}
 			}
 		}
 	}
-	return nil
+
+	if len(tracks) == 0 {
+		return nil
+	}
+
+	if l.enqueueNextMode {
+		return func() tea.Msg { return LibraryModalMsg{EnqueueNext: tracks} }
+	}
+	return func() tea.Msg { return LibraryModalMsg{Enqueue: tracks} }
 }
 
 func (l *Library) moveDown() {

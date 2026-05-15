@@ -15,10 +15,11 @@ import (
 )
 
 type SearchModalMsg struct {
-	PlayTracks []models.Track
-	PlayIndex  int
-	Enqueue    []models.Track
-	Closed     bool
+	PlayTracks  []models.Track
+	PlayIndex   int
+	Enqueue     []models.Track
+	EnqueueNext []models.Track
+	Closed      bool
 }
 
 type Search struct {
@@ -93,6 +94,15 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 				return func() tea.Msg {
 					return SearchModalMsg{
 						Enqueue: []models.Track{s.results[s.cursor]},
+					}
+				}
+			}
+			return nil
+		case "E":
+			if len(s.results) > 0 && s.cursor < len(s.results) {
+				return func() tea.Msg {
+					return SearchModalMsg{
+						EnqueueNext: []models.Track{s.results[s.cursor]},
 					}
 				}
 			}

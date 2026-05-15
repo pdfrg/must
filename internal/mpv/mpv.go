@@ -467,6 +467,22 @@ func (m *MPVBackend) AppendToPlaylist(paths []string) error {
 	return nil
 }
 
+func (m *MPVBackend) InsertInPlaylist(paths []string, afterIndex int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.process == nil {
+		return fmt.Errorf("MPV not running")
+	}
+	insertAt := afterIndex + 1
+	for i, p := range paths {
+		cmd := IPCCommand{Command: []any{"loadfile", p, "insert-at", insertAt + i}}
+		if _, err := m.sendIPCCommandLocked(cmd); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *MPVBackend) GetAudioInfo() (*models.AudioInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

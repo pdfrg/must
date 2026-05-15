@@ -108,20 +108,31 @@ func (p *Playlist) Update(msg tea.Msg) tea.Cmd {
 
 func (p Playlist) View() string {
 	if len(p.tracks) == 0 {
-		return p.styles.MutedStyle.Render("  No tracks in playlist")
+		return p.styles.MutedStyle.Render(" No tracks in playlist")
 	}
 
 	headerBg := lightenColor(p.styles.Background, 0.30)
 	headerStyle := p.styles.MutedStyle.Background(lipgloss.Color(headerBg))
 
+	multiDisc := p.hasMultiDiscTracks()
+
+	var trkW int
+	var trkHeader string
+	if multiDisc {
+		trkW = 6
+		trkHeader = "Trk#"
+	} else {
+		trkW = 4
+		trkHeader = "#"
+	}
+
 	const (
-		numWidth  = 4
 		durWidth  = 8
 		yearWidth = 5
 		playingW  = 2
-		fixed     = playingW + numWidth + durWidth + yearWidth + 6
 	)
 
+	fixed := playingW + trkW + durWidth + yearWidth + 6
 	flexible := p.width - fixed
 	if flexible < 30 {
 		flexible = 30
@@ -132,7 +143,7 @@ func (p Playlist) View() string {
 
 	var b strings.Builder
 	b.WriteString(headerStyle.Render(fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s %-*s",
-		playingW, "", numWidth, "#", songW, "Song", artistW, "Artist", albumW, "Album", yearWidth, "Year", durWidth, "Time")))
+		playingW, "", trkW, trkHeader, songW, "Song", artistW, "Artist", albumW, "Album", yearWidth, "Year", durWidth, "Time")))
 	b.WriteString("\n")
 
 	vh := p.visibleHeight()
@@ -153,10 +164,7 @@ func (p Playlist) View() string {
 			playIcon = " "
 		}
 
-		num := fmt.Sprintf("%d", t.TrackNum)
-		if t.TrackNum == 0 {
-			num = fmt.Sprintf("%d", idx+1)
-		}
+		num := formatTrackNum(t, idx, multiDisc)
 
 		dur := formatPlaylistDuration(t.Duration)
 		year := ""
@@ -169,7 +177,7 @@ func (p Playlist) View() string {
 		album := ansi.Truncate(t.Album, albumW-1, "…")
 
 		row := fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s %-*s",
-			playingW, playIcon, numWidth, num, songW, song, artistW, artist, albumW, album, yearWidth, year, durWidth, dur)
+			playingW, playIcon, trkW, num, songW, song, artistW, artist, albumW, album, yearWidth, year, durWidth, dur)
 
 		switch {
 		case isCursor && isPlaying:
@@ -188,6 +196,28 @@ func (p Playlist) View() string {
 	}
 
 	return b.String()
+}
+
+func (p Playlist) hasMultiDiscTracks() bool {
+	for _, t := range p.tracks {
+		if t.DiscNum > 1 {
+			return true
+		}
+	}
+	return false
+}
+
+func formatTrackNum(t models.Track, idx int, multiDisc bool) string {
+	if multiDisc && t.DiscNum > 0 {
+		if t.TrackNum > 0 {
+			return fmt.Sprintf("%d/%d", t.DiscNum, t.TrackNum)
+		}
+		return fmt.Sprintf("%d/%d", t.DiscNum, idx+1)
+	}
+	if t.TrackNum > 0 {
+		return fmt.Sprintf("%d", t.TrackNum)
+	}
+	return fmt.Sprintf("%d", idx+1)
 }
 
 func (p *Playlist) visibleHeight() int {
