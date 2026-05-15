@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/key"
@@ -11,9 +12,15 @@ import (
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	if cmd := m.nowPlaying.Update(msg); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		return m.handleWindowSize(msg)
+		return m.handleWindowSize(msg, cmds)
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
@@ -37,6 +44,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeModal = ModalNone
 		return m, nil
 
+	case modals.GalleryMsg:
+		m.activeModal = ModalNone
+		m.galleryModal = nil
+		return m, nil
+
+	case modals.GalleryImageLoadedMsg:
+		if m.galleryModal != nil {
+			cmd := m.galleryModal.HandleImageLoaded(msg)
+			return m, cmd
+		}
+		return m, nil
+
+	case modals.GalleryRenderImageMsg:
+		return m, tea.Raw(fmt.Sprintf("\x1b[%d;%dH%s", msg.Row, msg.Col, msg.ImageStr))
+
 	case audioInfoMsg:
 		m.audioInfo = msg.info
 		return m, nil
@@ -46,6 +68,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case renderAlbumArtMsg:
 		return m.handleRenderAlbumArt(msg)
+
+	case onlineArtFetchedMsg:
+		if msg.err == nil && msg.trackPath != "" && m.imageRenderer != nil {
+			if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+				if m.playlist[m.currentIndex].Path == msg.trackPath {
+					return m, loadAlbumArtCmd(m.imageRenderer, msg.trackPath)
+				}
+			}
+		}
+		return m, nil
+
+	case notificationSentMsg:
+		m.notifSentForSong = true
+		return m, nil
 
 	case themeChangedMsg:
 		return m.handleThemeChanged(msg)
@@ -60,18 +96,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case artistBioFetchedMsg:
-		m.artistBioLoading = false
-		if msg.err != nil || msg.summary == nil {
-			m.artistBio = "Artist bio not found"
-		} else {
-			m.artistBio = msg.summary.Extract
-			m.artistBioTitle = msg.summary.Title
-			if msg.summary.URL != "" {
-				m.artistBioURL = msg.summary.URL
+	case artistInfoFetchedMsg:
+		m.artistInfoLoading = false
+		if msg.eventID != m.artistInfoEventID {
+			return m, nil
+		}
+		if msg.info != nil {
+			m.artistInfo = msg.info
+			var artist string
+			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+				artist = m.playlist[m.currentIndex].Artist
+			}
+			if artist != "" {
+				m.artistCache[strings.ToLower(artist)] = msg.info
 			}
 		}
 		return m, nil
+
+	case restorePlaybackMsg:
+		m.playing = true
+		m.paused = false
+		if msg.position > 0 && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+			m.songStartTime = time.Now().Add(-time.Duration(msg.position * float64(time.Second)))
+		}
+		cmds := []tea.Cmd{m.trackChangedCmds()}
+		cmds = append(cmds, setStatus(&m, "Resumed playback", false))
+		return m, tea.Batch(cmds...)
 
 	case statusClearMsg:
 		if msg.seq == m.statusSeq {
@@ -91,7 +141,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	return m, nil
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) handleThemeChanged(msg themeChangedMsg) (tea.Model, tea.Cmd) {
@@ -116,11 +166,12 @@ func (m Model) handleThemeChanged(msg themeChangedMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleWindowSize(msg tea.WindowSizeMsg, priorCmds []tea.Cmd) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
 	m.header.SetWidth(m.width)
-	return m, renderAlbumArtAfterDelay()
+	priorCmds = append(priorCmds, renderAlbumArtAfterDelay())
+	return m, tea.Batch(priorCmds...)
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -131,6 +182,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keyMap.Quit):
 		var cmds []tea.Cmd
+		if m.playing && m.currentIndex >= 0 && len(m.playlist) > 0 {
+			SavePlaybackState(m.playlist, m.currentIndex, m.playbackPos.TimePos, m.shuffle, m.repeatMode)
+		} else {
+			ClearPlaybackState()
+		}
 		if m.mpvBackend != nil {
 			_ = m.mpvBackend.Stop()
 		}
@@ -176,6 +232,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.Library):
 		return m.openLibrary()
 
+	case key.Matches(msg, m.keyMap.Enqueue):
+		return m.openLibrary()
+
 	case key.Matches(msg, m.keyMap.Help):
 		return m.openHelp()
 
@@ -202,12 +261,35 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.ArtistBio):
 		return m.openArtistBio()
 
+	case key.Matches(msg, m.keyMap.Gallery):
+		return m.openGallery()
+
 	case key.Matches(msg, m.keyMap.Enter):
-		if len(m.playlist) > 0 && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+		if len(m.playlist) > 0 {
 			cursor := m.playlistWidget.GetCursor()
 			if cursor >= 0 && cursor < len(m.playlist) {
+				if m.playing && m.mpvBackend.IsRunning() {
+					mpvIdx := m.playlistIndexToMPVIndex(cursor)
+					if mpvIdx >= 0 {
+						_ = m.mpvBackend.PlaylistPlayIndex(mpvIdx)
+					}
+				}
+				if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+					track := m.playlist[m.currentIndex]
+					m.prevTrack = &track
+					m.prevSongStartTime = m.songStartTime
+					m.prevScrobbleEligible = m.scrobbleEligible
+				}
 				m.currentIndex = cursor
-				return m, m.playTrack(cursor)
+				if !m.mpvBackend.IsRunning() {
+					paths := m.buildMPVPlaylistPaths()
+					playIdx := m.playlistIndexToMPVIndex(cursor)
+					return m, tea.Batch(
+						startPlaybackCmd(m.mpvBackend, paths, playIdx),
+						m.trackChangedCmds(),
+					)
+				}
+				return m, m.trackChangedCmds()
 			}
 		}
 		return m, nil
@@ -251,6 +333,11 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			cmd := m.helpModal.Update(msg)
 			return m, cmd
 		}
+	case ModalGallery:
+		if m.galleryModal != nil {
+			cmd := m.galleryModal.Update(msg)
+			return m, cmd
+		}
 	}
 	return m, nil
 }
@@ -269,13 +356,36 @@ func (m Model) handleLibraryModalMsg(msg modals.LibraryModalMsg) (tea.Model, tea
 		}
 		m.updatePlaylist()
 		m.activeModal = ModalNone
-		return m, m.playTrack(msg.PlayIndex)
+		paths := m.buildMPVPlaylistPaths()
+		playIdx := m.playlistIndexToMPVIndex(msg.PlayIndex)
+		return m, tea.Batch(
+			startPlaybackCmd(m.mpvBackend, paths, playIdx),
+			m.trackChangedCmds(),
+		)
 	}
 
 	if len(msg.Enqueue) > 0 {
+		wasPlaying := m.playing && m.mpvBackend.IsRunning()
 		m.playlist = append(m.playlist, msg.Enqueue...)
 		m.updatePlaylist()
 		m.activeModal = ModalNone
+
+		if wasPlaying {
+			newPaths := make([]string, len(msg.Enqueue))
+			for i, t := range msg.Enqueue {
+				newPaths[i] = t.Path
+			}
+			_ = m.mpvBackend.AppendToPlaylist(newPaths)
+		} else if len(m.playlist) > 0 {
+			paths := m.buildMPVPlaylistPaths()
+			playIdx := m.playlistIndexToMPVIndex(len(m.playlist) - len(msg.Enqueue))
+			return m, tea.Batch(
+				startPlaybackCmd(m.mpvBackend, paths, playIdx),
+				m.trackChangedCmds(),
+				setStatus(&m, fmt.Sprintf("Enqueued %d track(s) — playing", len(msg.Enqueue)), false),
+			)
+		}
+
 		return m, setStatus(&m, fmt.Sprintf("Enqueued %d track(s)", len(msg.Enqueue)), false)
 	}
 
@@ -298,14 +408,37 @@ func (m Model) handleSearchModalMsg(msg modals.SearchModalMsg) (tea.Model, tea.C
 		m.updatePlaylist()
 		m.activeModal = ModalNone
 		m.searchModal.Blur()
-		return m, m.playTrack(msg.PlayIndex)
+		paths := m.buildMPVPlaylistPaths()
+		playIdx := m.playlistIndexToMPVIndex(msg.PlayIndex)
+		return m, tea.Batch(
+			startPlaybackCmd(m.mpvBackend, paths, playIdx),
+			m.trackChangedCmds(),
+		)
 	}
 
 	if len(msg.Enqueue) > 0 {
+		wasPlaying := m.playing && m.mpvBackend.IsRunning()
 		m.playlist = append(m.playlist, msg.Enqueue...)
 		m.updatePlaylist()
 		m.activeModal = ModalNone
 		m.searchModal.Blur()
+
+		if wasPlaying {
+			newPaths := make([]string, len(msg.Enqueue))
+			for i, t := range msg.Enqueue {
+				newPaths[i] = t.Path
+			}
+			_ = m.mpvBackend.AppendToPlaylist(newPaths)
+		} else if len(m.playlist) > 0 {
+			paths := m.buildMPVPlaylistPaths()
+			playIdx := m.playlistIndexToMPVIndex(len(m.playlist) - len(msg.Enqueue))
+			return m, tea.Batch(
+				startPlaybackCmd(m.mpvBackend, paths, playIdx),
+				m.trackChangedCmds(),
+				setStatus(&m, "Track enqueued — playing", false),
+			)
+		}
+
 		return m, setStatus(&m, "Track enqueued", false)
 	}
 
@@ -361,10 +494,26 @@ func (m Model) openHelp() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) openGallery() (tea.Model, tea.Cmd) {
+	if m.artistInfo == nil || len(m.artistInfo.GalleryURLs) == 0 {
+		return m, setStatus(&m, "No gallery images available", true)
+	}
+
+	m.activeModal = ModalGallery
+	m.galleryModal = modals.NewGallery(
+		m.styles, m.artistInfo.GalleryURLs, m.artistInfo.GallerySource,
+		m.width, m.height, m.cellRatio, m.fontW, m.fontH,
+	)
+	m.galleryModal.SetProtocol(m.imageProtocol)
+	return m, m.galleryModal.PrefetchImages()
+}
+
 func (m Model) openArtistBio() (tea.Model, tea.Cmd) {
 	var artist string
+	var album string
 	if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
 		artist = m.playlist[m.currentIndex].Artist
+		album = m.playlist[m.currentIndex].Album
 	} else if len(m.artists) > 0 {
 		artist = m.artists[0]
 	}
@@ -373,25 +522,65 @@ func (m Model) openArtistBio() (tea.Model, tea.Cmd) {
 	}
 
 	m.bottomViewMode = BottomArtistBio
-	m.artistBio = ""
-	m.artistBioTitle = artist
-	m.artistBioURL = ""
-	m.artistBioLoading = true
+	m.artistInfo = nil
+	m.artistInfoLoading = true
+	m.artistInfoEventID++
 
-	return m, fetchArtistBioCmd(artist)
+	return m, fetchArtistInfoCmd(m.cfg, artist, album, m.artistInfoEventID, m.artistCache)
 }
 
 func (m Model) deleteCurrentTrack() (tea.Model, tea.Cmd) {
 	cursor := m.playlistWidget.GetCursor()
 	if len(m.playlist) > 0 && cursor >= 0 && cursor < len(m.playlist) {
+		mpvIdx := m.playlistIndexToMPVIndex(cursor)
+		isCurrentTrack := cursor == m.currentIndex
+
 		m.playlist = append(m.playlist[:cursor], m.playlist[cursor+1:]...)
-		if cursor >= len(m.playlist) {
+		if cursor >= len(m.playlist) && len(m.playlist) > 0 {
 			m.playlistWidget.SetCursor(len(m.playlist) - 1)
 		}
 		if m.currentIndex >= len(m.playlist) {
 			m.currentIndex = len(m.playlist) - 1
+		} else if cursor < m.currentIndex {
+			m.currentIndex--
 		}
+
+		if m.shuffle && len(m.shuffleOrder) > 0 {
+			newOrder := make([]int, 0, len(m.playlist))
+			for _, idx := range m.shuffleOrder {
+				if idx == cursor {
+					continue
+				}
+				if idx > cursor {
+					idx--
+				}
+				newOrder = append(newOrder, idx)
+			}
+			m.shuffleOrder = newOrder
+		}
+
+		if m.mpvBackend.IsRunning() && mpvIdx >= 0 {
+			_ = m.mpvBackend.RemoveFromPlaylist(mpvIdx)
+		}
+
 		m.updatePlaylist()
+
+		if isCurrentTrack && m.mpvBackend.IsRunning() && len(m.playlist) > 0 {
+			newMPVIdx := m.playlistIndexToMPVIndex(m.currentIndex)
+			if newMPVIdx >= 0 {
+				_ = m.mpvBackend.PlaylistPlayIndex(newMPVIdx)
+			}
+			return m, tea.Batch(setStatus(&m, "Track removed", false), m.trackChangedCmds())
+		}
+
+		if len(m.playlist) == 0 {
+			m.playing = false
+			m.paused = false
+			if m.mpvBackend != nil {
+				_ = m.mpvBackend.Stop()
+			}
+		}
+
 		return m, setStatus(&m, "Track removed", false)
 	}
 	return m, nil
@@ -400,6 +589,7 @@ func (m Model) deleteCurrentTrack() (tea.Model, tea.Cmd) {
 func (m Model) clearPlaylist() (tea.Model, tea.Cmd) {
 	m.playlist = nil
 	m.currentIndex = -1
+	m.shuffleOrder = nil
 	m.playing = false
 	m.paused = false
 	if m.mpvBackend != nil {
