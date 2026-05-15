@@ -2,136 +2,219 @@ package widgets
 
 import (
 	"fmt"
+	"strings"
 
-	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/models"
 )
 
 type Playlist struct {
-	table  table.Model
-	styles *config.ThemeStyles
-	width  int
-	height int
+	styles     *config.ThemeStyles
+	width      int
+	height     int
+	tracks     []models.Track
+	currentIdx int
+	cursor     int
+	scrollOff  int
 }
 
 func NewPlaylist(styles *config.ThemeStyles) *Playlist {
-	columns := []table.Column{
-		{Title: "#", Width: 3},
-		{Title: "Song", Width: 30},
-		{Title: "Artist", Width: 20},
-		{Title: "Duration", Width: 8},
-		{Title: "Album", Width: 25},
-		{Title: "Year", Width: 5},
-	}
-
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithHeight(10),
-		table.WithWidth(100),
-	)
-
-	headerBg := lightenColor(styles.Background, 0.30)
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		Bold(false).
-		Foreground(styles.MutedStyle.GetForeground()).
-		Background(lipgloss.Color(headerBg))
-	s.Selected = s.Selected.
-		Foreground(styles.CursorStyle.GetForeground()).
-		Bold(true)
-	t.SetStyles(s)
-
 	return &Playlist{
-		table:  t,
-		styles: styles,
+		styles:     styles,
+		currentIdx: -1,
+		cursor:     0,
 	}
 }
 
 func (p *Playlist) SetSize(width, height int) {
 	p.width = width
 	p.height = height
-	p.table.SetWidth(width)
-	p.table.SetHeight(height)
-
-	const (
-		numWidth   = 3
-		durWidth   = 8
-		yearWidth  = 5
-		fixedTotal = numWidth + durWidth + yearWidth
-		numCols    = 6
-		cellPad    = 2 * numCols
-	)
-
-	flexible := width - fixedTotal - cellPad
-	if flexible < 30 {
-		flexible = 30
-	}
-	songCol := flexible * 40 / 100
-	artistCol := flexible * 25 / 100
-	albumCol := flexible - songCol - artistCol
-
-	p.table.SetColumns([]table.Column{
-		{Title: "#", Width: numWidth},
-		{Title: "Song", Width: songCol},
-		{Title: "Artist", Width: artistCol},
-		{Title: "Duration", Width: durWidth},
-		{Title: "Album", Width: albumCol},
-		{Title: "Year", Width: yearWidth},
-	})
 }
 
 func (p *Playlist) UpdateStyles(styles *config.ThemeStyles) {
 	p.styles = styles
-	headerBg := lightenColor(styles.Background, 0.30)
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		Bold(false).
-		Foreground(styles.MutedStyle.GetForeground()).
-		Background(lipgloss.Color(headerBg))
-	s.Selected = s.Selected.
-		Foreground(styles.CursorStyle.GetForeground()).
-		Bold(true)
-	p.table.SetStyles(s)
 }
 
-func (p *Playlist) SetRows(rows []table.Row) {
-	p.table.SetRows(rows)
+func (p *Playlist) SetRows(rows []TrackRow) {
+	if len(rows) == 0 {
+		p.tracks = nil
+		return
+	}
+	p.tracks = make([]models.Track, len(rows))
+	for i, r := range rows {
+		p.tracks[i] = r.Track
+	}
+}
+
+func (p *Playlist) SetCurrentIndex(idx int) {
+	p.currentIdx = idx
 }
 
 func (p *Playlist) SetCursor(cursor int) {
-	p.table.SetCursor(cursor)
+	if cursor < 0 {
+		cursor = 0
+	}
+	if p.tracks != nil && cursor >= len(p.tracks) {
+		cursor = len(p.tracks) - 1
+	}
+	p.cursor = cursor
+	p.ensureVisible()
 }
 
 func (p *Playlist) GetCursor() int {
-	return p.table.Cursor()
+	return p.cursor
 }
 
 func (p *Playlist) Update(msg tea.Msg) tea.Cmd {
-	var cmd tea.Cmd
-	p.table, cmd = p.table.Update(msg)
-	return cmd
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "up", "k":
+			if p.cursor > 0 {
+				p.cursor--
+				p.ensureVisible()
+			}
+		case "down", "j":
+			if p.tracks != nil && p.cursor < len(p.tracks)-1 {
+				p.cursor++
+				p.ensureVisible()
+			}
+		case "pgup":
+			ps := max(p.visibleHeight()-1, 1)
+			p.cursor = max(p.cursor-ps, 0)
+			p.ensureVisible()
+		case "pgdown":
+			if p.tracks == nil {
+				return nil
+			}
+			ps := max(p.visibleHeight()-1, 1)
+			p.cursor = min(p.cursor+ps, len(p.tracks)-1)
+			p.ensureVisible()
+		case "home":
+			p.cursor = 0
+			p.scrollOff = 0
+		case "end":
+			if p.tracks != nil {
+				p.cursor = len(p.tracks) - 1
+				p.ensureVisible()
+			}
+		}
+	}
+	return nil
 }
 
 func (p Playlist) View() string {
-	return p.table.View()
-}
+	if len(p.tracks) == 0 {
+		return p.styles.MutedStyle.Render("  No tracks in playlist")
+	}
 
-func BuildPlaylistRows(tracks []models.Track, currentIndex int) []table.Row {
-	rows := make([]table.Row, len(tracks))
-	for i, t := range tracks {
+	headerBg := lightenColor(p.styles.Background, 0.30)
+	headerStyle := p.styles.MutedStyle.Background(lipgloss.Color(headerBg))
+
+	const (
+		numWidth  = 4
+		durWidth  = 8
+		yearWidth = 5
+		playingW  = 2
+		fixed     = playingW + numWidth + durWidth + yearWidth + 6
+	)
+
+	flexible := p.width - fixed
+	if flexible < 30 {
+		flexible = 30
+	}
+	songW := flexible * 35 / 100
+	artistW := flexible * 25 / 100
+	albumW := flexible - songW - artistW
+
+	var b strings.Builder
+	b.WriteString(headerStyle.Render(fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s %-*s",
+		playingW, "", numWidth, "#", songW, "Song", artistW, "Artist", albumW, "Album", yearWidth, "Year", durWidth, "Time")))
+	b.WriteString("\n")
+
+	vh := p.visibleHeight()
+	for i := 0; i < vh; i++ {
+		idx := p.scrollOff + i
+		if idx >= len(p.tracks) {
+			break
+		}
+
+		t := p.tracks[idx]
+		isPlaying := idx == p.currentIdx
+		isCursor := idx == p.cursor
+
+		var playIcon string
+		if isPlaying {
+			playIcon = "▶"
+		} else {
+			playIcon = " "
+		}
+
 		num := fmt.Sprintf("%d", t.TrackNum)
 		if t.TrackNum == 0 {
-			num = fmt.Sprintf("%d", i+1)
+			num = fmt.Sprintf("%d", idx+1)
 		}
+
+		dur := formatPlaylistDuration(t.Duration)
 		year := ""
-		if t.Year > 0 {
+		if t.Year != 0 {
 			year = fmt.Sprintf("%d", t.Year)
 		}
-		dur := formatPlaylistDuration(t.Duration)
-		rows[i] = table.Row{num, t.Title, t.Artist, dur, t.Album, year}
+
+		song := ansi.Truncate(t.Title, songW-1, "…")
+		artist := ansi.Truncate(t.Artist, artistW-1, "…")
+		album := ansi.Truncate(t.Album, albumW-1, "…")
+
+		row := fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s %-*s",
+			playingW, playIcon, numWidth, num, songW, song, artistW, artist, albumW, album, yearWidth, year, durWidth, dur)
+
+		switch {
+		case isCursor && isPlaying:
+			b.WriteString(p.styles.CursorStyle.Bold(true).Render(row))
+		case isCursor:
+			b.WriteString(p.styles.CursorStyle.Render(row))
+		case isPlaying:
+			b.WriteString(p.styles.AccentStyle.Render(row))
+		default:
+			b.WriteString(p.styles.ForegroundStyle.Render(row))
+		}
+
+		if i < vh-1 {
+			b.WriteString("\n")
+		}
+	}
+
+	return b.String()
+}
+
+func (p *Playlist) visibleHeight() int {
+	return max(p.height-1, 1)
+}
+
+func (p *Playlist) ensureVisible() {
+	vh := p.visibleHeight()
+	if p.cursor < p.scrollOff {
+		p.scrollOff = p.cursor
+	}
+	if p.cursor >= p.scrollOff+vh {
+		p.scrollOff = p.cursor - vh + 1
+	}
+	if p.scrollOff < 0 {
+		p.scrollOff = 0
+	}
+}
+
+type TrackRow struct {
+	Track models.Track
+}
+
+func BuildPlaylistRows(tracks []models.Track, currentIndex int) []TrackRow {
+	rows := make([]TrackRow, len(tracks))
+	for i, t := range tracks {
+		rows[i] = TrackRow{Track: t}
 	}
 	return rows
 }
@@ -148,18 +231,4 @@ func formatPlaylistDuration(seconds float64) string {
 		return fmt.Sprintf("%d:%02d:%02d", h, m%60, s)
 	}
 	return fmt.Sprintf("%d:%02d", m, s)
-}
-
-func lightenColor(hex string, factor float64) string {
-	if hex == "default" || len(hex) != 7 || hex[0] != '#' {
-		return hex
-	}
-	var r, g, b int
-	_, _ = fmt.Sscanf(hex[1:3], "%x", &r)
-	_, _ = fmt.Sscanf(hex[3:5], "%x", &g)
-	_, _ = fmt.Sscanf(hex[5:7], "%x", &b)
-	r = min(255, int(float64(r)*(1+factor)))
-	g = min(255, int(float64(g)*(1+factor)))
-	b = min(255, int(float64(b)*(1+factor)))
-	return fmt.Sprintf("#%02x%02x%02x", r, g, b)
 }
