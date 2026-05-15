@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -171,6 +172,11 @@ func (m Model) renderModal() string {
 			m.helpModal.SetSize(m.width, m.height)
 			return m.helpModal.View()
 		}
+	case ModalGallery:
+		if m.galleryModal != nil {
+			m.galleryModal.SetSize(m.width, m.height)
+			return m.galleryModal.View()
+		}
 	}
 	return ""
 }
@@ -262,51 +268,96 @@ func (m Model) renderSyncedLyrics(height int) string {
 }
 
 func (m Model) renderArtistBio(height int) string {
-	if m.artistBioLoading {
-		return m.styles.MutedStyle.Render(" Loading artist bio...")
+	if m.artistInfoLoading {
+		return m.styles.MutedStyle.Render(" Loading artist info...")
 	}
 
+	if m.artistInfo == nil {
+		return m.styles.MutedStyle.Render(" No artist info available")
+	}
+
+	info := m.artistInfo
 	var b strings.Builder
 
-	if m.artistBioTitle != "" {
-		b.WriteString(m.styles.Header.Render(m.artistBioTitle))
+	var title string
+	if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+		title = m.playlist[m.currentIndex].Artist
+	}
+	if title != "" {
+		b.WriteString(m.styles.Header.Render(title))
 		b.WriteString("\n")
 	}
 
-	if m.artistBio == "" {
-		b.WriteString(m.styles.MutedStyle.Render(" No bio available"))
-		return b.String()
-	}
-
-	words := strings.Fields(m.artistBio)
 	lineWidth := m.width - 4
 	if lineWidth < 20 {
 		lineWidth = 20
 	}
-
-	var line string
 	lineCount := 0
-	for _, w := range words {
-		test := line + " " + w
-		if lipgloss.Width(test) > lineWidth && line != "" {
+	maxBioLines := height - 2
+	if info.Discography != "" {
+		maxBioLines = max(5, height/2-1)
+	}
+
+	if info.Bio != "" && info.Bio != "No biography found." {
+		words := strings.Fields(info.Bio)
+		var line string
+		for _, w := range words {
+			test := line + " " + w
+			if lipgloss.Width(test) > lineWidth && line != "" {
+				b.WriteString(m.styles.ForegroundStyle.Render(" " + strings.TrimSpace(line)))
+				b.WriteString("\n")
+				line = w
+				lineCount++
+				if lineCount >= maxBioLines {
+					break
+				}
+			} else {
+				line = test
+			}
+		}
+		if lineCount < maxBioLines && line != "" {
 			b.WriteString(m.styles.ForegroundStyle.Render(" " + strings.TrimSpace(line)))
-			b.WriteString("\n")
-			line = w
 			lineCount++
+		}
+	} else if info.Bio == "No biography found." {
+		b.WriteString(m.styles.MutedStyle.Render(" No bio available"))
+		lineCount++
+	}
+
+	if info.BioSource != "" {
+		b.WriteString("\n")
+		b.WriteString(m.styles.MutedStyle.Render(" Source: " + info.BioSource))
+		lineCount++
+	}
+
+	if info.Discography != "" && lineCount < height-3 {
+		b.WriteString("\n")
+		b.WriteString(m.styles.AccentStyle.Render(" Discography"))
+		if info.DiscoSource != "" {
+			b.WriteString(m.styles.MutedStyle.Render(" (" + info.DiscoSource + ")"))
+		}
+		b.WriteString("\n")
+
+		discoLines := strings.Split(info.Discography, "\n")
+		for _, dl := range discoLines {
 			if lineCount >= height-2 {
 				break
 			}
-		} else {
-			line = test
+			b.WriteString(m.styles.ForegroundStyle.Render(" " + dl))
+			b.WriteString("\n")
+			lineCount++
 		}
 	}
-	if lineCount < height-2 && line != "" {
-		b.WriteString(m.styles.ForegroundStyle.Render(" " + strings.TrimSpace(line)))
+
+	if info.PageURL != "" && lineCount < height-1 {
+		b.WriteString("\n")
+		b.WriteString(m.styles.MutedStyle.Render(" " + info.PageURL))
 	}
 
-	if m.artistBioURL != "" {
+	if len(info.GalleryURLs) > 0 {
 		b.WriteString("\n")
-		b.WriteString(m.styles.MutedStyle.Render(" " + m.artistBioURL))
+		galleryHint := fmt.Sprintf(" %d images — press I for gallery", len(info.GalleryURLs))
+		b.WriteString(m.styles.MutedStyle.Render(galleryHint))
 	}
 
 	return b.String()
