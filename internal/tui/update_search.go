@@ -2,11 +2,9 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
-	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
-	"github.com/pdfrg/must/internal/models"
+	"github.com/pdfrg/must/internal/tui/modals"
 )
 
 func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
@@ -21,6 +19,10 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 
 	m.loadCLIPaths()
 
+	if m.searchModal != nil {
+		m.searchModal = modals.NewSearch(m.styles, m.libraryDB)
+	}
+
 	if m.randomMode && len(m.paths) == 0 && m.libraryDB != nil {
 		return m.handleRandomPlay()
 	}
@@ -31,6 +33,10 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.artists = artists
+
+	if m.libraryModal != nil {
+		m.libraryModal.SetArtists(artists)
+	}
 
 	if msg.result != nil {
 		r := msg.result
@@ -44,112 +50,42 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 	return m, setStatus(&m, m.scanMsg, false)
 }
 
-func (m Model) openSearch() (tea.Model, tea.Cmd) {
-	m.searching = true
-	m.searchInput.SetValue("")
-	m.searchResults = nil
-	m.searchCursor = 0
-	m.searchScrollOffset = 0
-	cmd := m.searchInput.Focus()
-	m.searchInput.SetWidth(min(m.width-4, 80))
-	return m, cmd
-}
-
-func (m Model) closeSearch() (tea.Model, tea.Cmd) {
-	m.searching = false
-	m.searchInput.Blur()
-	m.searchInput.SetValue("")
-	m.searchResults = nil
-	m.searchCursor = 0
-	m.searchScrollOffset = 0
-	return m, nil
-}
-
-func (m Model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keyMap.Escape), key.Matches(msg, m.keyMap.Quit):
-		return m.closeSearch()
-
-	case key.Matches(msg, m.keyMap.Enter):
-		if len(m.searchResults) > 0 && m.searchCursor < len(m.searchResults) {
-			track := m.searchResults[m.searchCursor]
-			m.playlist = []models.Track{track}
-			for _, t := range m.searchResults {
-				if t.Path != track.Path {
-					m.playlist = append(m.playlist, t)
-				}
-			}
-			m.searching = false
-			m.searchInput.Blur()
-			return m, m.playTrack(0)
-		}
-		return m, nil
-
-	case key.Matches(msg, m.keyMap.CursorDown):
-		if len(m.searchResults) > 0 && m.searchCursor < len(m.searchResults)-1 {
-			m.searchCursor++
-			maxVisible := m.height - 5
-			if maxVisible < 1 {
-				maxVisible = 1
-			}
-			if m.searchCursor >= m.searchScrollOffset+maxVisible {
-				m.searchScrollOffset = m.searchCursor - maxVisible + 1
-			}
-		}
-		return m, nil
-
-	case key.Matches(msg, m.keyMap.CursorUp):
-		if m.searchCursor > 0 {
-			m.searchCursor--
-			if m.searchCursor < m.searchScrollOffset {
-				m.searchScrollOffset = m.searchCursor
-			}
-		}
+func (m Model) handleRandomPlay() (tea.Model, tea.Cmd) {
+	if m.libraryDB == nil {
 		return m, nil
 	}
 
-	var cmd tea.Cmd
-	m.searchInput, cmd = m.searchInput.Update(msg)
+	artists, err := m.libraryDB.GetAllArtists()
+	if err != nil || len(artists) == 0 {
+		return m, setStatus(&m, "No artists in library", true)
+	}
+	m.artists = artists
 
-	if m.libraryDB != nil && m.searchInput.Value() != "" {
-		return m, tea.Batch(cmd, m.executeSearch(m.searchInput.Value()))
+	randArtistIdx := randInt(len(artists))
+	artist := artists[randArtistIdx]
+
+	albums, err := m.libraryDB.GetAlbumsByArtist(artist)
+	if err != nil || len(albums) == 0 {
+		tracks, err := m.libraryDB.GetTracksByArtist(artist)
+		if err != nil || len(tracks) == 0 {
+			return m, setStatus(&m, "No tracks found for random artist", true)
+		}
+		m.playlist = tracks
 	} else {
-		m.searchResults = nil
-		m.searchCursor = 0
-		m.searchScrollOffset = 0
-	}
+		randAlbumIdx := randInt(len(albums))
+		album := albums[randAlbumIdx]
 
-	return m, cmd
-}
-
-func (m Model) executeSearch(query string) tea.Cmd {
-	return func() tea.Msg {
-		ftsQuery := buildFTSQuery(query)
-		results, err := m.libraryDB.SearchFTS(ftsQuery)
-		if err != nil {
-			results, err = m.libraryDB.SearchLike(query)
-			if err != nil {
-				return searchResultsMsg{results: nil}
-			}
+		tracks, err := m.libraryDB.GetTracksByArtistAndAlbum(artist, album)
+		if err != nil || len(tracks) == 0 {
+			return m, setStatus(&m, "No tracks found for random album", true)
 		}
-		return searchResultsMsg{results: results}
-	}
-}
-
-func buildFTSQuery(input string) string {
-	input = strings.TrimSpace(input)
-	if input == "" {
-		return ""
+		m.playlist = tracks
 	}
 
-	if strings.Contains(input, ":") || strings.Contains(input, "*") {
-		return input
+	if m.shuffle {
+		m.shuffleOrder = shuffleIndices(len(m.playlist))
 	}
 
-	terms := strings.Fields(input)
-	parts := make([]string, len(terms))
-	for i, t := range terms {
-		parts[i] = t + "*"
-	}
-	return strings.Join(parts, " ")
+	m.updatePlaylist()
+	return m, m.playTrack(0)
 }

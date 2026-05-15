@@ -28,10 +28,6 @@ type audioInfoMsg struct {
 	info *models.AudioInfo
 }
 
-type searchResultsMsg struct {
-	results []models.Track
-}
-
 type imageLoadedMsg struct {
 	imageData []byte
 	err       error

@@ -1,37 +1,41 @@
 package tui
 
 import (
+	"image"
 	"time"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	termimg "github.com/blacktop/go-termimg"
+	"github.com/pdfrg/must/assets"
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/db"
-	"github.com/pdfrg/must/internal/image"
+	pkgimage "github.com/pdfrg/must/internal/image"
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/mpv"
 	"github.com/pdfrg/must/internal/scanner"
+	"github.com/pdfrg/must/internal/tui/modals"
+	"github.com/pdfrg/must/internal/tui/widgets"
 )
 
-type ViewMode int
+type BottomViewMode int
 
 const (
-	ViewLibrary ViewMode = iota
-	ViewPlaylist
-	ViewLyrics
-	ViewSyncedLyrics
-	ViewArtistBio
-	ViewHelp
+	BottomPlaylist BottomViewMode = iota
+	BottomLyrics
+	BottomSyncedLyrics
+	BottomArtistBio
+	BottomOff
+	BottomViewModeCount
 )
 
-type FocusPane int
+type ActiveModal int
 
 const (
-	FocusArtists FocusPane = iota
-	FocusAlbums
-	FocusTracks
+	ModalNone ActiveModal = iota
+	ModalLibrary
+	ModalSearch
+	ModalHelp
 )
 
 type Model struct {
@@ -57,8 +61,6 @@ type Model struct {
 
 	playing bool
 	paused  bool
-	volume  float64
-	muted   bool
 
 	playbackPos mpv.PlaybackPosition
 	audioInfo   *models.AudioInfo
@@ -67,23 +69,10 @@ type Model struct {
 	scanMsg      string
 	scanResult   *scanner.ScanResult
 
-	viewMode  ViewMode
-	focusPane FocusPane
+	bottomViewMode BottomViewMode
+	activeModal    ActiveModal
 
-	artists     []string
-	albums      []string
-	albumTracks []models.Track
-
-	artistCursor       int
-	artistScrollOffset int
-	albumCursor        int
-	albumScrollOffset  int
-
-	searching          bool
-	searchInput        textinput.Model
-	searchResults      []models.Track
-	searchCursor       int
-	searchScrollOffset int
+	artists []string
 
 	lyrics        string
 	syncedLyrics  []api.SyncedLyric
@@ -98,12 +87,20 @@ type Model struct {
 	statusIsErr bool
 	statusSeq   int
 
-	imageRenderer  *image.Renderer
+	imageRenderer  *pkgimage.Renderer
+	logoImage      image.Image
 	imageProtocol  termimg.Protocol
+	cellRatio      float64
+	fontW          int
+	fontH          int
 	albumArtStr    string
 	albumArtWidth  int
 	albumArtHeight int
 	albumArtLoaded bool
+	logoArtStr     string
+	logoArtWidth   int
+	logoArtHeight  int
+	logoArtLoaded  bool
 
 	songStartTime        time.Time
 	scrobbleEligible     bool
@@ -114,15 +111,19 @@ type Model struct {
 	layoutOverride string
 	sleepTimer     time.Duration
 	sleepRemaining time.Duration
+
+	header         *widgets.Header
+	nowPlaying     *widgets.NowPlaying
+	playlistWidget *widgets.Playlist
+	footer         *widgets.Footer
+
+	libraryModal *modals.Library
+	searchModal  *modals.Search
+	helpModal    *modals.Help
 }
 
 func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool) Model {
 	styles := config.NewThemeStyles(theme, cfg.TransparentBackground, cfg.DisableTheme, cfg.TerminalPalette)
-
-	si := textinput.New()
-	si.Prompt = "/"
-	si.Placeholder = "artist:radiohead year:1997"
-	si.CharLimit = 200
 
 	m := Model{
 		cfg:            cfg,
@@ -135,19 +136,47 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		currentIndex:   -1,
 		repeatMode:     cfg.RepeatMode,
 		shuffle:        cfg.Shuffle,
-		volume:         100,
 		layoutOverride: layoutOverride,
 		sleepTimer:     sleepTimer,
 		sleepRemaining: sleepTimer,
-		viewMode:       ViewLibrary,
-		focusPane:      FocusArtists,
-		searchInput:    si,
-		searchResults:  []models.Track{},
+		bottomViewMode: BottomPlaylist,
+		activeModal:    ModalNone,
 	}
 
+	m.header = widgets.NewHeader(styles.Header, "must - MUSic TUI")
+	m.nowPlaying = widgets.NewNowPlaying(styles, styles.Accent, styles.Cursor, styles.Background)
+	m.playlistWidget = widgets.NewPlaylist(styles)
+	m.footer = widgets.NewFooter(styles.AccentStyle, styles.MutedStyle)
+
+	m.searchModal = modals.NewSearch(styles, nil)
+	m.helpModal = modals.NewHelp(styles, defaultHelpEntries())
+
 	if cfg.ShowAlbumArt && cfg.Layout != "compact" {
-		m.imageRenderer = image.NewRenderer()
+		m.imageRenderer = pkgimage.NewRenderer()
 		m.imageProtocol = termimg.DetectProtocol()
+
+		features := termimg.QueryTerminalFeatures()
+		fontW, fontH := features.FontWidth, features.FontHeight
+		cellRatio := float64(fontH) / float64(fontW)
+		if cellRatio < 1.0 && fontW > 0 && fontH > 0 {
+			fontW, fontH = fontH, fontW
+			cellRatio = float64(fontH) / float64(fontW)
+		}
+		if cellRatio <= 0 {
+			cellRatio = 2.0
+		}
+		m.cellRatio = cellRatio
+		m.fontW = fontW
+		m.fontH = fontH
+	} else {
+		m.cellRatio = 2.0
+	}
+
+	if logoImg, err := pkgimage.LoadImageFromBytes(assets.BubblesLogoPNG); err == nil {
+		m.logoImage = logoImg
+		if m.imageRenderer != nil {
+			m.renderLogoArt(logoImg)
+		}
 	}
 
 	themeWatcher := config.NewThemeWatcher(cfg.ColorsFile)
@@ -171,6 +200,9 @@ func (m Model) Init() tea.Cmd {
 	if m.themeWatcher != nil {
 		cmds = append(cmds, watchThemeCmd(m.themeWatcher))
 	}
+	if m.logoArtLoaded {
+		cmds = append(cmds, renderAlbumArtAfterDelay())
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -185,5 +217,46 @@ func (m *Model) loadCLIPaths() {
 		if m.shuffle {
 			m.shuffleOrder = shuffleIndices(len(m.playlist))
 		}
+		m.updatePlaylist()
 	}
+}
+
+func (m *Model) updatePlaylist() {
+	if len(m.playlist) == 0 {
+		m.playlistWidget.SetRows(nil)
+		return
+	}
+	rows := widgets.BuildPlaylistRows(m.playlist, m.currentIndex)
+	m.playlistWidget.SetRows(rows)
+	m.playlistWidget.SetCursor(m.currentIndex)
+}
+
+func defaultHelpEntries() []modals.HelpEntry {
+	return []modals.HelpEntry{
+		{Key: "space", Desc: "play/pause"},
+		{Key: "n", Desc: "next track"},
+		{Key: "p", Desc: "previous track"},
+		{Key: "←/→", Desc: "seek -5s/+5s"},
+		{Key: "r", Desc: "cycle repeat (off/all/one)"},
+		{Key: "s", Desc: "toggle shuffle"},
+		{Key: "v", Desc: "cycle bottom view"},
+		{Key: "/", Desc: "search library"},
+		{Key: "l", Desc: "library browser"},
+		{Key: "e", Desc: "enqueue track/album"},
+		{Key: "d", Desc: "delete track from playlist"},
+		{Key: "D", Desc: "clear playlist"},
+		{Key: "R", Desc: "rescan library"},
+		{Key: "u", Desc: "plain lyrics"},
+		{Key: "U", Desc: "synced lyrics"},
+		{Key: "i", Desc: "artist bio"},
+		{Key: "?", Desc: "help"},
+		{Key: "q/ctrl+c", Desc: "quit"},
+	}
+}
+
+func (m Model) layoutMode() string {
+	if m.layoutOverride != "" {
+		return m.layoutOverride
+	}
+	return m.cfg.Layout
 }

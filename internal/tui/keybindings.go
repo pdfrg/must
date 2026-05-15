@@ -11,18 +11,19 @@ type KeyMap struct {
 	Prev          key.Binding
 	SeekForward   key.Binding
 	SeekBackward  key.Binding
-	VolumeUp      key.Binding
-	VolumeDown    key.Binding
-	Mute          key.Binding
 	Repeat        key.Binding
 	Shuffle       key.Binding
 	CursorUp      key.Binding
 	CursorDown    key.Binding
+	PageUp        key.Binding
+	PageDown      key.Binding
+	Home          key.Binding
+	End           key.Binding
 	Enter         key.Binding
-	FocusLeft     key.Binding
-	FocusRight    key.Binding
+	Enqueue       key.Binding
 	CycleView     key.Binding
 	Search        key.Binding
+	Library       key.Binding
 	Help          key.Binding
 	Escape        key.Binding
 	DeleteTrack   key.Binding
@@ -58,18 +59,6 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("left"),
 		key.WithHelp("←", "-5s"),
 	),
-	VolumeUp: key.NewBinding(
-		key.WithKeys("up", "+"),
-		key.WithHelp("↑/+", "vol up"),
-	),
-	VolumeDown: key.NewBinding(
-		key.WithKeys("down", "-"),
-		key.WithHelp("↓/-", "vol down"),
-	),
-	Mute: key.NewBinding(
-		key.WithKeys("m"),
-		key.WithHelp("m", "mute"),
-	),
 	Repeat: key.NewBinding(
 		key.WithKeys("r"),
 		key.WithHelp("r", "repeat"),
@@ -79,24 +68,36 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("s", "shuffle"),
 	),
 	CursorUp: key.NewBinding(
-		key.WithKeys("k"),
-		key.WithHelp("k", "up"),
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "up"),
 	),
 	CursorDown: key.NewBinding(
-		key.WithKeys("j"),
-		key.WithHelp("j", "down"),
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "down"),
+	),
+	PageUp: key.NewBinding(
+		key.WithKeys("pgup"),
+		key.WithHelp("pgup", "page up"),
+	),
+	PageDown: key.NewBinding(
+		key.WithKeys("pgdown"),
+		key.WithHelp("pgdn", "page down"),
+	),
+	Home: key.NewBinding(
+		key.WithKeys("home"),
+		key.WithHelp("home", "jump to top"),
+	),
+	End: key.NewBinding(
+		key.WithKeys("end"),
+		key.WithHelp("end", "jump to bottom"),
 	),
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
-		key.WithHelp("enter", "select"),
+		key.WithHelp("enter", "select/play"),
 	),
-	FocusLeft: key.NewBinding(
-		key.WithKeys("h"),
-		key.WithHelp("h", "focus left"),
-	),
-	FocusRight: key.NewBinding(
-		key.WithKeys("l"),
-		key.WithHelp("l", "focus right"),
+	Enqueue: key.NewBinding(
+		key.WithKeys("e"),
+		key.WithHelp("e", "enqueue"),
 	),
 	CycleView: key.NewBinding(
 		key.WithKeys("tab"),
@@ -106,13 +107,17 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("/"),
 		key.WithHelp("/", "search"),
 	),
+	Library: key.NewBinding(
+		key.WithKeys("l"),
+		key.WithHelp("l", "library"),
+	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
 		key.WithHelp("?", "help"),
 	),
 	Escape: key.NewBinding(
 		key.WithKeys("esc"),
-		key.WithHelp("esc", "close"),
+		key.WithHelp("esc", "back/close"),
 	),
 	DeleteTrack: key.NewBinding(
 		key.WithKeys("d"),
@@ -144,7 +149,6 @@ func (k KeyMap) PlaybackBindings() []key.Binding {
 	return []key.Binding{
 		k.PlayPause, k.Next, k.Prev,
 		k.SeekForward, k.SeekBackward,
-		k.VolumeUp, k.VolumeDown, k.Mute,
 		k.Repeat, k.Shuffle,
 	}
 }
@@ -152,8 +156,9 @@ func (k KeyMap) PlaybackBindings() []key.Binding {
 func (k KeyMap) NavigationBindings() []key.Binding {
 	return []key.Binding{
 		k.CursorUp, k.CursorDown,
-		k.Enter, k.FocusLeft, k.FocusRight,
-		k.CycleView,
+		k.PageUp, k.PageDown, k.Home, k.End,
+		k.Enter, k.Enqueue,
+		k.CycleView, k.Library,
 	}
 }
 
