@@ -43,12 +43,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case modals.HelpModalMsg:
 		m.activeModal = ModalNone
-		return m, renderAlbumArtAfterDelay()
+		cmds := []tea.Cmd{renderAlbumArtAfterDelay()}
+		if m.bottomViewMode == BottomArtistBio && m.artistArtLoaded {
+			cmds = append(cmds, renderArtistArtAfterDelay())
+		}
+		return m, tea.Batch(cmds...)
 
 	case modals.GalleryMsg:
 		m.activeModal = ModalNone
 		m.galleryModal = nil
-		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+		cmds := []tea.Cmd{clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay()}
+		if m.bottomViewMode == BottomArtistBio && m.artistArtLoaded {
+			cmds = append(cmds, renderArtistArtAfterDelay())
+		}
+		return m, tea.Batch(cmds...)
 
 	case modals.GalleryImageLoadedMsg:
 		if m.galleryModal != nil {
@@ -69,6 +77,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case renderAlbumArtMsg:
 		return m.handleRenderAlbumArt(msg)
+
+	case artistImageLoadedMsg:
+		return m.handleArtistImageLoaded(msg)
+
+	case renderArtistArtMsg:
+		return m, m.renderArtistArtCmd()
 
 	case onlineArtFetchedMsg:
 		if msg.err == nil && msg.trackPath != "" && m.imageRenderer != nil {
@@ -111,8 +125,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if artist != "" {
 				m.artistCache[strings.ToLower(artist)] = msg.info
 			}
+
+			var trackPath string
+			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+				trackPath = m.playlist[m.currentIndex].Path
+			}
+			cmds = append(cmds, loadArtistImageCmd(msg.eventID, artist, trackPath, msg.info.ThumbnailURL))
 		}
-		return m, nil
+		return m, tea.Batch(cmds...)
 
 	case restorePlaybackMsg:
 		m.playing = true
@@ -265,14 +285,24 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.rescanLibrary()
 
 	case key.Matches(msg, m.keyMap.Lyrics):
+		if m.bottomViewMode == BottomArtistBio {
+			m.artistArtStr = ""
+			m.artistArtLoaded = false
+			m.artistArtEventID = 0
+		}
 		m.bottomViewMode = BottomLyrics
 		m.viewport.GotoTop()
-		return m, nil
+		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
 
 	case key.Matches(msg, m.keyMap.SyncedLyrics):
+		if m.bottomViewMode == BottomArtistBio {
+			m.artistArtStr = ""
+			m.artistArtLoaded = false
+			m.artistArtEventID = 0
+		}
 		m.bottomViewMode = BottomSyncedLyrics
 		m.viewport.GotoTop()
-		return m, nil
+		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
 
 	case key.Matches(msg, m.keyMap.ArtistBio):
 		return m.openArtistBio()
@@ -385,7 +415,11 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleLibraryModalMsg(msg modals.LibraryModalMsg) (tea.Model, tea.Cmd) {
 	if msg.Closed {
 		m.activeModal = ModalNone
-		return m, renderAlbumArtAfterDelay()
+		cmds := []tea.Cmd{renderAlbumArtAfterDelay()}
+		if m.bottomViewMode == BottomArtistBio && m.artistArtLoaded {
+			cmds = append(cmds, renderArtistArtAfterDelay())
+		}
+		return m, tea.Batch(cmds...)
 	}
 
 	if len(msg.PlayTracks) > 0 {
@@ -484,7 +518,11 @@ func (m Model) handleSearchModalMsg(msg modals.SearchModalMsg) (tea.Model, tea.C
 	if msg.Closed {
 		m.activeModal = ModalNone
 		m.searchModal.Blur()
-		return m, renderAlbumArtAfterDelay()
+		cmds := []tea.Cmd{renderAlbumArtAfterDelay()}
+		if m.bottomViewMode == BottomArtistBio && m.artistArtLoaded {
+			cmds = append(cmds, renderArtistArtAfterDelay())
+		}
+		return m, tea.Batch(cmds...)
 	}
 
 	if len(msg.PlayTracks) > 0 {
@@ -583,6 +621,7 @@ func (m Model) handleSearchModalMsg(msg modals.SearchModalMsg) (tea.Model, tea.C
 }
 
 func (m Model) cycleView() (tea.Model, tea.Cmd) {
+	prevMode := m.bottomViewMode
 	m.bottomViewMode = (m.bottomViewMode + 1) % BottomViewModeCount
 
 	if m.bottomViewMode == BottomSyncedLyrics && len(m.syncedLyrics) == 0 {
@@ -590,6 +629,17 @@ func (m Model) cycleView() (tea.Model, tea.Cmd) {
 	}
 
 	m.viewport.GotoTop()
+
+	if prevMode == BottomArtistBio && m.bottomViewMode != BottomArtistBio {
+		m.artistArtStr = ""
+		m.artistArtLoaded = false
+		m.artistArtEventID = 0
+		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+	}
+
+	if m.bottomViewMode == BottomArtistBio && m.artistArtLoaded && m.artistArtStr != "" {
+		return m, tea.Batch(renderAlbumArtAfterDelay(), renderArtistArtAfterDelay())
+	}
 
 	viewName := "playlist"
 	switch m.bottomViewMode {
@@ -663,6 +713,9 @@ func (m Model) openArtistBio() (tea.Model, tea.Cmd) {
 	m.bottomViewMode = BottomArtistBio
 	m.artistInfo = nil
 	m.artistInfoLoading = true
+	m.artistArtStr = ""
+	m.artistArtLoaded = false
+	m.artistArtEventID = 0
 	m.artistInfoEventID++
 
 	return m, fetchArtistInfoCmd(m.cfg, artist, album, m.artistInfoEventID, m.artistCache)

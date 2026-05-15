@@ -106,6 +106,14 @@ type Model struct {
 	logoArtHeight  int
 	logoArtLoaded  bool
 
+	artistArtStr     string
+	artistArtWidth   int
+	artistArtHeight  int
+	artistArtLoaded  bool
+	artistArtEventID int64
+
+	bottomSectionStartRow int
+
 	notifSentForSong bool
 
 	songStartTime        time.Time

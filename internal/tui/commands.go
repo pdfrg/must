@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -413,5 +415,46 @@ func sendNotificationCmd(cfg *config.Config, track models.Track, withImage bool)
 	return func() tea.Msg {
 		api.SendDesktopNotification(&track, cfg, withImage)
 		return notificationSentMsg{}
+	}
+}
+
+func loadArtistImageCmd(eventID int64, artistName string, trackPath string, thumbnailURL string) tea.Cmd {
+	return func() tea.Msg {
+		if trackPath != "" {
+			img, err := imgpkg.GetArtistImage(artistName, trackPath)
+			if err == nil && img != nil {
+				var buf bytes.Buffer
+				if encErr := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); encErr == nil {
+					return artistImageLoadedMsg{eventID: eventID, imageData: buf.Bytes(), trackPath: trackPath}
+				}
+			}
+		}
+
+		if thumbnailURL != "" {
+			client := &http.Client{Timeout: 10 * time.Second}
+			req, err := http.NewRequest("GET", thumbnailURL, nil)
+			if err != nil {
+				return artistImageLoadedMsg{eventID: eventID, err: err}
+			}
+			req.Header.Set("User-Agent", "must/1.0")
+			resp, err := client.Do(req)
+			if err != nil {
+				return artistImageLoadedMsg{eventID: eventID, err: err}
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode != http.StatusOK {
+				return artistImageLoadedMsg{eventID: eventID, err: fmt.Errorf("artist image HTTP %d", resp.StatusCode)}
+			}
+
+			data, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return artistImageLoadedMsg{eventID: eventID, err: err}
+			}
+
+			return artistImageLoadedMsg{eventID: eventID, imageData: data}
+		}
+
+		return artistImageLoadedMsg{eventID: eventID, err: fmt.Errorf("no artist image available")}
 	}
 }

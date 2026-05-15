@@ -7,6 +7,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"os"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -398,6 +399,12 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 	m.albumArtLoaded = false
 	m.notifSentForSong = false
 
+	if m.bottomViewMode != BottomArtistBio {
+		m.artistArtStr = ""
+		m.artistArtLoaded = false
+		m.artistArtEventID = 0
+	}
+
 	m.lyrics = ""
 	m.syncedLyrics = nil
 	m.lyricsLoading = true
@@ -520,8 +527,9 @@ func (m Model) renderImagesCmd() tea.Cmd {
 
 	hasAlbumArt := m.cfg.ShowAlbumArt && m.albumArtLoaded && m.albumArtStr != "" && m.cfg.Layout != "compact"
 	hasLogoArt := !hasAlbumArt && m.logoArtLoaded && m.logoArtStr != "" && m.cfg.ShowAlbumArt && m.cfg.Layout != "compact"
+	hasArtistArt := m.artistArtLoaded && m.artistArtStr != "" && m.bottomViewMode == BottomArtistBio
 
-	if !hasAlbumArt && !hasLogoArt {
+	if !hasAlbumArt && !hasLogoArt && !hasArtistArt {
 		return nil
 	}
 
@@ -538,6 +546,28 @@ func (m Model) renderImagesCmd() tea.Cmd {
 			raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", 3, artCol, m.logoArtStr)
 		}
 
+		if hasArtistArt {
+			availableSpace := m.height - m.bottomSectionStartRow - 3
+			if availableSpace >= m.artistArtHeight {
+				artistRow := m.bottomSectionStartRow
+				if artistRow < 3 {
+					artistRow = 3
+				}
+				if m.imageProtocol == termimg.Kitty {
+					raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", artistRow, 2, m.artistArtStr)
+				} else {
+					lines := strings.Split(m.artistArtStr, "\n")
+					raw += "\x1b[s"
+					for i, line := range lines {
+						if line != "" {
+							raw += fmt.Sprintf("\x1b[%d;%dH%s", artistRow+i, 2, line)
+						}
+					}
+					raw += "\x1b[u"
+				}
+			}
+		}
+
 		return tea.Raw(raw)
 	}
 
@@ -546,6 +576,68 @@ func (m Model) renderImagesCmd() tea.Cmd {
 
 func (m Model) handleRenderAlbumArt(msg renderAlbumArtMsg) (tea.Model, tea.Cmd) {
 	return m, m.renderImagesCmd()
+}
+
+func (m Model) handleArtistImageLoaded(msg artistImageLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.eventID != m.artistInfoEventID {
+		return m, nil
+	}
+	if msg.err != nil || msg.imageData == nil {
+		return m, nil
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(msg.imageData))
+	if err != nil {
+		return m, nil
+	}
+
+	termimg.ClearResizeCache()
+
+	const displayWidth = 30
+	imgBounds := img.Bounds()
+	imgW := float64(imgBounds.Dx())
+	imgH := float64(imgBounds.Dy())
+
+	displayHeight := int(float64(displayWidth) * (imgH / imgW) / m.cellRatio)
+	if displayHeight < 4 {
+		displayHeight = 4
+	}
+	if displayHeight > 20 {
+		displayHeight = 20
+	}
+
+	var renderWidth, renderHeight int
+	if m.imageProtocol == termimg.Halfblocks {
+		renderWidth = displayWidth * 2
+		renderHeight = displayHeight * 2
+	} else {
+		renderWidth = displayWidth
+		renderHeight = displayHeight
+	}
+
+	tiImg := termimg.New(img).Size(renderWidth, renderHeight).
+		Scale(termimg.ScaleFit).Protocol(m.imageProtocol).ZIndex(1).UseUnicode(false)
+
+	rendered, err := tiImg.Render()
+	if err != nil {
+		return m, nil
+	}
+
+	m.artistArtStr = rendered
+	m.artistArtLoaded = true
+	m.artistArtEventID = msg.eventID
+	m.artistArtWidth = displayWidth
+	m.artistArtHeight = displayHeight
+
+	if m.bottomViewMode == BottomArtistBio {
+		m.viewport.GotoTop()
+	}
+
+	return m, renderArtistArtAfterDelay()
+}
+
+func (m Model) renderArtistArtCmd() tea.Cmd {
+	return m.renderImagesCmd()
 }
 
 func sendNowPlayingCmd(cfg *config.Config, track models.Track) tea.Cmd {
