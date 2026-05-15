@@ -2,9 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/pdfrg/must/internal/tui/modals"
+	"github.com/pdfrg/must/internal/models"
 )
 
 func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
@@ -19,11 +21,16 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 
 	m.loadCLIPaths()
 
-	if m.searchModal != nil {
-		m.searchModal = modals.NewSearch(m.styles, m.libraryDB)
+	var restoreCmd tea.Cmd
+	if len(m.playlist) == 0 && len(m.paths) == 0 {
+		restoreCmd = m.restorePlaybackState()
 	}
 
-	if m.randomMode && len(m.paths) == 0 && m.libraryDB != nil {
+	if m.searchModal != nil {
+		m.searchModal.SetDB(m.libraryDB)
+	}
+
+	if m.randomMode && len(m.paths) == 0 && m.libraryDB != nil && restoreCmd == nil {
 		return m.handleRandomPlay()
 	}
 
@@ -40,14 +47,96 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 
 	if msg.result != nil {
 		r := msg.result
-		m.scanMsg = fmt.Sprintf("Library: %d tracks (%d new, %d updated, %d removed)",
-			r.TotalFiles, r.NewFiles, r.UpdatedFiles, r.RemovedFiles)
+		m.scanMsg = fmt.Sprintf("Library: %d tracks (%d new, %d updated, %d removed)", r.TotalFiles, r.NewFiles, r.UpdatedFiles, r.RemovedFiles)
 	} else {
 		count, _ := m.libraryDB.TrackCount()
 		m.scanMsg = fmt.Sprintf("Library: %d tracks", count)
 	}
 
-	return m, setStatus(&m, m.scanMsg, false)
+	var cmds []tea.Cmd
+	if restoreCmd != nil {
+		cmds = append(cmds, restoreCmd)
+	}
+	cmds = append(cmds, setStatus(&m, m.scanMsg, false))
+	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) restorePlaybackState() tea.Cmd {
+	state := LoadPlaybackState()
+	if state == nil || len(state.PlaylistPaths) == 0 {
+		return nil
+	}
+
+	var tracks []models.Track
+	var missingPaths []string
+
+	for _, p := range state.PlaylistPaths {
+		if _, err := os.Stat(p); err != nil {
+			missingPaths = append(missingPaths, p)
+			continue
+		}
+
+		if t := findTrackByPath(p, m.libraryDB); t != nil {
+			tracks = append(tracks, *t)
+		} else {
+			tracks = append(tracks, models.Track{Path: p, Title: filepath.Base(p)})
+		}
+	}
+
+	if len(tracks) == 0 {
+		ClearPlaybackState()
+		return nil
+	}
+
+	m.playlist = tracks
+
+	if state.Shuffle {
+		m.shuffle = true
+		m.shuffleOrder = shuffleIndices(len(m.playlist))
+	} else {
+		m.shuffle = false
+		m.shuffleOrder = nil
+	}
+
+	switch state.RepeatMode {
+	case "off", "all", "one":
+		m.repeatMode = state.RepeatMode
+	default:
+		m.repeatMode = "off"
+	}
+
+	if state.CurrentIndex < 0 || state.CurrentIndex >= len(tracks) {
+		state.CurrentIndex = 0
+	}
+
+	m.currentIndex = state.CurrentIndex
+	m.updatePlaylist()
+
+	paths := m.buildMPVPlaylistPaths()
+	playIdx := m.playlistIndexToMPVIndex(state.CurrentIndex)
+	if playIdx < 0 {
+		playIdx = 0
+	}
+
+	savedPos := state.Position
+
+	if len(missingPaths) > 0 {
+		SavePlaybackState(m.playlist, m.currentIndex, savedPos, m.shuffle, m.repeatMode)
+	}
+
+	return func() tea.Msg {
+		if err := m.mpvBackend.Start(paths); err != nil {
+			ClearPlaybackState()
+			return statusClearMsg{}
+		}
+		if playIdx > 0 {
+			_ = m.mpvBackend.PlaylistPlayIndex(playIdx)
+		}
+		if savedPos > 0 {
+			_ = m.mpvBackend.SeekAbsolute(savedPos)
+		}
+		return restorePlaybackMsg{position: savedPos}
+	}
 }
 
 func (m Model) handleRandomPlay() (tea.Model, tea.Cmd) {
