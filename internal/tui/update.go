@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -12,6 +13,18 @@ import (
 	"github.com/pdfrg/must/internal/playlist"
 	"github.com/pdfrg/must/internal/tui/modals"
 )
+
+var tuiLogger *log.Logger
+
+func SetLogger(l *log.Logger) {
+	tuiLogger = l
+}
+
+func logf(format string, args ...any) {
+	if tuiLogger != nil {
+		tuiLogger.Printf(format, args...)
+	}
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -150,6 +163,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case restorePlaybackMsg:
 		m.playing = true
 		m.paused = false
+		m.restoringPlayback = false
 		if msg.position > 0 && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
 			m.songStartTime = time.Now().Add(-time.Duration(msg.position * float64(time.Second)))
 		}
@@ -209,6 +223,10 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg, priorCmds []tea.Cmd) (tea
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.savingPlaylist {
+		return m.handleSaveInputKey(msg)
+	}
+
 	if m.activeModal != ModalNone {
 		return m.handleModalKey(msg)
 	}
@@ -906,20 +924,42 @@ func (m Model) savePlaylist() (tea.Model, tea.Cmd) {
 	if len(m.playlist) == 0 {
 		return m, setStatus(&m, "No tracks to save", true)
 	}
+	m.savingPlaylist = true
+	m.saveInput.SetValue("")
+	cmd := m.saveInput.Focus()
+	return m, cmd
+}
 
-	paths := make([]string, len(m.playlist))
-	for i, t := range m.playlist {
-		paths[i] = t.Path
+func (m Model) handleSaveInputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		name := m.saveInput.Value()
+		if name == "" {
+			name = time.Now().Format("20060102-150405")
+		}
+		m.savingPlaylist = false
+		m.saveInput.Blur()
+
+		paths := make([]string, len(m.playlist))
+		for i, t := range m.playlist {
+			paths[i] = t.Path
+		}
+		savePath := config.GetPlaylistSavePath(name)
+		if err := playlist.Save(savePath, paths); err != nil {
+			return m, setStatus(&m, fmt.Sprintf("Save error: %v", err), true)
+		}
+		return m, setStatus(&m, fmt.Sprintf("Saved: %s", savePath), false)
+
+	case "esc":
+		m.savingPlaylist = false
+		m.saveInput.Blur()
+		return m, nil
+
+	default:
+		var cmd tea.Cmd
+		m.saveInput, cmd = m.saveInput.Update(msg)
+		return m, cmd
 	}
-
-	ts := time.Now().Format("20060102-150405")
-	savePath := config.GetPlaylistSavePath(ts)
-
-	if err := playlist.Save(savePath, paths); err != nil {
-		return m, setStatus(&m, fmt.Sprintf("Save error: %v", err), true)
-	}
-
-	return m, setStatus(&m, fmt.Sprintf("Playlist saved to %s", savePath), false)
 }
 
 func (m Model) openLibraryEnqueueNext() (tea.Model, tea.Cmd) {

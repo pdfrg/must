@@ -77,9 +77,10 @@ func (m Model) handleProgressTick(msg progressTickMsg) (tea.Model, tea.Cmd) {
 	m.paused = m.mpvBackend.QueryPauseState()
 
 	mpvPos, mpvErr := m.mpvBackend.GetPlaylistPosition()
-	if mpvErr == nil && mpvPos >= 0 {
+	if mpvErr == nil && mpvPos >= 0 && !m.restoringPlayback {
 		playlistIdx := m.mpvIndexToPlaylistIndex(mpvPos)
 		if playlistIdx != m.currentIndex && playlistIdx >= 0 && playlistIdx < len(m.playlist) {
+			logf("MPV position changed: mpv=%d playlist=%d", mpvPos, playlistIdx)
 			if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
 				track := m.playlist[m.currentIndex]
 				m.prevTrack = &track
@@ -393,6 +394,11 @@ func startPlaybackCmd(backend *mpv.MPVBackend, paths []string, startIndex int) t
 
 func (m *Model) trackChangedCmds() tea.Cmd {
 	var cmds []tea.Cmd
+
+	if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+		t := m.playlist[m.currentIndex]
+		logf("Track changed: %s - %s (%s)", t.Artist, t.Title, t.Album)
+	}
 
 	if m.prevScrobbleEligible && m.prevTrack != nil {
 		cmds = append(cmds, scrobbleTrackCmd(m.cfg, *m.prevTrack, m.prevSongStartTime))

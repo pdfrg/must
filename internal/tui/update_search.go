@@ -18,6 +18,7 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 	m.libraryReady = true
 	m.scanResult = msg.result
 	m.libraryDB = msg.db
+	logf("Library scan complete: %v", msg.result)
 
 	m.loadCLIPaths()
 
@@ -99,6 +100,7 @@ func (m *Model) restorePlaybackState() tea.Cmd {
 	if state.Shuffle {
 		m.shuffle = true
 		m.shuffleOrder = shuffleIndices(len(m.playlist))
+		logf("Restored shuffle state")
 	} else {
 		m.shuffle = false
 		m.shuffleOrder = nil
@@ -116,7 +118,9 @@ func (m *Model) restorePlaybackState() tea.Cmd {
 	}
 
 	m.currentIndex = state.CurrentIndex
+	m.restoringPlayback = true
 	m.updatePlaylist()
+	m.playlistWidget.SetCursor(state.CurrentIndex)
 
 	paths := m.buildMPVPlaylistPaths()
 	playIdx := m.playlistIndexToMPVIndex(state.CurrentIndex)
@@ -131,6 +135,7 @@ func (m *Model) restorePlaybackState() tea.Cmd {
 	}
 
 	return func() tea.Msg {
+		logf("Restoring playback: %d tracks, index=%d, pos=%.1f", len(paths), playIdx, savedPos)
 		if err := m.mpvBackend.Start(paths); err != nil {
 			ClearPlaybackState()
 			return statusClearMsg{}

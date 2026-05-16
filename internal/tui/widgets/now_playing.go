@@ -45,6 +45,7 @@ func NewNowPlaying(styles *config.ThemeStyles, accentColor, cursorColor, progres
 		progress.WithWidth(40),
 		progress.WithColors(lipgloss.Color(cursorColor), lipgloss.Color(accentColor)),
 		progress.WithoutPercentage(),
+		progress.WithFillCharacters('▀', '▀'),
 	)
 	p.EmptyColor = emptyColor
 
@@ -94,6 +95,7 @@ func (n *NowPlaying) UpdateStyles(styles *config.ThemeStyles, accentColor, curso
 		progress.WithWidth(40),
 		progress.WithColors(lipgloss.Color(cursorColor), lipgloss.Color(accentColor)),
 		progress.WithoutPercentage(),
+		progress.WithFillCharacters('▀', '▀'),
 	)
 	n.progress.EmptyColor = emptyColor
 }
