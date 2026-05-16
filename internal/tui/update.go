@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/pdfrg/must/internal/config"
+	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/playlist"
 	"github.com/pdfrg/must/internal/tui/modals"
 )
@@ -67,6 +68,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case modals.GalleryRenderImageMsg:
 		return m, tea.Raw(fmt.Sprintf("\x1b[%d;%dH%s", msg.Row, msg.Col, msg.ImageStr))
+
+	case modals.SearchDebounceMsg:
+		if m.activeModal == ModalSearch && m.searchModal != nil {
+			return m, m.searchModal.Update(msg)
+		}
+		return m, nil
+
+	case modals.SearchResultsMsg:
+		if m.activeModal == ModalSearch && m.searchModal != nil {
+			return m, m.searchModal.Update(msg)
+		}
+		return m, nil
 
 	case audioInfoMsg:
 		m.audioInfo = msg.info
@@ -245,6 +258,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.Shuffle):
 		return m.toggleShuffle()
 
+	case key.Matches(msg, m.keyMap.RestartSong):
+		return m.restartSong()
+
 	case key.Matches(msg, m.keyMap.CycleView):
 		return m.cycleView()
 
@@ -279,12 +295,16 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.savePlaylist()
 
 	case key.Matches(msg, m.keyMap.EnqueueNext):
-		return m.openLibraryEnqueueNext()
+		return m.enqueueHighlightedNext()
 
 	case key.Matches(msg, m.keyMap.Rescan):
 		return m.rescanLibrary()
 
 	case key.Matches(msg, m.keyMap.Lyrics):
+		if m.bottomViewMode == BottomLyrics {
+			m.bottomViewMode = BottomPlaylist
+			return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+		}
 		if m.bottomViewMode == BottomArtistBio {
 			m.artistArtStr = ""
 			m.artistArtLoaded = false
@@ -295,6 +315,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
 
 	case key.Matches(msg, m.keyMap.SyncedLyrics):
+		if m.bottomViewMode == BottomSyncedLyrics {
+			m.bottomViewMode = BottomPlaylist
+			return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+		}
 		if m.bottomViewMode == BottomArtistBio {
 			m.artistArtStr = ""
 			m.artistArtLoaded = false
@@ -305,6 +329,13 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
 
 	case key.Matches(msg, m.keyMap.ArtistBio):
+		if m.bottomViewMode == BottomArtistBio {
+			m.artistArtStr = ""
+			m.artistArtLoaded = false
+			m.artistArtEventID = 0
+			m.bottomViewMode = BottomPlaylist
+			return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+		}
 		return m.openArtistBio()
 
 	case key.Matches(msg, m.keyMap.Gallery):
@@ -659,6 +690,9 @@ func (m Model) openSearch() (tea.Model, tea.Cmd) {
 	m.activeModal = ModalSearch
 	m.searchModal.Reset()
 	m.searchModal.SetSize(m.width, m.height)
+	if m.libraryDB != nil {
+		m.searchModal.SetDB(m.libraryDB)
+	}
 	cmd := m.searchModal.Focus()
 	return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), cmd)
 }
@@ -830,13 +864,11 @@ func (m Model) moveTrackUp() (tea.Model, tea.Cmd) {
 	m.updatePlaylist()
 
 	if m.mpvBackend.IsRunning() && m.playing {
-		paths := m.buildMPVPlaylistPaths()
-		playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
-		_ = m.mpvBackend.Stop()
-		return m, tea.Batch(
-			startPlaybackCmd(m.mpvBackend, paths, playIdx),
-			setStatus(&m, "Moved up", false),
-		)
+		mpvFrom := m.playlistIndexToMPVIndex(cursor)
+		mpvTo := m.playlistIndexToMPVIndex(cursor - 1)
+		if mpvFrom >= 0 && mpvTo >= 0 {
+			_ = m.mpvBackend.PlaylistMove(mpvFrom, mpvTo)
+		}
 	}
 
 	return m, setStatus(&m, "Moved up", false)
@@ -860,13 +892,11 @@ func (m Model) moveTrackDown() (tea.Model, tea.Cmd) {
 	m.updatePlaylist()
 
 	if m.mpvBackend.IsRunning() && m.playing {
-		paths := m.buildMPVPlaylistPaths()
-		playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
-		_ = m.mpvBackend.Stop()
-		return m, tea.Batch(
-			startPlaybackCmd(m.mpvBackend, paths, playIdx),
-			setStatus(&m, "Moved down", false),
-		)
+		mpvFrom := m.playlistIndexToMPVIndex(cursor)
+		mpvTo := m.playlistIndexToMPVIndex(cursor+1) + 1
+		if mpvFrom >= 0 && mpvTo >= 1 {
+			_ = m.mpvBackend.PlaylistMove(mpvFrom, mpvTo)
+		}
 	}
 
 	return m, setStatus(&m, "Moved down", false)
@@ -905,4 +935,47 @@ func (m Model) openLibraryEnqueueNext() (tea.Model, tea.Cmd) {
 	m.libraryModal.SetSize(m.width, m.height)
 	m.libraryModal.SetEnqueueNextMode(true)
 	return m, clearKittyImagesCmdIf(m.imageProtocol)
+}
+
+func (m Model) enqueueHighlightedNext() (tea.Model, tea.Cmd) {
+	if len(m.playlist) == 0 || m.currentIndex < 0 {
+		return m, setStatus(&m, "Nothing playing", true)
+	}
+	cursor := m.playlistWidget.GetCursor()
+	if cursor < 0 || cursor >= len(m.playlist) || cursor == m.currentIndex {
+		return m, setStatus(&m, "Highlight a track to enqueue next", true)
+	}
+
+	track := m.playlist[cursor]
+	insertAt := m.currentIndex + 1
+
+	m.playlist = append(m.playlist[:insertAt], append([]models.Track{track}, m.playlist[insertAt:]...)...)
+
+	if cursor < insertAt {
+		m.currentIndex++
+	} else {
+	}
+
+	if cursor >= insertAt {
+		m.playlist = append(m.playlist[:cursor+1], m.playlist[cursor+2:]...)
+	} else {
+		m.playlist = append(m.playlist[:cursor], m.playlist[cursor+1:]...)
+	}
+
+	if m.currentIndex > cursor && cursor < insertAt {
+		m.currentIndex--
+	}
+
+	if m.mpvBackend.IsRunning() && m.playing {
+		mpvInsertAt := m.playlistIndexToMPVIndex(m.currentIndex)
+		_ = m.mpvBackend.InsertInPlaylist([]string{track.Path}, mpvInsertAt)
+		mpvRemoveFrom := m.playlistIndexToMPVIndex(cursor)
+		if mpvRemoveFrom > mpvInsertAt {
+			mpvRemoveFrom++
+		}
+		_ = m.mpvBackend.RemoveFromPlaylist(mpvRemoveFrom)
+	}
+
+	m.updatePlaylist()
+	return m, setStatus(&m, fmt.Sprintf("Enqueued next: %s", track.Title), false)
 }

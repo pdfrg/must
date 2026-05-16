@@ -116,6 +116,13 @@ func (p Playlist) View() string {
 
 	multiDisc := p.hasMultiDiscTracks()
 
+	const (
+		posW      = 4
+		playingW  = 2
+		durWidth  = 8
+		yearWidth = 5
+	)
+
 	var trkW int
 	var trkHeader string
 	if multiDisc {
@@ -123,27 +130,21 @@ func (p Playlist) View() string {
 		trkHeader = "Trk#"
 	} else {
 		trkW = 4
-		trkHeader = "#"
+		trkHeader = "Trk#"
 	}
 
-	const (
-		durWidth  = 8
-		yearWidth = 5
-		playingW  = 2
-	)
-
-	fixed := playingW + trkW + durWidth + yearWidth + 6
+	fixed := posW + playingW + trkW + durWidth + yearWidth + 8
 	flexible := p.width - fixed
 	if flexible < 30 {
 		flexible = 30
 	}
-	songW := flexible * 35 / 100
+	songW := flexible * 30 / 100
 	artistW := flexible * 25 / 100
 	albumW := flexible - songW - artistW
 
 	var b strings.Builder
-	b.WriteString(headerStyle.Render(fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s %-*s",
-		playingW, "", trkW, trkHeader, songW, "Song", artistW, "Artist", albumW, "Album", yearWidth, "Year", durWidth, "Time")))
+	b.WriteString(headerStyle.Render(fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s",
+		playingW, "", posW, "#", songW, "Song", artistW, "Artist", trkW, trkHeader, albumW, "Album", yearWidth, "Year", durWidth, "Time")))
 	b.WriteString("\n")
 
 	vh := p.visibleHeight()
@@ -164,8 +165,8 @@ func (p Playlist) View() string {
 			playIcon = " "
 		}
 
+		pos := fmt.Sprintf("%d", idx+1)
 		num := formatTrackNum(t, idx, multiDisc)
-
 		dur := formatPlaylistDuration(t.Duration)
 		year := ""
 		if t.Year != 0 {
@@ -176,8 +177,8 @@ func (p Playlist) View() string {
 		artist := ansi.Truncate(t.Artist, artistW-1, "…")
 		album := ansi.Truncate(t.Album, albumW-1, "…")
 
-		row := fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s %-*s",
-			playingW, playIcon, trkW, num, songW, song, artistW, artist, albumW, album, yearWidth, year, durWidth, dur)
+		row := fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s",
+			playingW, playIcon, posW, pos, songW, song, artistW, artist, trkW, num, albumW, album, yearWidth, year, durWidth, dur)
 
 		switch {
 		case isCursor && isPlaying:
@@ -217,7 +218,7 @@ func formatTrackNum(t models.Track, idx int, multiDisc bool) string {
 	if t.TrackNum > 0 {
 		return fmt.Sprintf("%d", t.TrackNum)
 	}
-	return fmt.Sprintf("%d", idx+1)
+	return "-"
 }
 
 func (p *Playlist) visibleHeight() int {

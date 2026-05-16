@@ -39,6 +39,7 @@ func NewFooter(accentStyle, mutedStyle lipgloss.Style) *Footer {
 		keys: []KeyBinding{
 			{Key: "p", Icon: "󰒮", Label: ""},
 			{Key: "r", Icon: "󰜉", Label: ""},
+			{Key: "^R", Icon: "", Label: "Rst"},
 			{Key: "Space", Icon: "󰐎", Label: ""},
 			{Key: "\u25c0 \u25b6", Icon: "", Label: "Seek"},
 			{Key: "n", Icon: "󰒭", Label: ""},
@@ -46,8 +47,8 @@ func NewFooter(accentStyle, mutedStyle lipgloss.Style) *Footer {
 			{Key: "v", Icon: "", Label: "View"},
 			{Key: "/", Icon: "", Label: "Search"},
 			{Key: "l", Icon: "", Label: "Lib"},
-			{Key: "D", Icon: "", Label: "Clr"},
 			{Key: "E", Icon: "", Label: "EnqN"},
+			{Key: "D", Icon: "", Label: "Clr"},
 			{Key: "S", Icon: "", Label: "Save"},
 			{Key: "R", Icon: "", Label: "Rescan"},
 			{Key: "?", Icon: "", Label: "Help"},

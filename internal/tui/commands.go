@@ -270,7 +270,7 @@ func fetchArtistInfoCmd(cfg *config.Config, artist, album string, eventID int64,
 		mbCh := make(chan mbResult, 1)
 
 		go func() {
-			a, e := api.SearchArtistTheAudioDB(cfg.TheAudioDBApiKey, artist)
+			a, e := api.SearchArtistTheAudioDB(cfg.TheAudioDBApiKey, artist, album)
 			tadbCh <- tadbResult{a, e}
 		}()
 
@@ -283,16 +283,16 @@ func fetchArtistInfoCmd(cfg *config.Config, artist, album string, eventID int64,
 		mb := <-mbCh
 
 		if tadb.artist != nil {
-			if tadb.artist.StrBiographyEN != "" {
-				info.Bio = tadb.artist.StrBiographyEN
+			if tadb.artist.StrBiography != "" {
+				info.Bio = tadb.artist.StrBiography
 				info.BioSource = "theaudiodb"
 			}
 			if tadb.artist.StrArtistThumb != "" {
 				info.ThumbnailURL = tadb.artist.StrArtistThumb
 				info.ThumbSource = "theaudiodb"
 			}
-			if tadb.artist.StrArtistFanart != "" {
-				info.GalleryURLs = []string{tadb.artist.StrArtistFanart}
+			if fanArts := tadb.artist.FanArts(); len(fanArts) > 0 {
+				info.GalleryURLs = fanArts
 				info.GallerySource = "theaudiodb"
 			}
 		}
@@ -310,22 +310,19 @@ func fetchArtistInfoCmd(cfg *config.Config, artist, album string, eventID int64,
 			info.DiscoSource = "musicbrainz"
 		}
 
-		hasDiscogsAuth := cfg.DiscogsToken != "" || (cfg.DiscogsKey != "" && cfg.DiscogsSecret != "")
-		if info.Bio == "" || hasDiscogsAuth {
-			discogsArtist, err := api.SearchArtistDiscogs(cfg.DiscogsToken, cfg.DiscogsKey, cfg.DiscogsSecret, artist)
-			if err == nil && discogsArtist != nil {
-				if info.Bio == "" && discogsArtist.Profile != "" {
-					info.Bio = discogsArtist.Profile
-					info.BioSource = "discogs"
-				}
-				if primaryImg := discogsArtist.PrimaryImage(); primaryImg != "" {
-					info.ThumbnailURL = primaryImg
-					info.ThumbSource = "discogs"
-				}
-				if galleryURLs := discogsArtist.GalleryURLs(); len(galleryURLs) > 0 {
-					info.GalleryURLs = galleryURLs
-					info.GallerySource = "discogs"
-				}
+		discogsArtist, err := api.SearchArtistDiscogs(cfg.DiscogsToken, cfg.DiscogsKey, cfg.DiscogsSecret, artist)
+		if err == nil && discogsArtist != nil {
+			if info.Bio == "" && discogsArtist.Profile != "" {
+				info.Bio = discogsArtist.Profile
+				info.BioSource = "discogs"
+			}
+			if primaryImg := discogsArtist.PrimaryImage(); primaryImg != "" {
+				info.ThumbnailURL = primaryImg
+				info.ThumbSource = "discogs"
+			}
+			if galleryURLs := discogsArtist.GalleryURLs(); len(galleryURLs) > 0 {
+				info.GalleryURLs = galleryURLs
+				info.GallerySource = "discogs"
 			}
 		}
 

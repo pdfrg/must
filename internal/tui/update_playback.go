@@ -264,22 +264,33 @@ func (m Model) cycleRepeat() (tea.Model, tea.Cmd) {
 	return m, setStatus(&m, repeatStr, false)
 }
 
+func (m Model) restartSong() (tea.Model, tea.Cmd) {
+	if !m.mpvBackend.IsRunning() {
+		return m, nil
+	}
+	_ = m.mpvBackend.SeekAbsolute(0)
+	return m, setStatus(&m, "Restarted", false)
+}
+
 func (m Model) toggleShuffle() (tea.Model, tea.Cmd) {
 	m.shuffle = !m.shuffle
 	if m.shuffle {
 		m.shuffleOrder = shuffleIndices(len(m.playlist))
+		if m.playing && m.mpvBackend.IsRunning() && m.currentIndex >= 0 {
+			currentMPVIdx, _ := m.mpvBackend.GetPlaylistPosition()
+			if currentMPVIdx >= 0 {
+				newOrder := make([]int, 0, len(m.playlist))
+				newOrder = append(newOrder, m.currentIndex)
+				for _, idx := range m.shuffleOrder {
+					if idx != m.currentIndex {
+						newOrder = append(newOrder, idx)
+					}
+				}
+				m.shuffleOrder = newOrder
+			}
+		}
 	} else {
 		m.shuffleOrder = nil
-	}
-
-	if m.playing && m.mpvBackend.IsRunning() && len(m.playlist) > 0 {
-		paths := m.buildMPVPlaylistPaths()
-		playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
-		_ = m.mpvBackend.Stop()
-		return m, tea.Batch(
-			startPlaybackCmd(m.mpvBackend, paths, playIdx),
-			setStatus(&m, fmt.Sprintf("Shuffle %s", map[bool]string{true: "on", false: "off"}[m.shuffle]), false),
-		)
 	}
 
 	shuffleStr := "off"

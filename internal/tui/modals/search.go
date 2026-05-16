@@ -138,13 +138,13 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 			s.scrollOffset = 0
 			return cmd
 		}
-	case searchModalDebounceMsg:
-		if s.input.Value() != msg.query {
+	case SearchDebounceMsg:
+		if s.input.Value() != msg.Query {
 			return nil
 		}
-		return s.executeSearch(msg.query)
-	case searchModalResultsMsg:
-		s.results = msg.results
+		return s.executeSearch(msg.Query)
+	case SearchResultsMsg:
+		s.results = msg.Results
 		s.cursor = 0
 		s.scrollOffset = 0
 		return nil
@@ -159,24 +159,24 @@ func (s *Search) executeSearch(query string) tea.Cmd {
 		if err != nil {
 			results, err = s.db.SearchLike(query)
 			if err != nil {
-				return searchModalResultsMsg{results: nil}
+				return SearchResultsMsg{Results: nil}
 			}
 		}
-		return searchModalResultsMsg{results: results}
+		return SearchResultsMsg{Results: results}
 	}
 }
 
-type searchModalDebounceMsg struct {
-	query string
+type SearchDebounceMsg struct {
+	Query string
 }
 
-type searchModalResultsMsg struct {
-	results []models.Track
+type SearchResultsMsg struct {
+	Results []models.Track
 }
 
 func debounceSearchModalCmd(query string) tea.Cmd {
 	return tea.Tick(300*time.Millisecond, func(t time.Time) tea.Msg {
-		return searchModalDebounceMsg{query: query}
+		return SearchDebounceMsg{Query: query}
 	})
 }
 
