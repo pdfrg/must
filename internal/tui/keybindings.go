@@ -13,6 +13,7 @@ type KeyMap struct {
 	SeekBackward  key.Binding
 	Repeat        key.Binding
 	Shuffle       key.Binding
+	RestartSong   key.Binding
 	CursorUp      key.Binding
 	CursorDown    key.Binding
 	PageUp        key.Binding
@@ -72,6 +73,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("s"),
 		key.WithHelp("s", "shuffle"),
 	),
+	RestartSong: key.NewBinding(
+		key.WithKeys("ctrl+r"),
+		key.WithHelp("ctrl+r", "restart"),
+	),
 	CursorUp: key.NewBinding(
 		key.WithKeys("up", "k"),
 		key.WithHelp("↑/k", "up"),
@@ -106,7 +111,7 @@ var DefaultKeyMap = KeyMap{
 	),
 	CycleView: key.NewBinding(
 		key.WithKeys("v", "tab"),
-		key.WithHelp("v", "switch view"),
+		key.WithHelp("v/tab", "switch view"),
 	),
 	Search: key.NewBinding(
 		key.WithKeys("/"),
@@ -174,7 +179,7 @@ func (k KeyMap) PlaybackBindings() []key.Binding {
 	return []key.Binding{
 		k.PlayPause, k.Next, k.Prev,
 		k.SeekForward, k.SeekBackward,
-		k.Repeat, k.Shuffle,
+		k.Repeat, k.Shuffle, k.RestartSong,
 	}
 }
 

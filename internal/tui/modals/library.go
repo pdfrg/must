@@ -318,14 +318,19 @@ func (l *Library) handleEnter() tea.Cmd {
 		}
 	case FocusAlbums:
 		if len(l.albumTracks) > 0 {
-			l.focusPane = FocusTracks
+			return func() tea.Msg {
+				return LibraryModalMsg{
+					PlayTracks: l.albumTracks,
+					PlayIndex:  0,
+				}
+			}
 		}
 	case FocusTracks:
 		if len(l.albumTracks) > 0 && l.trackCursor < len(l.albumTracks) {
 			return func() tea.Msg {
 				return LibraryModalMsg{
-					PlayTracks: l.albumTracks,
-					PlayIndex:  l.trackCursor,
+					PlayTracks: []models.Track{l.albumTracks[l.trackCursor]},
+					PlayIndex:  0,
 				}
 			}
 		}

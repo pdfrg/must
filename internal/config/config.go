@@ -27,7 +27,7 @@ type Config struct {
 	DiscogsToken          string                `toml:"discogs_token" comment:"Discogs personal access token\nenables artist images + higher API rate limits\nget one at: https://www.discogs.com/settings/developers\nalternative: set discogs_key + discogs_secret, or env vars DISCOGS_TOKEN / DISCOGS_KEY + DISCOGS_SECRET (default: '')"`
 	DiscogsKey            string                `toml:"discogs_key" comment:"Discogs consumer key (developer app auth)\nalternative to discogs_token, requires both key and secret (default: '')"`
 	DiscogsSecret         string                `toml:"discogs_secret" comment:"Discogs consumer secret (developer app auth)\nalternative to discogs_token, requires both key and secret (default: '')"`
-	TheAudioDBApiKey      string                `toml:"theaudiodb_api_key" comment:"TheAudioDB API key for online album art fallback\nfree key '2' works for basic usage\nget one at: https://www.theaudiodb.com/apikey (default: '')"`
+	TheAudioDBApiKey      string                `toml:"theaudiodb_api_key" comment:"TheAudioDB API key for artist info and album art fallback\nfree key '123' is used by default\nget a custom key at: https://www.theaudiodb.com/apikey (default: '123')"`
 	LastFM                LastFMConfig          `toml:"lastfm" comment:"Last.fm scrobbling\nrun 'must --lastfm-auth' once to obtain a session key"`
 	ListenBrainz          ListenBrainzConfig    `toml:"listenbrainz" comment:"ListenBrainz scrobbling\ntoken found at: https://listenbrainz.org/profile/"`
 	Lidarr                LidarrConfig          `toml:"lidarr" comment:"Lidarr music collection manager\nshows artist/album monitoring status, opens Lidarr web UI\napi_key from: Lidarr Settings > General"`

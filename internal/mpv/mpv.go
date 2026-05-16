@@ -483,6 +483,17 @@ func (m *MPVBackend) InsertInPlaylist(paths []string, afterIndex int) error {
 	return nil
 }
 
+func (m *MPVBackend) PlaylistMove(fromIndex, toIndex int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.process == nil {
+		return fmt.Errorf("MPV not running")
+	}
+	cmd := IPCCommand{Command: []any{"playlist-move", fromIndex, toIndex}}
+	_, err := m.sendIPCCommandLocked(cmd)
+	return err
+}
+
 func (m *MPVBackend) GetAudioInfo() (*models.AudioInfo, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

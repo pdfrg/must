@@ -3,17 +3,17 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
 const discogsBaseURL = "https://api.discogs.com"
 
 type DiscogsArtist struct {
-	ID          int            `json:"id"`
-	Name        string         `json:"name"`
-	Profile     string         `json:"profile"`
-	ImageURLs   []DiscogsImage `json:"images"`
-	ReleasesURL string         `json:"releases_url"`
+	ID        int            `json:"id"`
+	Name      string         `json:"name"`
+	Profile   string         `json:"profile"`
+	ImageURLs []DiscogsImage `json:"images"`
 }
 
 func (d *DiscogsArtist) PrimaryImage() string {
@@ -82,7 +82,13 @@ func SearchArtistDiscogs(token, key, secret, artist string) (*DiscogsArtist, err
 	}
 
 	artistID := resp.Results[0].ID
-	return GetDiscogsArtist(token, key, secret, artistID)
+	discogsArtist, err := GetDiscogsArtist(token, key, secret, artistID)
+	if err != nil {
+		return nil, err
+	}
+
+	discogsArtist.Profile = cleanDiscogsProfile(discogsArtist.Profile)
+	return discogsArtist, nil
 }
 
 func GetDiscogsArtist(token, key, secret string, id int) (*DiscogsArtist, error) {
@@ -106,12 +112,33 @@ func GetDiscogsArtist(token, key, secret string, id int) (*DiscogsArtist, error)
 }
 
 func buildDiscogsAuth(token, key, secret string) string {
-	parts := []string{"Discogs"}
 	if token != "" {
-		parts = append(parts, fmt.Sprintf("token=%s", token))
+		return "Discogs token=" + token
 	}
 	if key != "" && secret != "" {
-		parts = append(parts, fmt.Sprintf("key=%s, secret=%s", key, secret))
+		return fmt.Sprintf("Discogs key=%s, secret=%s", key, secret)
 	}
-	return strings.Join(parts, " ")
+	return ""
+}
+
+var (
+	discogsIDTagRegex         = regexp.MustCompile(`\[(a|r|l|m)(=?)(\d+)\]`)
+	discogsNamedTagRegex      = regexp.MustCompile(`\[(a|r|l)=([^\]]+)\]`)
+	discogsURLTagRegex        = regexp.MustCompile(`\[url=[^\]]+\](.*?)\[/url\]`)
+	discogsBoldItalicTagRegex = regexp.MustCompile(`\[/?(?:b|i)\]`)
+	discogsUnderlineTagRegex  = regexp.MustCompile(`\[/?(?:u)\]`)
+	discogsCapitalTagRegex    = regexp.MustCompile(`\[[A-Z]=[^\]]*\]`)
+)
+
+func cleanDiscogsProfile(text string) string {
+	text = discogsIDTagRegex.ReplaceAllString(text, "")
+	text = discogsNamedTagRegex.ReplaceAllString(text, "$2")
+	text = discogsURLTagRegex.ReplaceAllString(text, "$1")
+	text = discogsBoldItalicTagRegex.ReplaceAllString(text, "")
+	text = discogsUnderlineTagRegex.ReplaceAllString(text, "")
+	text = discogsCapitalTagRegex.ReplaceAllString(text, "")
+	text = strings.TrimSpace(text)
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+	text = regexp.MustCompile(`\s([,.;:!?])`).ReplaceAllString(text, "$1")
+	return text
 }

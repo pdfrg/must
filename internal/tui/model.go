@@ -170,6 +170,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 
 	m.searchModal = modals.NewSearch(styles, nil)
 	m.helpModal = modals.NewHelp(styles, defaultHelpEntries())
+	m.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 
 	if cfg.ShowAlbumArt && cfg.Layout != "compact" {
 		m.imageRenderer = pkgimage.NewRendererWithProtocol(cfg.ForceProtocol)
@@ -269,13 +270,14 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "n", Desc: "next track"},
 		{Key: "p", Desc: "previous track"},
 		{Key: "←/→", Desc: "seek -5s/+5s"},
+		{Key: "ctrl+r", Desc: "restart song"},
 		{Key: "r", Desc: "cycle repeat (off/all/one)"},
 		{Key: "s", Desc: "toggle shuffle"},
-		{Key: "v", Desc: "cycle bottom view"},
+		{Key: "v/tab", Desc: "cycle bottom view"},
 		{Key: "/", Desc: "search library"},
 		{Key: "l", Desc: "library browser"},
 		{Key: "e", Desc: "enqueue track/album"},
-		{Key: "E", Desc: "enqueue next"},
+		{Key: "E", Desc: "enqueue highlighted next"},
 		{Key: "d", Desc: "delete track from playlist"},
 		{Key: "D", Desc: "clear playlist"},
 		{Key: "J/K", Desc: "move track down/up"},
