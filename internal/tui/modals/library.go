@@ -762,7 +762,7 @@ func (l Library) renderHelpLine() string {
 		desc string
 	}{
 		{"↑/↓", "nav"},
-		{"h/l", "focus"},
+		{"←/→", "focus"},
 		{"enter", "play"},
 		{"e", "enqueue"},
 		{"g", "genre"},
@@ -795,6 +795,7 @@ func (l Library) renderHelpLine() string {
 			b.WriteString(" ")
 		}
 		b.WriteString(l.styles.AccentStyle.Render(p.key))
+		b.WriteString(" ")
 		b.WriteString(l.styles.MutedStyle.Render(p.desc))
 	}
 	b.WriteString(" ")

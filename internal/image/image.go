@@ -234,7 +234,8 @@ func (r *Renderer) GetCachedArt(trackPath string) (image.Image, error) {
 }
 
 func cacheKey(path string) string {
-	h := sha256.Sum256([]byte(path))
+	dir := filepath.Dir(path)
+	h := sha256.Sum256([]byte(dir))
 	return hex.EncodeToString(h[:])[:16]
 }
 

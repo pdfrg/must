@@ -4,6 +4,7 @@ import (
 	"image"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	termimg "github.com/blacktop/go-termimg"
@@ -137,6 +138,10 @@ type Model struct {
 	galleryModal  *modals.Gallery
 	viewport      viewport.Model
 	viewportReady bool
+
+	saveInput         textinput.Model
+	savingPlaylist    bool
+	restoringPlayback bool
 }
 
 func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool, noRestore bool, autoplay bool) Model {
@@ -171,6 +176,10 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 	m.searchModal = modals.NewSearch(styles, nil)
 	m.helpModal = modals.NewHelp(styles, defaultHelpEntries())
 	m.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
+
+	m.saveInput = textinput.New()
+	m.saveInput.Placeholder = "playlist name"
+	m.saveInput.SetWidth(30)
 
 	if cfg.ShowAlbumArt && cfg.Layout != "compact" {
 		m.imageRenderer = pkgimage.NewRendererWithProtocol(cfg.ForceProtocol)

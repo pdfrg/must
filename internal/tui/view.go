@@ -100,10 +100,15 @@ func (m Model) renderNowPlaying() string {
 		TimePos:     m.playbackPos.TimePos,
 		RepeatMode:  m.repeatMode,
 		Shuffle:     m.shuffle,
-		StatusMsg:   m.statusMsg,
-		StatusIsErr: m.statusIsErr,
 		SleepActive: m.sleepTimer > 0 && m.sleepRemaining > 0,
 		SleepMins:   int(m.sleepRemaining.Minutes()) + 1,
+	}
+	if m.savingPlaylist {
+		data.StatusMsg = "Save playlist: " + m.saveInput.View()
+		data.StatusIsErr = false
+	} else {
+		data.StatusMsg = m.statusMsg
+		data.StatusIsErr = m.statusIsErr
 	}
 
 	m.nowPlaying.SetWidth(m.width - 4)

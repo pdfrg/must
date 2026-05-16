@@ -96,17 +96,18 @@ func (h Help) View() string {
 
 	for i := 0; i < maxVisible && start+i < len(h.entries); i++ {
 		entry := h.entries[start+i]
-		line := fmt.Sprintf(" %-14s %s", entry.Key, entry.Desc)
+		keyStr := h.styles.AccentStyle.Render(fmt.Sprintf(" %-14s", entry.Key))
+		descStr := h.styles.MutedStyle.Render(entry.Desc)
+		line := keyStr + descStr
 		if start+i == h.cursor {
-			b.WriteString(h.styles.CursorStyle.Render(line))
-		} else {
-			b.WriteString(h.styles.ForegroundStyle.Render(line))
+			line = h.styles.CursorStyle.Render(fmt.Sprintf(" %-14s%s", entry.Key, entry.Desc))
 		}
+		b.WriteString(line)
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	helpText := h.styles.MutedStyle.Render("↑/↓ scroll  esc close")
+	helpText := h.styles.AccentStyle.Render("↑/↓") + h.styles.MutedStyle.Render(" scroll ") + h.styles.AccentStyle.Render("esc") + h.styles.MutedStyle.Render(" close")
 	b.WriteString(centerStyled(helpText, contentWidth))
 
 	modalStyle := lipgloss.NewStyle().
@@ -115,7 +116,23 @@ func (h Help) View() string {
 		Padding(1, 2).
 		Width(contentWidth + 4)
 
-	return modalStyle.Render(b.String())
+	rendered := modalStyle.Render(b.String())
+
+	visWidth := lipgloss.Width(rendered)
+	visHeight := lipgloss.Height(rendered)
+	padLeft := max(0, (h.width-visWidth)/2)
+	padTop := max(0, (h.height-visHeight)/2)
+
+	if padTop > 0 || padLeft > 0 {
+		var sb strings.Builder
+		for i := 0; i < padTop; i++ {
+			sb.WriteString("\n")
+		}
+		sb.WriteString(strings.Repeat(" ", padLeft))
+		sb.WriteString(rendered)
+		return sb.String()
+	}
+	return rendered
 }
 
 func centerStyled(text string, width int) string {
