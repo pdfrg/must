@@ -8,6 +8,8 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/playlist"
@@ -135,6 +137,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lyrics = msg.plain
 			m.syncedLyrics = msg.synced
 		}
+		m.updateBottomView()
 		return m, nil
 
 	case artistInfoFetchedMsg:
@@ -151,6 +154,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if artist != "" {
 				m.artistCache[strings.ToLower(artist)] = msg.info
 			}
+
+			m.updateBottomView()
 
 			var trackPath string
 			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
@@ -330,6 +335,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.bottomViewMode = BottomLyrics
 		m.viewport.GotoTop()
+		m.updateBottomView()
 		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
 
 	case key.Matches(msg, m.keyMap.SyncedLyrics):
@@ -678,6 +684,7 @@ func (m Model) cycleView() (tea.Model, tea.Cmd) {
 	}
 
 	m.viewport.GotoTop()
+	m.updateBottomView()
 
 	if prevMode == BottomArtistBio && m.bottomViewMode != BottomArtistBio {
 		m.artistArtStr = ""
@@ -686,8 +693,31 @@ func (m Model) cycleView() (tea.Model, tea.Cmd) {
 		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
 	}
 
-	if m.bottomViewMode == BottomArtistBio && m.artistArtLoaded && m.artistArtStr != "" {
-		return m, tea.Batch(renderAlbumArtAfterDelay(), renderArtistArtAfterDelay())
+	if m.bottomViewMode == BottomArtistBio {
+		if m.artistInfo == nil {
+			newM, cmd := m.openArtistBio()
+			return newM, cmd
+		}
+		if m.artistArtLoaded && m.artistArtStr != "" {
+			return m, tea.Batch(renderAlbumArtAfterDelay(), renderArtistArtAfterDelay())
+		}
+		if m.artistInfo.ThumbnailURL != "" || m.playing {
+			m.artistArtStr = ""
+			m.artistArtLoaded = false
+			m.artistInfoEventID++
+			var trackPath string
+			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+				trackPath = m.playlist[m.currentIndex].Path
+			}
+			var artist string
+			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+				artist = m.playlist[m.currentIndex].Artist
+			}
+			return m, tea.Batch(
+				loadArtistImageCmd(m.artistInfoEventID, artist, trackPath, m.artistInfo.ThumbnailURL),
+				renderAlbumArtAfterDelay(),
+			)
+		}
 	}
 
 	viewName := "playlist"
@@ -769,6 +799,8 @@ func (m Model) openArtistBio() (tea.Model, tea.Cmd) {
 	m.artistArtLoaded = false
 	m.artistArtEventID = 0
 	m.artistInfoEventID++
+	m.viewport.GotoTop()
+	m.updateBottomView()
 
 	return m, fetchArtistInfoCmd(m.cfg, artist, album, m.artistInfoEventID, m.artistCache)
 }
@@ -1018,4 +1050,139 @@ func (m Model) enqueueHighlightedNext() (tea.Model, tea.Cmd) {
 
 	m.updatePlaylist()
 	return m, setStatus(&m, fmt.Sprintf("Enqueued next: %s", track.Title), false)
+}
+
+func (m *Model) updateBottomView() {
+	if m.bottomViewMode == BottomPlaylist || m.bottomViewMode == BottomOff || m.bottomViewMode == BottomSyncedLyrics {
+		return
+	}
+
+	if m.bottomViewMode != BottomArtistBio && m.width > 0 {
+		m.viewport.SetWidth(m.width)
+	}
+
+	var content string
+
+	switch m.bottomViewMode {
+	case BottomLyrics:
+		if m.lyricsLoading {
+			content = m.styles.MutedStyle.Render(" Loading lyrics...")
+		} else if m.lyrics == "" {
+			content = m.styles.MutedStyle.Render(" No lyrics available")
+		} else {
+			var b strings.Builder
+			lines := strings.Split(m.lyrics, "\n")
+			for i, line := range lines {
+				b.WriteString(" ")
+				b.WriteString(m.styles.ForegroundStyle.Render(line))
+				if i < len(lines)-1 {
+					b.WriteString("\n")
+				}
+			}
+			content = b.String()
+		}
+		content += strings.Repeat("\n", 10)
+
+	case BottomArtistBio:
+		if m.artistArtLoaded && m.artistArtStr != "" {
+			imgGap := m.artistArtWidth + 5
+			newWidth := m.width - imgGap
+			if newWidth < 30 {
+				newWidth = 30
+			}
+			m.viewport.SetWidth(newWidth)
+		} else {
+			m.viewport.SetWidth(m.width)
+		}
+
+		if m.artistInfoLoading {
+			content = m.styles.MutedStyle.Render("Loading artist info...")
+		} else if m.artistInfo == nil {
+			content = m.styles.MutedStyle.Render("No artist info available")
+		} else {
+			info := m.artistInfo
+			var b strings.Builder
+
+			indent := " "
+			if m.artistArtLoaded && m.artistArtStr != "" {
+				indent = ""
+			}
+
+			var title string
+			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+				title = m.playlist[m.currentIndex].Artist
+			}
+			if title != "" {
+				b.WriteString(m.styles.Header.Render(title))
+				b.WriteString("\n")
+			}
+
+			lineWidth := m.viewport.Width() - 4
+			if lineWidth < 20 {
+				lineWidth = 20
+			}
+
+			if info.Bio != "" && info.Bio != "No biography found." {
+				words := strings.Fields(info.Bio)
+				var line string
+				for _, w := range words {
+					test := line + " " + w
+					if lipgloss.Width(test) > lineWidth && line != "" {
+						b.WriteString(m.styles.ForegroundStyle.Render(indent + strings.TrimSpace(line)))
+						b.WriteString("\n")
+						line = w
+					} else {
+						line = test
+					}
+				}
+				if line != "" {
+					b.WriteString(m.styles.ForegroundStyle.Render(indent + strings.TrimSpace(line)))
+				}
+			} else if info.Bio == "No biography found." {
+				b.WriteString(m.styles.MutedStyle.Render(indent + "No bio available"))
+			}
+
+			if info.BioSource != "" {
+				b.WriteString("\n")
+				b.WriteString(m.styles.MutedStyle.Render(indent + "Source: " + info.BioSource))
+			}
+
+			if info.Discography != "" {
+				b.WriteString("\n\n")
+				b.WriteString(m.styles.AccentStyle.Render(indent + "Discography"))
+				if info.DiscoSource != "" {
+					b.WriteString(m.styles.MutedStyle.Render(" (" + info.DiscoSource + ")"))
+				}
+				b.WriteString("\n")
+
+				discoLines := strings.Split(info.Discography, "\n")
+				for _, dl := range discoLines {
+					b.WriteString(m.styles.ForegroundStyle.Render(indent + dl))
+					b.WriteString("\n")
+				}
+			}
+
+			if info.PageURL != "" {
+				b.WriteString("\n")
+				b.WriteString(m.styles.MutedStyle.Render(indent + info.PageURL))
+			}
+
+			if len(info.GalleryURLs) > 0 {
+				b.WriteString("\n")
+				galleryHint := fmt.Sprintf("%s%d images — press I for gallery", indent, len(info.GalleryURLs))
+				b.WriteString(m.styles.MutedStyle.Render(galleryHint))
+			}
+
+			content = b.String()
+		}
+		content += strings.Repeat("\n", 10)
+	}
+
+	viewWidth := m.viewport.Width()
+	if content != "" && viewWidth > 0 {
+		content = ansi.Wordwrap(content, viewWidth, "")
+	}
+
+	m.viewport.SetContent(content)
+	m.viewport.SoftWrap = true
 }

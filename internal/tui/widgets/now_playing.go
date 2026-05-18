@@ -135,8 +135,8 @@ func (n NowPlaying) renderIdleView() string {
 
 	progView := n.progress.View()
 	timeStr := n.mutedStyle.Render("00:00 / 00:00 (0%)")
-	audioLine := n.mutedStyle.Render("♫ —")
-	modeLine := n.mutedStyle.Render("▶ stopped")
+	audioLine := n.mutedStyle.Render("󰎇 —")
+	modeLine := n.mutedStyle.Render("󰓛 stopped")
 	statusLine := n.mutedStyle.Render("must")
 
 	output := fmt.Sprintf(" %s\n %s\n %s\n\n %s\n %s\n\n %s\n\n %s\n\n %s\n",
@@ -198,13 +198,13 @@ func (n NowPlaying) View(data NowPlayingData) string {
 	var modeLine string
 	modeParts := []string{}
 	if data.RepeatMode != "" && data.RepeatMode != "off" {
-		modeParts = append(modeParts, n.foregroundStyle.Render("↻ "+data.RepeatMode))
+		modeParts = append(modeParts, n.foregroundStyle.Render("󰑖 "+data.RepeatMode))
 	}
 	if data.Shuffle {
-		modeParts = append(modeParts, n.foregroundStyle.Render("⇄ shuffle"))
+		modeParts = append(modeParts, n.foregroundStyle.Render("󰒟 shuffle"))
 	}
 	if data.IsPaused {
-		modeParts = append(modeParts, n.mutedStyle.Render("❚❚ paused"))
+		modeParts = append(modeParts, n.mutedStyle.Render("󰏤 paused"))
 	} else {
 		modeParts = append(modeParts, n.mutedStyle.Render("▶ playing"))
 	}
@@ -270,7 +270,7 @@ func formatAudioLine(info *models.AudioInfo, mutedStyle, fgStyle lipgloss.Style)
 	if len(parts) == 0 {
 		return ""
 	}
-	return mutedStyle.Render("♫") + " " + strings.Join(parts, mutedStyle.Render(" • "))
+	return mutedStyle.Render("󰎇") + " " + strings.Join(parts, mutedStyle.Render(" • "))
 }
 
 func formatDuration(seconds float64) string {

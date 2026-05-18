@@ -1,6 +1,26 @@
+[![CI](https://github.com/pdfrg/must/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pdfrg/must/actions/workflows/ci.yml)
+
+**If you like must, please check out [rptui](https://github.com/pdfrg/rptui), a Radio Paradise TUI.**
+
 # must — MUSic TUI
 
-A fast, beautiful terminal UI music player for your local music library. Built with Go + Bubble Tea.
+<img src="assets/must_bubbles_logo.png" alt="must icon" width="200" align="left" style="margin-right: 20px; margin-top: -20px; margin-bottom: 20px;">
+
+### A fast, beautiful TUI music player for your local music library. Built with Go + Bubble Tea.
+
+## There's a million music players, why must?
+
+1. TUI speed.
+
+2. Prominent album art.
+
+3. Easy keybindings, no need to memorize, always visible in footer or hints text.
+
+4. Lyrics and artist info views, with artist thumb and gallery.
+
+5. Omarchy theme integration with live reloads.
+
+6. Simple, doesn't try to do everything.
 
 ## Features
 
