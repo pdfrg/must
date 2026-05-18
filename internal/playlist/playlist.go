@@ -6,12 +6,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/pdfrg/must/internal/models"
 )
 
 type Playlist struct {
 	Name     string
 	FilePath string
 	Tracks   []string
+}
+
+type SaveOptions struct {
+	UseEXTINF     bool
+	RelativePaths bool
+	Tracks        []models.Track // metadata for EXTINF lines; must match length of paths passed to Save
 }
 
 func Load(path string) (*Playlist, error) {
@@ -48,7 +56,7 @@ func Load(path string) (*Playlist, error) {
 	return p, nil
 }
 
-func Save(path string, tracks []string) error {
+func Save(path string, paths []string, opts *SaveOptions) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
@@ -65,11 +73,45 @@ func Save(path string, tracks []string) error {
 		return err
 	}
 
-	for _, track := range tracks {
-		if _, err := writer.WriteString(track + "\n"); err != nil {
+	if opts == nil {
+		opts = &SaveOptions{}
+	}
+
+	for i, trackPath := range paths {
+		entryPath := trackPath
+
+		if opts.RelativePaths {
+			rel, err := filepath.Rel(dir, trackPath)
+			if err == nil {
+				entryPath = rel
+			}
+		}
+
+		if opts.UseEXTINF && i < len(opts.Tracks) {
+			t := opts.Tracks[i]
+			duration := int(t.Duration)
+			var label string
+			if t.Artist != "" && t.Title != "" {
+				label = t.Artist + " - " + t.Title
+			} else if t.Title != "" {
+				label = t.Title
+			} else {
+				label = filepath.Base(trackPath)
+			}
+			extinf := fmt.Sprintf("#EXTINF:%d,%s\n", duration, label)
+			if _, err := writer.WriteString(extinf); err != nil {
+				return err
+			}
+		}
+
+		if _, err := writer.WriteString(entryPath + "\n"); err != nil {
 			return err
 		}
 	}
 
 	return writer.Flush()
+}
+
+func SaveLegacy(path string, paths []string) error {
+	return Save(path, paths, nil)
 }

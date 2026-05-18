@@ -2,3 +2,5 @@ must
 fixes.txt
 roadmap.txt
 *.db
+.build-secrets
+dist/

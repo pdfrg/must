@@ -90,6 +90,27 @@ func (m Model) handleProgressTick(msg progressTickMsg) (tea.Model, tea.Cmd) {
 			m.currentIndex = playlistIdx
 			m.updatePlaylist()
 			cmds = append(cmds, m.trackChangedCmds())
+			// Re-read position after trackChangedCmds zeroed it
+			if pos, err := m.mpvBackend.GetPlaybackPosition(); err == nil {
+				m.playbackPos = pos
+			}
+		}
+	}
+
+	if len(m.scrobbleStates) > 0 {
+		flashDuration := 5 * time.Second
+		if time.Since(m.scrobbleFlashAt) >= flashDuration {
+			m.scrobbleStates = nil
+		} else {
+			for svc, state := range m.scrobbleStates {
+				if state == 2 || state == 3 { // FlashBlinkOn or FlashBlinkOff
+					if int(time.Since(m.scrobbleFlashAt).Seconds())%2 == 0 {
+						m.scrobbleStates[svc] = 2 // FlashBlinkOn
+					} else {
+						m.scrobbleStates[svc] = 3 // FlashBlinkOff
+					}
+				}
+			}
 		}
 	}
 
@@ -102,7 +123,7 @@ func (m Model) handleProgressTick(msg progressTickMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if m.sleepTimer > 0 && m.sleepRemaining > 0 {
+	if m.sleepTimerActive {
 		cmds = append(cmds, tickSleepTimerCmd())
 	}
 
@@ -385,9 +406,7 @@ func startPlaybackCmd(backend *mpv.MPVBackend, paths []string, startIndex int) t
 		if err := backend.Start(paths); err != nil {
 			return statusClearMsg{}
 		}
-		if startIndex > 0 {
-			_ = backend.PlaylistPlayIndex(startIndex)
-		}
+		_ = backend.PlaylistPlayIndex(startIndex)
 		return trackChangedMsg{}
 	}
 }
@@ -410,6 +429,7 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 	m.playing = true
 	m.paused = false
 	m.playbackPos = mpv.PlaybackPosition{}
+	cmds = append(cmds, m.nowPlaying.UpdateProgress(0))
 	m.audioInfo = nil
 
 	m.albumArtStr = ""
@@ -459,6 +479,7 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 		}
 	}
 
+	cmds = append(cmds, tickProgressCmd())
 	return tea.Batch(cmds...)
 }
 
@@ -674,14 +695,24 @@ func (m Model) renderArtistArtCmd() tea.Cmd {
 
 func sendNowPlayingCmd(cfg *config.Config, track models.Track) tea.Cmd {
 	return func() tea.Msg {
-		if cfg.LastFM.Enabled && cfg.LastFM.SessionKey != "" && cfg.LastFM.APIKey != "" {
+		apiKey := cfg.LastFM.APIKey
+		if apiKey == "" {
+			apiKey = api.LastFMAPIKey
+		}
+		secret := cfg.LastFM.SharedSecret
+		if secret == "" {
+			secret = api.LastFMSharedSecret
+		}
+		if cfg.LastFM.Enabled && cfg.LastFM.SessionKey != "" && apiKey != "" {
 			lfmTrack := api.LastFMTrack{
 				Artist:   track.Artist,
 				Title:    track.Title,
 				Album:    track.Album,
 				Duration: int(track.Duration),
 			}
-			_ = api.UpdateNowPlayingLastFM(cfg.LastFM.APIKey, cfg.LastFM.SharedSecret, cfg.LastFM.SessionKey, lfmTrack)
+			if err := api.UpdateNowPlayingLastFM(apiKey, secret, cfg.LastFM.SessionKey, lfmTrack); err != nil {
+				logf("Now-playing to last.fm failed: %v", err)
+			}
 		}
 
 		if cfg.ListenBrainz.Enabled && cfg.ListenBrainz.Token != "" {
@@ -690,7 +721,9 @@ func sendNowPlayingCmd(cfg *config.Config, track models.Track) tea.Cmd {
 				Title:  track.Title,
 				Album:  track.Album,
 			}
-			_ = api.SubmitPlayingNowListenBrainz(cfg.ListenBrainz.Token, lbTrack)
+			if err := api.SubmitPlayingNowListenBrainz(cfg.ListenBrainz.Token, lbTrack); err != nil {
+				logf("Now-playing to listenbrainz failed: %v", err)
+			}
 		}
 
 		return nil
@@ -699,14 +732,30 @@ func sendNowPlayingCmd(cfg *config.Config, track models.Track) tea.Cmd {
 
 func scrobbleTrackCmd(cfg *config.Config, track models.Track, startTime time.Time) tea.Cmd {
 	return func() tea.Msg {
-		if cfg.LastFM.Enabled && cfg.LastFM.SessionKey != "" && cfg.LastFM.APIKey != "" {
+		var results []scrobbleResult
+
+		apiKey := cfg.LastFM.APIKey
+		if apiKey == "" {
+			apiKey = api.LastFMAPIKey
+		}
+		secret := cfg.LastFM.SharedSecret
+		if secret == "" {
+			secret = api.LastFMSharedSecret
+		}
+		if cfg.LastFM.Enabled && cfg.LastFM.SessionKey != "" && apiKey != "" {
 			lfmTrack := api.LastFMTrack{
 				Artist:   track.Artist,
 				Title:    track.Title,
 				Album:    track.Album,
 				Duration: int(track.Duration),
 			}
-			_ = api.ScrobbleLastFM(cfg.LastFM.APIKey, cfg.LastFM.SharedSecret, cfg.LastFM.SessionKey, lfmTrack, startTime.Unix())
+			err := api.ScrobbleLastFM(apiKey, secret, cfg.LastFM.SessionKey, lfmTrack, startTime.Unix())
+			results = append(results, scrobbleResult{Service: "fm", Success: err == nil})
+			if err != nil {
+				logf("Scrobble to last.fm failed: %v", err)
+			} else {
+				logf("Scrobbled to last.fm: %s - %s", track.Artist, track.Title)
+			}
 		}
 
 		if cfg.ListenBrainz.Enabled && cfg.ListenBrainz.Token != "" {
@@ -715,9 +764,18 @@ func scrobbleTrackCmd(cfg *config.Config, track models.Track, startTime time.Tim
 				Title:  track.Title,
 				Album:  track.Album,
 			}
-			_ = api.SubmitListenBrainz(cfg.ListenBrainz.Token, lbTrack, startTime.Unix())
+			err := api.SubmitListenBrainz(cfg.ListenBrainz.Token, lbTrack, startTime.Unix())
+			results = append(results, scrobbleResult{Service: "lb", Success: err == nil})
+			if err != nil {
+				logf("Scrobble to listenbrainz failed: %v", err)
+			} else {
+				logf("Scrobbled to listenbrainz: %s - %s", track.Artist, track.Title)
+			}
 		}
 
+		if len(results) > 0 {
+			return scrobbleResultMsg{results: results}
+		}
 		return nil
 	}
 }

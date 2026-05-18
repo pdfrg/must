@@ -27,9 +27,10 @@ type Footer struct {
 }
 
 const (
-	flashOff     = 0
-	flashSolid   = 1
-	flashBlinkOn = 2
+	FlashOff      = 0
+	FlashSolid    = 1
+	FlashBlinkOn  = 2
+	FlashBlinkOff = 3
 )
 
 func NewFooter(accentStyle, mutedStyle lipgloss.Style) *Footer {
@@ -47,6 +48,7 @@ func NewFooter(accentStyle, mutedStyle lipgloss.Style) *Footer {
 			{Key: "/", Icon: "", Label: "Search"},
 			{Key: "l", Icon: "", Label: "Lib"},
 			{Key: "o", Icon: "", Label: "Opt"},
+			{Key: "z", Icon: "", Label: "Zzz"},
 			{Key: "E", Icon: "", Label: "EnqN"},
 			{Key: "d", Icon: "", Label: "Rem"},
 			{Key: "D", Icon: "", Label: "Clr"},
@@ -95,15 +97,13 @@ func (f Footer) scrobbleIndicator() string {
 	}
 	var parts []string
 	for _, svc := range f.scrobbleServices {
-		state := flashOff
+		state := FlashOff
 		if f.flashStatesByService != nil {
 			state = f.flashStatesByService[svc]
 		}
 		var style lipgloss.Style
 		switch state {
-		case flashSolid:
-			style = f.accentStyle
-		case flashBlinkOn:
+		case FlashSolid, FlashBlinkOn:
 			style = f.accentStyle
 		default:
 			style = f.mutedStyle

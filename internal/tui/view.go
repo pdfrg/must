@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -99,11 +100,15 @@ func (m Model) renderNowPlaying() string {
 		TimePos:     m.playbackPos.TimePos,
 		RepeatMode:  m.repeatMode,
 		Shuffle:     m.shuffle,
-		SleepActive: m.sleepTimer > 0 && m.sleepRemaining > 0,
-		SleepMins:   int(m.sleepRemaining.Minutes()) + 1,
+		SleepActive: m.sleepTimerActive,
+		SleepMins:   int(time.Until(m.sleepTimerExpiresAt).Minutes()) + 1,
 	}
 	if m.savingPlaylist {
-		data.StatusMsg = "Save playlist: " + m.saveInput.View()
+		modeStr := "[absolute]"
+		if m.saveAsRelative {
+			modeStr = "[relative]"
+		}
+		data.StatusMsg = "Save: " + m.saveInput.View() + "  " + modeStr + " (tab)"
 		data.StatusIsErr = false
 	} else {
 		data.StatusMsg = m.statusMsg
@@ -204,7 +209,13 @@ func (m Model) renderModal() string {
 		}
 	case ModalOptions:
 		if m.optionsModal != nil {
+			m.optionsModal.SetSize(m.width, m.height)
 			return m.optionsModal.View()
+		}
+	case ModalSleepTimer:
+		if m.sleepTimerModal != nil {
+			m.sleepTimerModal.SetSize(m.width, m.height)
+			return m.sleepTimerModal.View()
 		}
 	}
 	return ""
@@ -265,12 +276,13 @@ func (m Model) renderFooter() string {
 
 	var services []string
 	if m.cfg.LastFM.Enabled && m.cfg.LastFM.SessionKey != "" {
-		services = append(services, "LFM")
+		services = append(services, "fm")
 	}
 	if m.cfg.ListenBrainz.Enabled && m.cfg.ListenBrainz.Token != "" {
-		services = append(services, "LB")
+		services = append(services, "lb")
 	}
 	m.footer.SetScrobbleServices(services)
+	m.footer.SetFlashStateByService(m.scrobbleStates)
 
 	return m.footer.View()
 }

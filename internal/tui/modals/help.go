@@ -124,12 +124,18 @@ func (h Help) View() string {
 	padTop := max(0, (h.height-visHeight)/2)
 
 	if padTop > 0 || padLeft > 0 {
+		padStr := strings.Repeat(" ", padLeft)
 		var sb strings.Builder
 		for i := 0; i < padTop; i++ {
 			sb.WriteString("\n")
 		}
-		sb.WriteString(strings.Repeat(" ", padLeft))
-		sb.WriteString(rendered)
+		for i, line := range strings.Split(rendered, "\n") {
+			if i > 0 {
+				sb.WriteString("\n")
+			}
+			sb.WriteString(padStr)
+			sb.WriteString(line)
+		}
 		return sb.String()
 	}
 	return rendered

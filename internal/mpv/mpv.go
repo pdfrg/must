@@ -312,6 +312,9 @@ func (m *MPVBackend) PlaylistPlayIndex(index int) error {
 		return fmt.Errorf("MPV not running")
 	}
 	_, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"set_property", "playlist-pos", index}})
+	if err != nil && m.reconnectLocked() {
+		_, err = m.sendIPCCommandLocked(IPCCommand{Command: []any{"set_property", "playlist-pos", index}})
+	}
 	return err
 }
 

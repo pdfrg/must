@@ -65,6 +65,8 @@ func themeIndexFromConfig(themeName string) int {
 
 type Options struct {
 	styles *config.ThemeStyles
+	width  int
+	height int
 	cursor int
 
 	showAlbumArt         bool
@@ -142,6 +144,11 @@ func NewOptions(
 		origRealAudio:            realAudio,
 		origThemeIdx:             themeIdx,
 	}
+}
+
+func (o *Options) SetSize(width, height int) {
+	o.width = width
+	o.height = height
 }
 
 func (o *Options) visibleItems() []int {
@@ -365,6 +372,12 @@ func (o *Options) applyChanges() tea.Cmd {
 
 func (o Options) View() string {
 	modalWidth := 60
+	if o.width-8 < modalWidth {
+		modalWidth = o.width - 8
+	}
+	if modalWidth < 40 {
+		modalWidth = 40
+	}
 	contentWidth := modalWidth - 6
 
 	accentStyle := o.styles.AccentStyle
@@ -461,7 +474,29 @@ func (o Options) View() string {
 		Padding(1, 2).
 		Width(modalWidth)
 
-	return modalStyle.Render(b.String())
+	rendered := modalStyle.Render(b.String())
+
+	visWidth := lipgloss.Width(rendered)
+	visHeight := lipgloss.Height(rendered)
+	padLeft := max(0, (o.width-visWidth)/2)
+	padTop := max(0, (o.height-visHeight)/2)
+
+	if padTop > 0 || padLeft > 0 {
+		padStr := strings.Repeat(" ", padLeft)
+		var sb strings.Builder
+		for i := 0; i < padTop; i++ {
+			sb.WriteString("\n")
+		}
+		for i, line := range strings.Split(rendered, "\n") {
+			if i > 0 {
+				sb.WriteString("\n")
+			}
+			sb.WriteString(padStr)
+			sb.WriteString(line)
+		}
+		return sb.String()
+	}
+	return rendered
 }
 
 func (o *Options) renderPicker(value string, selected bool) string {

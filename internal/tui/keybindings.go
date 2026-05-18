@@ -39,6 +39,7 @@ type KeyMap struct {
 	MoveTrackDown key.Binding
 	SavePlaylist  key.Binding
 	Options       key.Binding
+	SleepTimer    key.Binding
 	UpdateView    key.Binding
 }
 
@@ -179,6 +180,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("o"),
 		key.WithHelp("o", "options"),
 	),
+	SleepTimer: key.NewBinding(
+		key.WithKeys("z"),
+		key.WithHelp("z", "sleep timer"),
+	),
 	UpdateView: key.NewBinding(
 		key.WithKeys("u"),
 		key.WithHelp("u", "update view"),
@@ -208,6 +213,6 @@ func (k KeyMap) GlobalBindings() []key.Binding {
 		k.Rescan, k.ClearPlaylist, k.DeleteTrack,
 		k.Lyrics, k.SyncedLyrics, k.ArtistBio, k.Gallery,
 		k.MoveTrackUp, k.MoveTrackDown, k.SavePlaylist,
-		k.Options, k.UpdateView,
+		k.Options, k.SleepTimer, k.UpdateView,
 	}
 }
