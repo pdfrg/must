@@ -134,13 +134,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case lyricsFetchedMsg:
 		m.lyricsLoading = false
-		if msg.err != nil {
-			m.lyrics = "Lyrics not found"
+		if m.bottomViewMode == BottomLyrics && m.lyrics != "" {
+			if msg.err != nil {
+				m.pendingLyrics = "Lyrics not found"
+			} else {
+				m.pendingLyrics = msg.plain
+			}
 		} else {
-			m.lyrics = msg.plain
-			m.syncedLyrics = msg.synced
+			if msg.err != nil {
+				m.lyrics = "Lyrics not found"
+			} else {
+				m.lyrics = msg.plain
+				m.syncedLyrics = msg.synced
+			}
+			m.updateBottomView()
 		}
-		m.updateBottomView()
 		return m, nil
 
 	case artistInfoFetchedMsg:
@@ -149,7 +157,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.info != nil {
-			m.artistInfo = msg.info
 			var artist string
 			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
 				artist = m.playlist[m.currentIndex].Artist
@@ -158,13 +165,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.artistCache[strings.ToLower(artist)] = msg.info
 			}
 
-			m.updateBottomView()
+			if m.bottomViewMode == BottomArtistBio && m.artistInfo != nil {
+				m.pendingArtistInfo = msg.info
+			} else {
+				m.artistInfo = msg.info
+				m.updateBottomView()
 
-			var trackPath string
-			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-				trackPath = m.playlist[m.currentIndex].Path
+				var trackPath string
+				if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+					trackPath = m.playlist[m.currentIndex].Path
+				}
+				cmds = append(cmds, loadArtistImageCmd(msg.eventID, artist, trackPath, msg.info.ThumbnailURL))
 			}
-			cmds = append(cmds, loadArtistImageCmd(msg.eventID, artist, trackPath, msg.info.ThumbnailURL))
 		}
 		return m, tea.Batch(cmds...)
 
@@ -336,6 +348,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.artistArtLoaded = false
 			m.artistArtEventID = 0
 		}
+		if m.hasPendingUpdate && m.pendingLyrics != "" {
+			m.lyrics = m.pendingLyrics
+			m.pendingLyrics = ""
+			m.hasPendingUpdate = false
+		}
 		m.bottomViewMode = BottomLyrics
 		m.viewport.GotoTop()
 		m.updateBottomView()
@@ -354,6 +371,35 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.bottomViewMode = BottomSyncedLyrics
 		m.viewport.GotoTop()
 		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+
+	case key.Matches(msg, m.keyMap.UpdateView):
+		if !m.hasPendingUpdate || (m.bottomViewMode != BottomLyrics && m.bottomViewMode != BottomArtistBio) {
+			return m, setStatus(&m, "No pending update", true)
+		}
+		var uCmds []tea.Cmd
+		if m.pendingLyrics != "" {
+			m.lyrics = m.pendingLyrics
+			m.pendingLyrics = ""
+		}
+		if m.pendingArtistInfo != nil {
+			m.artistInfo = m.pendingArtistInfo
+			m.pendingArtistInfo = nil
+			var artist string
+			var trackPath string
+			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+				track := m.playlist[m.currentIndex]
+				artist = track.Artist
+				trackPath = track.Path
+			}
+			if artist != "" {
+				uCmds = append(uCmds, loadArtistImageCmd(m.artistInfoEventID, artist, trackPath, m.artistInfo.ThumbnailURL))
+			}
+		}
+		m.hasPendingUpdate = false
+		m.viewport.GotoTop()
+		m.updateBottomView()
+		uCmds = append(uCmds, renderAlbumArtAfterDelay())
+		return m, tea.Batch(uCmds...)
 
 	case key.Matches(msg, m.keyMap.ArtistBio):
 		if m.bottomViewMode == BottomArtistBio {
@@ -694,6 +740,22 @@ func (m Model) cycleView() (tea.Model, tea.Cmd) {
 		m.bottomViewMode = (m.bottomViewMode + 1) % BottomViewModeCount
 	}
 
+	if m.hasPendingUpdate {
+		if m.bottomViewMode == BottomLyrics && m.pendingLyrics != "" {
+			m.lyrics = m.pendingLyrics
+			m.pendingLyrics = ""
+			if m.pendingArtistInfo == nil {
+				m.hasPendingUpdate = false
+			}
+		} else if m.bottomViewMode == BottomArtistBio && m.pendingArtistInfo != nil {
+			m.artistInfo = m.pendingArtistInfo
+			m.pendingArtistInfo = nil
+			if m.pendingLyrics == "" {
+				m.hasPendingUpdate = false
+			}
+		}
+	}
+
 	m.viewport.GotoTop()
 	m.updateBottomView()
 
@@ -906,11 +968,28 @@ func (m Model) openArtistBio() (tea.Model, tea.Cmd) {
 	}
 
 	m.bottomViewMode = BottomArtistBio
-	m.artistInfo = nil
-	m.artistInfoLoading = true
 	m.artistArtStr = ""
 	m.artistArtLoaded = false
 	m.artistArtEventID = 0
+
+	if m.hasPendingUpdate && m.pendingArtistInfo != nil {
+		m.artistInfo = m.pendingArtistInfo
+		m.pendingArtistInfo = nil
+		m.hasPendingUpdate = false
+		m.viewport.GotoTop()
+		m.updateBottomView()
+		var trackPath string
+		if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+			trackPath = m.playlist[m.currentIndex].Path
+		}
+		return m, tea.Batch(
+			loadArtistImageCmd(m.artistInfoEventID, artist, trackPath, m.artistInfo.ThumbnailURL),
+			renderAlbumArtAfterDelay(),
+		)
+	}
+
+	m.artistInfo = nil
+	m.artistInfoLoading = true
 	m.artistInfoEventID++
 	m.viewport.GotoTop()
 	m.updateBottomView()
@@ -1289,6 +1368,10 @@ func (m *Model) updateBottomView() {
 			content = b.String()
 		}
 		content += strings.Repeat("\n", 10)
+	}
+
+	if m.hasPendingUpdate {
+		content += "\n" + strings.Repeat("\n", 2) + m.styles.MutedStyle.Render(" Track changed — press u to update")
 	}
 
 	viewWidth := m.viewport.Width()

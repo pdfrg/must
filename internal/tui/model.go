@@ -89,6 +89,10 @@ type Model struct {
 	artistInfoEventID int64
 	artistCache       map[string]*models.ArtistInfo
 
+	pendingLyrics     string
+	pendingArtistInfo *models.ArtistInfo
+	hasPendingUpdate  bool
+
 	statusMsg   string
 	statusIsErr bool
 	statusSeq   int
@@ -294,8 +298,9 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "J/K", Desc: "move track down/up"},
 		{Key: "S", Desc: "save playlist"},
 		{Key: "R", Desc: "rescan library"},
-		{Key: "u", Desc: "plain lyrics"},
-		{Key: "U", Desc: "synced lyrics"},
+		{Key: "y", Desc: "plain lyrics"},
+		{Key: "Y", Desc: "synced lyrics"},
+		{Key: "u", Desc: "update lyrics/bio"},
 		{Key: "i", Desc: "artist bio"},
 		{Key: "I", Desc: "artist gallery"},
 		{Key: "o", Desc: "options"},

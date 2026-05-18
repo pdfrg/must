@@ -16,11 +16,13 @@
 
 3. Easy keybindings, no need to memorize, always visible in footer or hints text.
 
-4. Lyrics and artist info views, with artist thumb and gallery.
+4. Lyrics and artist info view, with artist thumb, image gallery, discography, and bio.
 
-5. Omarchy theme integration with live reloads.
+5. Fuzzy search all or specific tags.  Super easy to find what you want.
 
-6. Simple, doesn't try to do everything.
+6. Omarchy theme integration with live reloads.
+
+7. Simple, doesn't try to do everything.
 
 ## Features
 
