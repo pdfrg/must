@@ -64,6 +64,16 @@ type lyricsFetchedMsg struct {
 }
 
 type sleepTimerTickMsg time.Time
+type quitTickMsg time.Time
+
+type scrobbleResult struct {
+	Service string
+	Success bool
+}
+
+type scrobbleResultMsg struct {
+	results []scrobbleResult
+}
 
 type artistInfoFetchedMsg struct {
 	eventID int64
@@ -83,6 +93,12 @@ func tickProgressCmd() tea.Cmd {
 func tickSleepTimerCmd() tea.Cmd {
 	return tea.Tick(time.Minute, func(t time.Time) tea.Msg {
 		return sleepTimerTickMsg(t)
+	})
+}
+
+func tickQuitCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return quitTickMsg(t)
 	})
 }
 

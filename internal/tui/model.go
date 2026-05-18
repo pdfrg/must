@@ -40,6 +40,7 @@ const (
 	ModalHelp
 	ModalGallery
 	ModalOptions
+	ModalSleepTimer
 )
 
 type Model struct {
@@ -128,50 +129,61 @@ type Model struct {
 	prevScrobbleEligible bool
 	prevSongStartTime    time.Time
 
-	layoutOverride string
-	sleepTimer     time.Duration
-	sleepRemaining time.Duration
+	layoutOverride      string
+	sleepTimer          time.Duration
+	sleepRemaining      time.Duration
+	sleepTimerActive    bool
+	sleepTimerExpiresAt time.Time
+	quittingActive      bool
+	quittingStartedAt   time.Time
 
 	header         *widgets.Header
 	nowPlaying     *widgets.NowPlaying
 	playlistWidget *widgets.Playlist
 	footer         *widgets.Footer
 
-	libraryModal  *modals.Library
-	searchModal   *modals.Search
-	helpModal     *modals.Help
-	galleryModal  *modals.Gallery
-	optionsModal  *modals.Options
-	viewport      viewport.Model
-	viewportReady bool
+	libraryModal    *modals.Library
+	searchModal     *modals.Search
+	helpModal       *modals.Help
+	galleryModal    *modals.Gallery
+	optionsModal    *modals.Options
+	sleepTimerModal *modals.SleepTimer
+	viewport        viewport.Model
+	viewportReady   bool
 
 	saveInput         textinput.Model
 	savingPlaylist    bool
+	saveAsRelative    bool
 	restoringPlayback bool
+
+	scrobbleStates  map[string]int
+	scrobbleFlashAt time.Time
 }
 
 func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool, noRestore bool, autoplay bool) Model {
 	styles := config.NewThemeStyles(theme, cfg.TransparentBackground, cfg.DisableTheme, cfg.TerminalPalette)
 
 	m := Model{
-		cfg:            cfg,
-		theme:          theme,
-		styles:         styles,
-		keyMap:         DefaultKeyMap,
-		paths:          paths,
-		randomMode:     randomMode,
-		noRestore:      noRestore,
-		autoplay:       autoplay,
-		playlist:       []models.Track{},
-		currentIndex:   -1,
-		repeatMode:     cfg.RepeatMode,
-		shuffle:        cfg.Shuffle,
-		layoutOverride: layoutOverride,
-		sleepTimer:     sleepTimer,
-		sleepRemaining: sleepTimer,
-		bottomViewMode: BottomPlaylist,
-		activeModal:    ModalNone,
-		artistCache:    make(map[string]*models.ArtistInfo),
+		cfg:                 cfg,
+		theme:               theme,
+		styles:              styles,
+		keyMap:              DefaultKeyMap,
+		paths:               paths,
+		randomMode:          randomMode,
+		noRestore:           noRestore,
+		autoplay:            autoplay,
+		playlist:            []models.Track{},
+		currentIndex:        -1,
+		repeatMode:          cfg.RepeatMode,
+		shuffle:             cfg.Shuffle,
+		layoutOverride:      layoutOverride,
+		sleepTimer:          sleepTimer,
+		sleepRemaining:      sleepTimer,
+		sleepTimerActive:    sleepTimer > 0,
+		sleepTimerExpiresAt: time.Now().Add(sleepTimer),
+		bottomViewMode:      BottomPlaylist,
+		activeModal:         ModalNone,
+		artistCache:         make(map[string]*models.ArtistInfo),
 	}
 
 	m.header = widgets.NewHeader(styles.Header, "must - MUSic TUI")
@@ -251,6 +263,9 @@ func (m Model) Init() tea.Cmd {
 	if m.logoArtLoaded {
 		cmds = append(cmds, renderAlbumArtAfterDelay())
 	}
+	if m.sleepTimerActive {
+		cmds = append(cmds, tickSleepTimerCmd())
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -303,6 +318,7 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "u", Desc: "update lyrics/bio"},
 		{Key: "i", Desc: "artist bio"},
 		{Key: "I", Desc: "artist gallery"},
+		{Key: "z", Desc: "sleep timer"},
 		{Key: "o", Desc: "options"},
 		{Key: "?", Desc: "help"},
 		{Key: "q/ctrl+c", Desc: "quit"},

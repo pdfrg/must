@@ -14,6 +14,12 @@ import (
 
 const lastfmBaseURL = "https://ws.audioscrobbler.com/2.0/"
 
+// LastFMAPIKey and LastFMSharedSecret are injected at build time via -ldflags
+// (see Makefile). Config values take precedence; these serve as fallback defaults
+// so users don't need their own Last.fm API app.
+var LastFMAPIKey = ""
+var LastFMSharedSecret = ""
+
 type LastFMSession struct {
 	Key        string `json:"key"`
 	Name       string `json:"name"`
@@ -28,13 +34,13 @@ type LastFMTrack struct {
 	Duration int    `json:"duration"`
 }
 
-func GetLastFMAuthToken(apiKey string) (string, error) {
+func GetLastFMAuthToken(apiKey, secret string) (string, error) {
 	params := map[string]string{
 		"method":  "auth.gettoken",
 		"api_key": apiKey,
 	}
 
-	sig := generateLastFMSig(params, "")
+	sig := generateLastFMSig(params, secret)
 	params["api_sig"] = sig
 	params["format"] = "json"
 

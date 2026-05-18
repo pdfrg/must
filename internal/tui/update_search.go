@@ -140,9 +140,7 @@ func (m *Model) restorePlaybackState() tea.Cmd {
 			ClearPlaybackState()
 			return statusClearMsg{}
 		}
-		if playIdx > 0 {
-			_ = m.mpvBackend.PlaylistPlayIndex(playIdx)
-		}
+		_ = m.mpvBackend.PlaylistPlayIndex(playIdx)
 		if savedPos > 0 {
 			_ = m.mpvBackend.SeekAbsolute(savedPos)
 		}

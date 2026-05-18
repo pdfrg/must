@@ -12,6 +12,7 @@ import (
 type Config struct {
 	path                  string
 	MusicDir              string                `toml:"music_dir" comment:"root directory for library scanning (default: ~/Music)"`
+	PlaylistPathMode      string                `toml:"playlist_path_mode" comment:"path format when saving playlists: relative or absolute (default: relative)"`
 	RepeatMode            string                `toml:"repeat_mode" comment:"repeat mode: off, all, one (default: off)"`
 	Shuffle               bool                  `toml:"shuffle" comment:"shuffle playback order (default: false)"`
 	RestoreOnStart        bool                  `toml:"restore_on_start" comment:"restore last session's playlist and position on startup (default: true)"`
@@ -77,14 +78,15 @@ type VisualizerConfig struct {
 func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
 	return &Config{
-		MusicDir:       filepath.Join(homeDir, "Music"),
-		RepeatMode:     "off",
-		Shuffle:        false,
-		RestoreOnStart: true,
-		Autoplay:       false,
-		ShowAlbumArt:   true,
-		AlbumArtPath:   filepath.Join(os.TempDir(), "cover.jpg"),
-		CopyAlbumArt:   false,
+		MusicDir:         filepath.Join(homeDir, "Music"),
+		PlaylistPathMode: "relative",
+		RepeatMode:       "off",
+		Shuffle:          false,
+		RestoreOnStart:   true,
+		Autoplay:         false,
+		ShowAlbumArt:     true,
+		AlbumArtPath:     filepath.Join(os.TempDir(), "cover.jpg"),
+		CopyAlbumArt:     false,
 		Visualizer: VisualizerConfig{
 			Mode:         "Segmented",
 			ShowInfo:     "fade",
@@ -174,6 +176,9 @@ func (c *Config) applyDefaults() {
 
 	if c.MusicDir == "" {
 		c.MusicDir = defaults.MusicDir
+	}
+	if c.PlaylistPathMode != "relative" && c.PlaylistPathMode != "absolute" {
+		c.PlaylistPathMode = defaults.PlaylistPathMode
 	}
 	if c.RepeatMode != "off" && c.RepeatMode != "all" && c.RepeatMode != "one" {
 		c.RepeatMode = defaults.RepeatMode

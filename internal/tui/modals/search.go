@@ -84,8 +84,8 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 			if len(s.results) > 0 && s.cursor < len(s.results) {
 				return func() tea.Msg {
 					return SearchModalMsg{
-						PlayTracks: s.results,
-						PlayIndex:  s.cursor,
+						PlayTracks: []models.Track{s.results[s.cursor]},
+						PlayIndex:  0,
 					}
 				}
 			}

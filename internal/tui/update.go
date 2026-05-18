@@ -77,6 +77,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case modals.OptionsMsg:
 		return m.handleOptionsModalMsg(msg)
 
+	case modals.SleepTimerMsg:
+		m.activeModal = ModalNone
+		if msg.Closed {
+			return m, renderAlbumArtAfterDelay()
+		}
+		if msg.Cancelled {
+			m.stopSleepTimer()
+			return m, tea.Batch(setStatus(&m, "Sleep timer cancelled", false), renderAlbumArtAfterDelay())
+		}
+		if msg.Duration > 0 {
+			m.startSleepTimer(msg.Duration)
+			mins := int(msg.Duration.Minutes())
+			return m, tea.Batch(
+				setStatus(&m, fmt.Sprintf("Sleep timer set for %d min", mins), false),
+				tickSleepTimerCmd(),
+				renderAlbumArtAfterDelay(),
+			)
+		}
+		return m, renderAlbumArtAfterDelay()
+
 	case modals.GalleryImageLoadedMsg:
 		if m.galleryModal != nil {
 			cmd := m.galleryModal.HandleImageLoaded(msg)
@@ -198,15 +218,59 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case sleepTimerTickMsg:
-		if m.sleepRemaining > 0 {
-			m.sleepRemaining -= time.Minute
-			if m.sleepRemaining <= 0 {
-				return m, tea.Quit
+	case scrobbleResultMsg:
+		m.scrobbleFlashAt = time.Now()
+		m.scrobbleStates = make(map[string]int, len(msg.results))
+		for _, r := range msg.results {
+			if r.Success {
+				m.scrobbleStates[r.Service] = 1 // FlashSolid
+			} else {
+				m.scrobbleStates[r.Service] = 2 // FlashBlinkOn
 			}
-			return m, tickSleepTimerCmd()
 		}
 		return m, nil
+
+	case sleepTimerTickMsg:
+		if !m.sleepTimerActive {
+			return m, nil
+		}
+		if time.Now().After(m.sleepTimerExpiresAt) || time.Now().Equal(m.sleepTimerExpiresAt) {
+			m.sleepTimerActive = false
+			if err := m.mpvBackend.Pause(true); err == nil {
+				m.paused = true
+				m.playing = false
+			}
+			m.quittingActive = true
+			m.quittingStartedAt = time.Now()
+			return m, tea.Batch(
+				setStatus(&m, "Sleep timer expired — quitting in 60s...", false),
+				tickQuitCmd(),
+			)
+		}
+		return m, tickSleepTimerCmd()
+
+	case quitTickMsg:
+		if !m.quittingActive {
+			return m, nil
+		}
+		elapsed := time.Since(m.quittingStartedAt)
+		remaining := 60 - int(elapsed.Seconds())
+		if remaining <= 0 {
+			if m.mpvBackend != nil {
+				_ = m.mpvBackend.Stop()
+			}
+			if m.libraryDB != nil {
+				_ = m.libraryDB.Close()
+			}
+			if m.themeWatcher != nil {
+				m.themeWatcher.Close()
+			}
+			return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), tea.Quit)
+		}
+		m.statusMsg = fmt.Sprintf("Sleep timer expired — quitting in %ds...", remaining)
+		m.statusIsErr = false
+		m.statusSeq++
+		return m, tickQuitCmd()
 	}
 
 	return m, tea.Batch(cmds...)
@@ -414,6 +478,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.Gallery):
 		return m.openGallery()
 
+	case key.Matches(msg, m.keyMap.SleepTimer):
+		return m.openSleepTimer()
+
 	case key.Matches(msg, m.keyMap.Options):
 		return m.openOptions()
 
@@ -518,6 +585,11 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case ModalOptions:
 		if m.optionsModal != nil {
 			cmd := m.optionsModal.Update(msg)
+			return m, cmd
+		}
+	case ModalSleepTimer:
+		if m.sleepTimerModal != nil {
+			cmd := m.sleepTimerModal.Update(msg)
 			return m, cmd
 		}
 	}
@@ -639,11 +711,13 @@ func (m Model) handleSearchModalMsg(msg modals.SearchModalMsg) (tea.Model, tea.C
 
 	if len(msg.PlayTracks) > 0 {
 		m.playlist = msg.PlayTracks
+		m.currentIndex = msg.PlayIndex
 		m.shuffleOrder = nil
 		if m.shuffle {
 			m.shuffleOrder = shuffleIndices(len(m.playlist))
 		}
 		m.updatePlaylist()
+		m.playlistWidget.SetCursor(msg.PlayIndex)
 		m.activeModal = ModalNone
 		m.searchModal.Blur()
 		paths := m.buildMPVPlaylistPaths()
@@ -850,6 +924,33 @@ func (m Model) openGallery() (tea.Model, tea.Cmd) {
 	)
 	m.galleryModal.SetProtocol(m.imageProtocol)
 	return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), m.galleryModal.PrefetchImages())
+}
+
+func (m Model) openSleepTimer() (tea.Model, tea.Cmd) {
+	var remaining time.Duration
+	if m.sleepTimerActive {
+		remaining = time.Until(m.sleepTimerExpiresAt)
+	}
+	m.sleepTimerModal = modals.NewSleepTimer(m.styles, m.sleepTimerActive, remaining)
+	m.activeModal = ModalSleepTimer
+	return m, clearKittyImagesCmdIf(m.imageProtocol)
+}
+
+func (m *Model) startSleepTimer(duration time.Duration) {
+	m.stopSleepTimer()
+	m.sleepTimerActive = true
+	m.sleepTimer = duration
+	m.sleepRemaining = duration
+	m.sleepTimerExpiresAt = time.Now().Add(duration)
+}
+
+func (m *Model) stopSleepTimer() {
+	m.sleepTimerActive = false
+	m.sleepTimer = 0
+	m.sleepRemaining = 0
+	m.sleepTimerExpiresAt = time.Time{}
+	m.quittingActive = false
+	m.quittingStartedAt = time.Time{}
 }
 
 func (m Model) openOptions() (tea.Model, tea.Cmd) {
@@ -1064,6 +1165,7 @@ func (m Model) clearPlaylist() (tea.Model, tea.Cmd) {
 		_ = m.mpvBackend.Stop()
 	}
 	m.updatePlaylist()
+	m.playlistWidget.SetCursor(0)
 	return m, setStatus(&m, "Playlist cleared", false)
 }
 
@@ -1149,6 +1251,7 @@ func (m Model) savePlaylist() (tea.Model, tea.Cmd) {
 		return m, setStatus(&m, "No tracks to save", true)
 	}
 	m.savingPlaylist = true
+	m.saveAsRelative = m.cfg.PlaylistPathMode == "relative"
 	m.saveInput.SetValue("")
 	cmd := m.saveInput.Focus()
 	return m, cmd
@@ -1169,10 +1272,23 @@ func (m Model) handleSaveInputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			paths[i] = t.Path
 		}
 		savePath := config.GetPlaylistSavePath(name)
-		if err := playlist.Save(savePath, paths); err != nil {
+		opts := &playlist.SaveOptions{
+			UseEXTINF:     true,
+			RelativePaths: m.saveAsRelative,
+			Tracks:        m.playlist,
+		}
+		if err := playlist.Save(savePath, paths, opts); err != nil {
 			return m, setStatus(&m, fmt.Sprintf("Save error: %v", err), true)
 		}
-		return m, setStatus(&m, fmt.Sprintf("Saved: %s", savePath), false)
+		mode := "absolute"
+		if m.saveAsRelative {
+			mode = "relative"
+		}
+		return m, setStatus(&m, fmt.Sprintf("Saved (%s): %s", mode, savePath), false)
+
+	case "tab":
+		m.saveAsRelative = !m.saveAsRelative
+		return m, nil
 
 	case "esc":
 		m.savingPlaylist = false
