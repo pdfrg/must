@@ -375,6 +375,82 @@ func (ld *LibraryDB) GetAllTracks() ([]models.Track, error) {
 	return scanTracks(rows)
 }
 
+func (ld *LibraryDB) GetAllAlbums() ([]string, error) {
+	rows, err := ld.db.Query(`SELECT DISTINCT album FROM tracks WHERE album != '' ORDER BY album`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query albums: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var albums []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, err
+		}
+		albums = append(albums, a)
+	}
+	return albums, rows.Err()
+}
+
+func (ld *LibraryDB) GetTracksByField(field string, values []string) ([]models.Track, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+
+	var whereClause string
+	var args []any
+
+	switch field {
+	case "artist":
+		placeholders := make([]string, len(values))
+		for i, v := range values {
+			placeholders[i] = "?"
+			args = append(args, v)
+		}
+		whereClause = fmt.Sprintf(`COALESCE(NULLIF(album_artist, ''), artist) IN (%s)`, strings.Join(placeholders, ","))
+	case "album":
+		placeholders := make([]string, len(values))
+		for i, v := range values {
+			placeholders[i] = "?"
+			args = append(args, v)
+		}
+		whereClause = fmt.Sprintf(`album IN (%s)`, strings.Join(placeholders, ","))
+	case "title":
+		placeholders := make([]string, len(values))
+		for i, v := range values {
+			placeholders[i] = "?"
+			args = append(args, v)
+		}
+		whereClause = fmt.Sprintf(`title IN (%s)`, strings.Join(placeholders, ","))
+	case "genre":
+		var orParts []string
+		for _, v := range values {
+			orParts = append(orParts, `(genre = ? OR genre LIKE ? OR genre LIKE ? OR genre LIKE ?)`)
+			args = append(args, v, v+";%", "%; "+v, "%; "+v+";%")
+		}
+		whereClause = strings.Join(orParts, " OR ")
+	default:
+		return nil, fmt.Errorf("unknown field: %s", field)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, path, title, artist, album, album_artist, year, genre,
+			track_num, disc_num, duration, has_cover_art, file_mod_time
+		FROM tracks
+		WHERE %s
+		ORDER BY artist, album, disc_num, track_num
+		LIMIT 500`, whereClause)
+
+	rows, err := ld.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tracks by %s: %w", field, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanTracks(rows)
+}
+
 func (ld *LibraryDB) SearchFTS(query string) ([]models.Track, error) {
 	return ld.SearchWithYearRange(query, 0, 0)
 }
