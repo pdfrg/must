@@ -95,6 +95,7 @@ func DefaultConfig() *Config {
 		NotificationsShowArt:  true,
 		Layout:                "large",
 		ForceProtocol:         "",
+		TheAudioDBApiKey:      "123",
 		TransparentBackground: false,
 		DisableTheme:          false,
 		TerminalPalette: TerminalPaletteConfig{
@@ -195,6 +196,20 @@ func (c *Config) applyDefaults() {
 	validLayouts := map[string]bool{"large": true, "medium": true, "compact": true, "narrow": true}
 	if c.Layout == "" || !validLayouts[c.Layout] {
 		c.Layout = defaults.Layout
+	}
+
+	if c.TheAudioDBApiKey == "" {
+		c.TheAudioDBApiKey = defaults.TheAudioDBApiKey
+	}
+
+	if c.TerminalPalette.Cursor < 0 || c.TerminalPalette.Cursor > 15 {
+		c.TerminalPalette.Cursor = defaults.TerminalPalette.Cursor
+	}
+	if c.TerminalPalette.Accent < 0 || c.TerminalPalette.Accent > 15 {
+		c.TerminalPalette.Accent = defaults.TerminalPalette.Accent
+	}
+	if c.TerminalPalette.Muted < 0 || c.TerminalPalette.Muted > 15 {
+		c.TerminalPalette.Muted = defaults.TerminalPalette.Muted
 	}
 
 	if c.ForceProtocol != "" {

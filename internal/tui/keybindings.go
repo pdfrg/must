@@ -38,6 +38,7 @@ type KeyMap struct {
 	MoveTrackUp   key.Binding
 	MoveTrackDown key.Binding
 	SavePlaylist  key.Binding
+	Options       key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -109,6 +110,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("e"),
 		key.WithHelp("e", "enqueue"),
 	),
+	EnqueueNext: key.NewBinding(
+		key.WithKeys("E"),
+		key.WithHelp("E", "enqueue next"),
+	),
 	CycleView: key.NewBinding(
 		key.WithKeys("v", "tab"),
 		key.WithHelp("v/tab", "switch view"),
@@ -169,9 +174,9 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("S"),
 		key.WithHelp("S", "save playlist"),
 	),
-	EnqueueNext: key.NewBinding(
-		key.WithKeys("E"),
-		key.WithHelp("E", "enqueue next"),
+	Options: key.NewBinding(
+		key.WithKeys("o"),
+		key.WithHelp("o", "options"),
 	),
 }
 
@@ -198,5 +203,6 @@ func (k KeyMap) GlobalBindings() []key.Binding {
 		k.Rescan, k.ClearPlaylist, k.DeleteTrack,
 		k.Lyrics, k.SyncedLyrics, k.ArtistBio, k.Gallery,
 		k.MoveTrackUp, k.MoveTrackDown, k.SavePlaylist,
+		k.Options,
 	}
 }

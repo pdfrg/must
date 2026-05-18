@@ -202,6 +202,10 @@ func (m Model) renderModal() string {
 			m.galleryModal.SetSize(m.width, m.height)
 			return m.galleryModal.View()
 		}
+	case ModalOptions:
+		if m.optionsModal != nil {
+			return m.optionsModal.View()
+		}
 	}
 	return ""
 }
