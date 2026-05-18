@@ -74,6 +74,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case modals.OptionsMsg:
+		return m.handleOptionsModalMsg(msg)
+
 	case modals.GalleryImageLoadedMsg:
 		if m.galleryModal != nil {
 			cmd := m.galleryModal.HandleImageLoaded(msg)
@@ -365,6 +368,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.Gallery):
 		return m.openGallery()
 
+	case key.Matches(msg, m.keyMap.Options):
+		return m.openOptions()
+
 	case key.Matches(msg, m.keyMap.Enter):
 		if len(m.playlist) > 0 {
 			cursor := m.playlistWidget.GetCursor()
@@ -461,6 +467,11 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case ModalGallery:
 		if m.galleryModal != nil {
 			cmd := m.galleryModal.Update(msg)
+			return m, cmd
+		}
+	case ModalOptions:
+		if m.optionsModal != nil {
+			cmd := m.optionsModal.Update(msg)
 			return m, cmd
 		}
 	}
@@ -777,6 +788,108 @@ func (m Model) openGallery() (tea.Model, tea.Cmd) {
 	)
 	m.galleryModal.SetProtocol(m.imageProtocol)
 	return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), m.galleryModal.PrefetchImages())
+}
+
+func (m Model) openOptions() (tea.Model, tea.Cmd) {
+	m.activeModal = ModalOptions
+	m.optionsModal = modals.NewOptions(
+		m.styles,
+		m.cfg.ShowAlbumArt,
+		m.cfg.CopyAlbumArt,
+		m.cfg.NotificationsEnabled,
+		m.cfg.NotificationsShowArt,
+		m.cfg.TransparentBackground,
+		m.cfg.DisableTheme,
+		m.cfg.Visualizer.Mode,
+		m.cfg.Visualizer.ShowInfo,
+		m.cfg.Visualizer.RealAudio,
+		m.cfg.Theme,
+	)
+	return m, clearKittyImagesCmdIf(m.imageProtocol)
+}
+
+func (m Model) handleOptionsModalMsg(msg modals.OptionsMsg) (tea.Model, tea.Cmd) {
+	if msg.Closed {
+		m.activeModal = ModalNone
+		m.optionsModal = nil
+		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+	}
+
+	changed := false
+
+	if msg.ShowAlbumArt != nil {
+		m.cfg.ShowAlbumArt = *msg.ShowAlbumArt
+		changed = true
+	}
+	if msg.CopyAlbumArt != nil {
+		m.cfg.CopyAlbumArt = *msg.CopyAlbumArt
+		changed = true
+	}
+	if msg.NotificationsEnabled != nil {
+		m.cfg.NotificationsEnabled = *msg.NotificationsEnabled
+		changed = true
+	}
+	if msg.NotificationsShowArt != nil {
+		m.cfg.NotificationsShowArt = *msg.NotificationsShowArt
+		changed = true
+	}
+	if msg.TransparentBackground != nil {
+		m.cfg.TransparentBackground = *msg.TransparentBackground
+		changed = true
+	}
+	if msg.DisableTheme != nil {
+		m.cfg.DisableTheme = *msg.DisableTheme
+		changed = true
+	}
+	if msg.VisualizerMode != nil {
+		m.cfg.Visualizer.Mode = *msg.VisualizerMode
+		changed = true
+	}
+	if msg.VisualizerShowInfo != nil {
+		m.cfg.Visualizer.ShowInfo = *msg.VisualizerShowInfo
+		changed = true
+	}
+	if msg.RealAudio != nil {
+		m.cfg.Visualizer.RealAudio = *msg.RealAudio
+		changed = true
+	}
+	if msg.Theme != nil {
+		m.cfg.Theme = *msg.Theme
+		if *msg.Theme == "" {
+			m.cfg.ColorsFile = ""
+		}
+		changed = true
+	}
+
+	if !changed {
+		m.activeModal = ModalNone
+		m.optionsModal = nil
+		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+	}
+
+	if err := m.cfg.Save(); err != nil {
+		logf("Failed to save config: %v", err)
+	}
+
+	m.activeModal = ModalNone
+	m.optionsModal = nil
+
+	cmds := []tea.Cmd{clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay()}
+
+	// If theme or display settings changed, reload theme and styles
+	if msg.Theme != nil || msg.TransparentBackground != nil || msg.DisableTheme != nil {
+		newTheme, err := config.LoadTheme(m.cfg.ColorsFile, m.cfg.Theme)
+		if err == nil {
+			m.theme = newTheme
+			m.styles = config.NewThemeStyles(newTheme, m.cfg.TransparentBackground, m.cfg.DisableTheme, m.cfg.TerminalPalette)
+			m.header.UpdateStyles(m.styles.Header)
+			m.nowPlaying.UpdateStyles(m.styles, m.styles.Accent, m.styles.Cursor, m.styles.Background)
+			m.playlistWidget.UpdateStyles(m.styles)
+			m.footer.UpdateStyles(m.styles.AccentStyle, m.styles.MutedStyle)
+		}
+	}
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) openArtistBio() (tea.Model, tea.Cmd) {

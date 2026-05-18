@@ -39,6 +39,7 @@ const (
 	ModalSearch
 	ModalHelp
 	ModalGallery
+	ModalOptions
 )
 
 type Model struct {
@@ -136,6 +137,7 @@ type Model struct {
 	searchModal   *modals.Search
 	helpModal     *modals.Help
 	galleryModal  *modals.Gallery
+	optionsModal  *modals.Options
 	viewport      viewport.Model
 	viewportReady bool
 
@@ -296,6 +298,7 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "U", Desc: "synced lyrics"},
 		{Key: "i", Desc: "artist bio"},
 		{Key: "I", Desc: "artist gallery"},
+		{Key: "o", Desc: "options"},
 		{Key: "?", Desc: "help"},
 		{Key: "q/ctrl+c", Desc: "quit"},
 	}
