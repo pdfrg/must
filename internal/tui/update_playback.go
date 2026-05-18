@@ -422,11 +422,19 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 		m.artistArtEventID = 0
 	}
 
-	m.lyrics = ""
-	m.syncedLyrics = nil
-	m.lyricsLoading = true
-	m.viewport.GotoTop()
-	m.updateBottomView()
+	viewingContent := m.bottomViewMode == BottomLyrics || m.bottomViewMode == BottomArtistBio
+
+	if !viewingContent {
+		m.lyrics = ""
+		m.syncedLyrics = nil
+		m.lyricsLoading = true
+		m.viewport.GotoTop()
+		m.updateBottomView()
+	} else {
+		m.hasPendingUpdate = true
+		m.syncedLyrics = nil
+		m.updateBottomView()
+	}
 
 	m.songStartTime = time.Now()
 	m.scrobbleEligible = false
@@ -442,6 +450,13 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 		track := m.playlist[m.currentIndex]
 		cmds = append(cmds, sendNowPlayingCmd(m.cfg, track))
 		cmds = append(cmds, fetchLyricsCmd(track))
+
+		if m.bottomViewMode == BottomArtistBio {
+			m.artistInfoEventID++
+			artist := track.Artist
+			album := track.Album
+			cmds = append(cmds, fetchArtistInfoCmd(m.cfg, artist, album, m.artistInfoEventID, m.artistCache))
+		}
 	}
 
 	return tea.Batch(cmds...)

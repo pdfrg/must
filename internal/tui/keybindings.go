@@ -39,6 +39,7 @@ type KeyMap struct {
 	MoveTrackDown key.Binding
 	SavePlaylist  key.Binding
 	Options       key.Binding
+	UpdateView    key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -147,12 +148,12 @@ var DefaultKeyMap = KeyMap{
 		key.WithHelp("R", "rescan library"),
 	),
 	Lyrics: key.NewBinding(
-		key.WithKeys("u"),
-		key.WithHelp("u", "lyrics"),
+		key.WithKeys("y"),
+		key.WithHelp("y", "lyrics"),
 	),
 	SyncedLyrics: key.NewBinding(
-		key.WithKeys("U"),
-		key.WithHelp("U", "synced lyrics"),
+		key.WithKeys("Y"),
+		key.WithHelp("Y", "synced lyrics"),
 	),
 	ArtistBio: key.NewBinding(
 		key.WithKeys("i"),
@@ -177,6 +178,10 @@ var DefaultKeyMap = KeyMap{
 	Options: key.NewBinding(
 		key.WithKeys("o"),
 		key.WithHelp("o", "options"),
+	),
+	UpdateView: key.NewBinding(
+		key.WithKeys("u"),
+		key.WithHelp("u", "update view"),
 	),
 }
 
@@ -203,6 +208,6 @@ func (k KeyMap) GlobalBindings() []key.Binding {
 		k.Rescan, k.ClearPlaylist, k.DeleteTrack,
 		k.Lyrics, k.SyncedLyrics, k.ArtistBio, k.Gallery,
 		k.MoveTrackUp, k.MoveTrackDown, k.SavePlaylist,
-		k.Options,
+		k.Options, k.UpdateView,
 	}
 }
