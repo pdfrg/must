@@ -425,6 +425,8 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 	m.lyrics = ""
 	m.syncedLyrics = nil
 	m.lyricsLoading = true
+	m.viewport.GotoTop()
+	m.updateBottomView()
 
 	m.songStartTime = time.Now()
 	m.scrobbleEligible = false
@@ -564,12 +566,9 @@ func (m Model) renderImagesCmd() tea.Cmd {
 		}
 
 		if hasArtistArt {
-			availableSpace := m.height - m.bottomSectionStartRow - 3
+			availableSpace := m.height - 20 - 3
 			if availableSpace >= m.artistArtHeight {
-				artistRow := m.bottomSectionStartRow
-				if artistRow < 3 {
-					artistRow = 3
-				}
+				const artistRow = 20
 				if m.imageProtocol == termimg.Kitty {
 					raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", artistRow, 2, m.artistArtStr)
 				} else {
@@ -648,6 +647,7 @@ func (m Model) handleArtistImageLoaded(msg artistImageLoadedMsg) (tea.Model, tea
 
 	if m.bottomViewMode == BottomArtistBio {
 		m.viewport.GotoTop()
+		m.updateBottomView()
 	}
 
 	return m, renderArtistArtAfterDelay()
