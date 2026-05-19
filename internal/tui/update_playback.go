@@ -245,14 +245,14 @@ func (m Model) seekForward() (tea.Model, tea.Cmd) {
 		dur := m.playlist[m.currentIndex].Duration
 		if dur > 0 {
 			remaining := dur - m.playbackPos.TimePos - 0.5
-			delta := min(5.0, remaining)
+			delta := min(10.0, remaining)
 			if delta > 0 {
 				_ = m.mpvBackend.SeekRelative(delta)
 			}
 			return m, nil
 		}
 	}
-	_ = m.mpvBackend.SeekRelative(5)
+	_ = m.mpvBackend.SeekRelative(10)
 	return m, nil
 }
 
@@ -260,7 +260,7 @@ func (m Model) seekBackward() (tea.Model, tea.Cmd) {
 	if !m.mpvBackend.IsRunning() {
 		return m, nil
 	}
-	delta := -5.0
+	delta := -10.0
 	if m.playbackPos.TimePos+delta < 0 {
 		delta = -m.playbackPos.TimePos
 	}
@@ -471,12 +471,10 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 		cmds = append(cmds, sendNowPlayingCmd(m.cfg, track))
 		cmds = append(cmds, fetchLyricsCmd(track))
 
-		if m.bottomViewMode == BottomArtistBio {
-			m.artistInfoEventID++
-			artist := track.Artist
-			album := track.Album
-			cmds = append(cmds, fetchArtistInfoCmd(m.cfg, artist, album, m.artistInfoEventID, m.artistCache))
-		}
+		m.artistInfoEventID++
+		artist := track.Artist
+		album := track.Album
+		cmds = append(cmds, fetchArtistInfoCmd(m.cfg, artist, album, m.artistInfoEventID, m.artistCache))
 	}
 
 	cmds = append(cmds, tickProgressCmd())

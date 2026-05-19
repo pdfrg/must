@@ -189,7 +189,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 	m.header = widgets.NewHeader(styles.Header, "must - MUSic TUI")
 	m.nowPlaying = widgets.NewNowPlaying(styles, styles.Accent, styles.Cursor, styles.Background)
 	m.playlistWidget = widgets.NewPlaylist(styles)
-	m.footer = widgets.NewFooter(styles.AccentStyle, styles.MutedStyle)
+	m.footer = widgets.NewFooter(styles.AccentStyle, styles.MutedStyle, styles.ForegroundStyle)
 
 	m.searchModal = modals.NewSearch(styles, nil)
 	m.helpModal = modals.NewHelp(styles, defaultHelpEntries())
@@ -299,7 +299,7 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "space", Desc: "play/pause"},
 		{Key: "n", Desc: "next track"},
 		{Key: "p", Desc: "previous track"},
-		{Key: "←/→", Desc: "seek -5s/+5s"},
+		{Key: "←/→", Desc: "seek -10s/+10s"},
 		{Key: "ctrl+r", Desc: "restart song"},
 		{Key: "r", Desc: "cycle repeat (off/all/one)"},
 		{Key: "s", Desc: "toggle shuffle"},

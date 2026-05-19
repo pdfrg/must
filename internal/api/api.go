@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -12,6 +13,17 @@ const userAgent = "must/1.0"
 
 var httpClient = &http.Client{
 	Timeout: 10 * time.Second,
+}
+
+var apiLogger *log.Logger
+var scrobbleLogger *log.Logger
+
+func SetAPILogger(l *log.Logger) {
+	apiLogger = l
+}
+
+func SetScrobbleLogger(l *log.Logger) {
+	scrobbleLogger = l
 }
 
 func fetchJSON(url string, headers map[string]string) ([]byte, error) {

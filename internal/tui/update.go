@@ -9,7 +9,9 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	termimg "github.com/blacktop/go-termimg"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/playlist"
@@ -105,7 +107,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case modals.GalleryRenderImageMsg:
-		return m, tea.Raw(fmt.Sprintf("\x1b[%d;%dH%s", msg.Row, msg.Col, msg.ImageStr))
+		raw := termimg.ClearAllString() + fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", msg.Row, msg.Col, msg.ImageStr)
+		return m, tea.Raw(raw)
 
 	case modals.SearchDebounceMsg:
 		if m.activeModal == ModalSearch && m.searchModal != nil {
@@ -483,6 +486,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keyMap.Gallery):
 		return m.openGallery()
+
+	case key.Matches(msg, m.keyMap.LidarrBrowser):
+		return m.openLidarr()
 
 	case key.Matches(msg, m.keyMap.SleepTimer):
 		return m.openSleepTimer()
@@ -930,6 +936,30 @@ func (m Model) openGallery() (tea.Model, tea.Cmd) {
 	)
 	m.galleryModal.SetProtocol(m.imageProtocol)
 	return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), m.galleryModal.PrefetchImages())
+}
+
+func (m Model) openLidarr() (tea.Model, tea.Cmd) {
+	if !m.cfg.Lidarr.Enabled || m.cfg.Lidarr.URL == "" || m.cfg.Lidarr.APIKey == "" {
+		return m, setStatus(&m, "Lidarr not configured", true)
+	}
+	if m.currentIndex < 0 || m.currentIndex >= len(m.playlist) {
+		return m, setStatus(&m, "No song playing", true)
+	}
+
+	var lidarrURL string
+	if m.artistInfo != nil && m.artistInfo.LidarrInLidarr && m.artistInfo.LidarrMBID != "" {
+		lidarrClient := api.NewLidarrClient(m.cfg.Lidarr.URL, m.cfg.Lidarr.APIKey, m.cfg.Lidarr.Enabled)
+		lidarrURL = lidarrClient.OpenArtistURL(m.artistInfo.LidarrMBID)
+	} else if m.artistInfo != nil && m.artistInfo.LidarrMBID != "" {
+		lidarrClient := api.NewLidarrClient(m.cfg.Lidarr.URL, m.cfg.Lidarr.APIKey, m.cfg.Lidarr.Enabled)
+		lidarrURL = lidarrClient.OpenSearchByMBID(m.artistInfo.LidarrMBID)
+	} else {
+		lidarrClient := api.NewLidarrClient(m.cfg.Lidarr.URL, m.cfg.Lidarr.APIKey, m.cfg.Lidarr.Enabled)
+		lidarrURL = lidarrClient.OpenSearchURL(m.playlist[m.currentIndex].Artist)
+	}
+
+	api.OpenBrowser(lidarrURL)
+	return m, setStatus(&m, "Opening Lidarr...", false)
 }
 
 func (m Model) openSleepTimer() (tea.Model, tea.Cmd) {
@@ -1521,8 +1551,39 @@ func (m *Model) updateBottomView() {
 				b.WriteString(m.styles.MutedStyle.Render(indent + "Source: " + info.BioSource))
 			}
 
+			lidarrConfigured := m.cfg.Lidarr.Enabled && m.cfg.Lidarr.URL != "" && m.cfg.Lidarr.APIKey != ""
+			if lidarrConfigured {
+				b.WriteString("\n")
+				var lidarrLine string
+				if info.LidarrError != "" {
+					lidarrLine = m.styles.MutedStyle.Render("?") + " error: " + info.LidarrError
+				} else if info.LidarrMonitored {
+					lidarrLine = m.styles.AccentStyle.Render("●") + " monitored"
+				} else if info.LidarrInLidarr {
+					lidarrLine = m.styles.ForegroundStyle.Render("○") + " not monitored"
+				} else {
+					lidarrLine = m.styles.MutedStyle.Render("⊝") + " not in Lidarr"
+				}
+				b.WriteString(m.styles.ForegroundStyle.Render(indent + "Lidarr artist: "))
+				b.WriteString(lidarrLine)
+				b.WriteString("\n")
+
+				if len(info.LidarrAlbums) > 0 {
+					legend := fmt.Sprintf("%s  %s  %s  %s  %s",
+						m.styles.AccentStyle.Render("● downloaded"),
+						m.styles.AccentStyle.Render("◐ partial"),
+						m.styles.ForegroundStyle.Render("○ wanted"),
+						m.styles.MutedStyle.Render("○ unmonitored"),
+						m.styles.MutedStyle.Render("⊝ not in Lidarr"))
+					b.WriteString(indent + legend)
+					b.WriteString("\n\n")
+				}
+			}
+
 			if info.Discography != "" {
-				b.WriteString("\n\n")
+				if !lidarrConfigured || len(info.LidarrAlbums) == 0 {
+					b.WriteString("\n\n")
+				}
 				b.WriteString(m.styles.AccentStyle.Render(indent + "Discography"))
 				if info.DiscoSource != "" {
 					b.WriteString(m.styles.MutedStyle.Render(" (" + info.DiscoSource + ")"))
@@ -1531,7 +1592,34 @@ func (m *Model) updateBottomView() {
 
 				discoLines := strings.Split(info.Discography, "\n")
 				for _, dl := range discoLines {
-					b.WriteString(m.styles.ForegroundStyle.Render(indent + dl))
+					line := indent
+					if lidarrConfigured && len(info.LidarrAlbums) > 0 {
+						albumTitle := dl
+						if idx := strings.LastIndex(dl, " ("); idx > 0 {
+							albumTitle = dl[:idx]
+						}
+						if albumInfo, ok := info.LidarrAlbums[albumTitle]; ok {
+							var indicator string
+							switch {
+							case albumInfo.PercentOfTracks == 100:
+								indicator = m.styles.AccentStyle.Render("● ")
+							case albumInfo.PercentOfTracks > 0:
+								indicator = m.styles.AccentStyle.Render("◐ ")
+							case albumInfo.Monitored:
+								indicator = m.styles.ForegroundStyle.Render("○ ")
+							case albumInfo.InLidarr:
+								indicator = m.styles.MutedStyle.Render("○ ")
+							default:
+								indicator = m.styles.MutedStyle.Render("⊝ ")
+							}
+							line += indicator
+						} else {
+							line += "  "
+						}
+					} else {
+						line += " "
+					}
+					b.WriteString(m.styles.ForegroundStyle.Render(line + dl))
 					b.WriteString("\n")
 				}
 			}

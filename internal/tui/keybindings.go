@@ -35,6 +35,7 @@ type KeyMap struct {
 	SyncedLyrics    key.Binding
 	ArtistBio       key.Binding
 	Gallery         key.Binding
+	LidarrBrowser   key.Binding
 	MoveTrackUp     key.Binding
 	MoveTrackDown   key.Binding
 	MoveTrackTop    key.Binding
@@ -64,11 +65,11 @@ var DefaultKeyMap = KeyMap{
 	),
 	SeekForward: key.NewBinding(
 		key.WithKeys("right"),
-		key.WithHelp("→", "+5s"),
+		key.WithHelp("→", "+10s"),
 	),
 	SeekBackward: key.NewBinding(
 		key.WithKeys("left"),
-		key.WithHelp("←", "-5s"),
+		key.WithHelp("←", "-10s"),
 	),
 	Repeat: key.NewBinding(
 		key.WithKeys("r"),
@@ -166,6 +167,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("I"),
 		key.WithHelp("I", "gallery"),
 	),
+	LidarrBrowser: key.NewBinding(
+		key.WithKeys("L"),
+		key.WithHelp("L", "lidarr"),
+	),
 	MoveTrackUp: key.NewBinding(
 		key.WithKeys("K"),
 		key.WithHelp("K", "move up"),
@@ -221,7 +226,7 @@ func (k KeyMap) GlobalBindings() []key.Binding {
 	return []key.Binding{
 		k.Quit, k.Search, k.Help, k.Escape,
 		k.Rescan, k.ClearPlaylist, k.DeleteTrack,
-		k.Lyrics, k.SyncedLyrics, k.ArtistBio, k.Gallery,
+		k.Lyrics, k.SyncedLyrics, k.ArtistBio, k.Gallery, k.LidarrBrowser,
 		k.MoveTrackUp, k.MoveTrackDown, k.MoveTrackTop, k.MoveTrackBottom, k.SavePlaylist,
 		k.Options, k.SleepTimer, k.UpdateView,
 	}

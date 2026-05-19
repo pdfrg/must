@@ -69,16 +69,29 @@ func SearchArtistDiscogs(token, key, secret, artist string) (*DiscogsArtist, err
 
 	body, err := fetchJSON(searchURL, headers)
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("Discogs: search failed for %q: %v", artist, err)
+		}
 		return nil, fmt.Errorf("discogs search failed: %w", err)
 	}
 
 	var resp DiscogsSearchResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("Discogs: parse error for %q: %v", artist, err)
+		}
 		return nil, fmt.Errorf("discogs parse error: %w", err)
 	}
 
 	if len(resp.Results) == 0 {
+		if apiLogger != nil {
+			apiLogger.Printf("Discogs: artist not found: %q", artist)
+		}
 		return nil, fmt.Errorf("artist not found on discogs: %s", artist)
+	}
+
+	if apiLogger != nil {
+		apiLogger.Printf("Discogs: found %d results for %q, selecting ID=%d (%s)", len(resp.Results), artist, resp.Results[0].ID, resp.Results[0].Title)
 	}
 
 	artistID := resp.Results[0].ID
@@ -100,14 +113,23 @@ func GetDiscogsArtist(token, key, secret string, id int) (*DiscogsArtist, error)
 
 	body, err := fetchJSON(url, headers)
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("Discogs: artist fetch for ID %d failed: %v", id, err)
+		}
 		return nil, fmt.Errorf("discogs artist fetch failed: %w", err)
 	}
 
 	var artist DiscogsArtist
 	if err := json.Unmarshal(body, &artist); err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("Discogs: parse error for ID %d: %v", id, err)
+		}
 		return nil, fmt.Errorf("discogs parse error: %w", err)
 	}
 
+	if apiLogger != nil {
+		apiLogger.Printf("Discogs: fetched artist %q (ID=%d, images=%d)", artist.Name, id, len(artist.ImageURLs))
+	}
 	return &artist, nil
 }
 

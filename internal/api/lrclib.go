@@ -34,14 +34,23 @@ func SearchLyrics(artist, title string) ([]LRCLibLyric, error) {
 
 	body, err := fetchJSON(url, nil)
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("LRCLib: search failed for %q - %q: %v", artist, title, err)
+		}
 		return nil, fmt.Errorf("lrclib search failed: %w", err)
 	}
 
 	var lyrics []LRCLibLyric
 	if err := json.Unmarshal(body, &lyrics); err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("LRCLib: parse error for %q - %q: %v", artist, title, err)
+		}
 		return nil, fmt.Errorf("lrclib parse error: %w", err)
 	}
 
+	if apiLogger != nil {
+		apiLogger.Printf("LRCLib: search for %q - %q returned %d results", artist, title, len(lyrics))
+	}
 	return lyrics, nil
 }
 
@@ -50,14 +59,23 @@ func GetLyricsByID(id int) (*LRCLibLyric, error) {
 
 	body, err := fetchJSON(url, nil)
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("LRCLib: get by ID %d failed: %v", id, err)
+		}
 		return nil, fmt.Errorf("lrclib get failed: %w", err)
 	}
 
 	var lyric LRCLibLyric
 	if err := json.Unmarshal(body, &lyric); err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("LRCLib: parse error for ID %d: %v", id, err)
+		}
 		return nil, fmt.Errorf("lrclib parse error: %w", err)
 	}
 
+	if apiLogger != nil {
+		apiLogger.Printf("LRCLib: got lyric ID=%d for %q - %q", id, lyric.ArtistName, lyric.TrackName)
+	}
 	return &lyric, nil
 }
 
@@ -67,6 +85,9 @@ func GetBestLyrics(artist, title, album string, duration float64) (*LRCLibLyric,
 		return nil, err
 	}
 	if len(results) == 0 {
+		if apiLogger != nil {
+			apiLogger.Printf("LRCLib: no lyrics found for %q - %q", artist, title)
+		}
 		return nil, fmt.Errorf("no lyrics found")
 	}
 
@@ -74,22 +95,34 @@ func GetBestLyrics(artist, title, album string, duration float64) (*LRCLibLyric,
 
 	for _, r := range results {
 		if r.SyncedLyrics != "" && abs(int(r.Duration)-durationSec) <= 2 {
+			if apiLogger != nil {
+				apiLogger.Printf("LRCLib: TIER 1 (synced+duration match) for %q - %q", artist, title)
+			}
 			return &r, nil
 		}
 	}
 
 	for _, r := range results {
 		if r.PlainLyrics != "" && albumMatch(r.AlbumName, album) {
+			if apiLogger != nil {
+				apiLogger.Printf("LRCLib: TIER 2 (plain+album match) for %q - %q (album=%q)", artist, title, album)
+			}
 			return &r, nil
 		}
 	}
 
 	for _, r := range results {
 		if r.PlainLyrics != "" {
+			if apiLogger != nil {
+				apiLogger.Printf("LRCLib: TIER 3 (plain fallback) for %q - %q", artist, title)
+			}
 			return &r, nil
 		}
 	}
 
+	if apiLogger != nil {
+		apiLogger.Printf("LRCLib: TIER 4 (last resort) for %q - %q", artist, title)
+	}
 	return &results[0], nil
 }
 
