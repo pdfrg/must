@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -15,12 +16,62 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
+	"github.com/pdfrg/must/internal/ctl"
 	"github.com/pdfrg/must/internal/db"
 	"github.com/pdfrg/must/internal/mpv"
 	"github.com/pdfrg/must/internal/scanner"
 	"github.com/pdfrg/must/internal/tui"
 	"github.com/pdfrg/must/internal/tui/visualizer"
 )
+
+var controlVerbs = map[string]bool{
+	"enqueue": true, "e": true,
+	"enqueue-next": true, "en": true,
+	"play": true, "p": true,
+	"pause": true,
+	"clear": true, "c": true,
+	"status": true, "s": true,
+	"remove": true, "rm": true,
+	"shuffle": true,
+	"repeat":  true,
+	"next":    true, "n": true,
+	"previous": true, "pr": true,
+	"go":     true,
+	"rescan": true,
+	"save":   true,
+	"find":   true, "f": true,
+	"library":   true,
+	"list":      true,
+	"move":      true,
+	"playlists": true,
+	"stop":      true,
+	"current":   true,
+}
+
+func resolveAlias(verb string) string {
+	switch verb {
+	case "e":
+		return "enqueue"
+	case "en":
+		return "enqueue-next"
+	case "p":
+		return "play"
+	case "c":
+		return "clear"
+	case "s":
+		return "status"
+	case "rm":
+		return "remove"
+	case "n":
+		return "next"
+	case "pr":
+		return "previous"
+	case "f":
+		return "find"
+	default:
+		return verb
+	}
+}
 
 var Version = "dev"
 
@@ -109,11 +160,47 @@ func main() {
 		}
 	}
 
+	// Check for control command (must play, must pause, must find, etc.)
+	if len(paths) > 0 {
+		verb := strings.ToLower(paths[0])
+		if controlVerbs[verb] {
+			ctlCmd := resolveAlias(verb)
+			ctlArgs := paths[1:]
+			for i, a := range ctlArgs {
+				ctlArgs[i] = expandPath(a)
+			}
+
+			socketPath := config.GetCtlSocketPath()
+			result, err := ctl.SendCommand(socketPath, ctlCmd, ctlArgs)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			if !result.OK {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", result.Error)
+				os.Exit(1)
+			}
+			if result.Data != "" {
+				fmt.Println(result.Data)
+			}
+			return
+		}
+	}
+
 	cfg, err := config.NewConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Check for existing running instance
+	socketPath := config.GetCtlSocketPath()
+	if conn, err := net.DialTimeout("unix", socketPath, 100*time.Millisecond); err == nil {
+		_ = conn.Close()
+		fmt.Fprintf(os.Stderr, "must is already running. Use 'must status' or similar commands.\n")
+		os.Exit(1)
+	}
+	_ = os.Remove(socketPath)
 
 	if randomMode {
 		cfg.Shuffle = true
@@ -142,10 +229,21 @@ func main() {
 	m := tui.NewModel(cfg, theme, paths, layoutOverride, sleepTimerDuration, randomMode, noRestore, autoplay)
 
 	p := tea.NewProgram(m)
+
+	ctlServer, err := ctl.StartServer(socketPath, p)
+	if err != nil {
+		log.Printf("Warning: failed to start control server: %v", err)
+	}
+
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running program: %v\n", err)
 		os.Exit(1)
 	}
+
+	if ctlServer != nil {
+		ctlServer.Stop()
+	}
+	_ = os.Remove(socketPath)
 }
 
 func initLogging(cfg *config.Config) {
@@ -323,6 +421,7 @@ func printHelp() {
 
 USAGE:
   must [FLAGS] [PATHS...]
+  must <COMMAND> [ARGS...]
 
 PATHS:
   /path/to/song.mp3        Play a single file
@@ -332,24 +431,58 @@ PATHS:
 FLAGS:
   -h, --help               Show this help message and exit
   -v, --version            Show version information and exit
-	--random Shuffle playback order
-	--play Auto-play on launch
-	--no-restore Don't restore last session
-	--repeat [off|all|one] Set repeat mode (default: all if flag given without arg)
+  --random                 Shuffle playback order
+  --play                   Auto-play on launch
+  --no-restore             Don't restore last session
+  --repeat [off|all|one]   Set repeat mode (default: all if flag given without arg)
   --layout LAYOUT          Set UI layout: large, medium, compact, narrow
   --sleep DURATION         Start sleep timer (e.g., 20m, 1.5h)
   --alarm TIME             Start app at wall-clock time (e.g., 7:20am, 19:20)
   --lastfm-auth            Run Last.fm OAuth authentication flow
 
+CONTROL COMMANDS (when must is already running):
+  play [arg] / p [arg]        Replace playlist and play (resume if no arg)
+  enqueue <arg> / e <arg>     Add to end of playlist
+  enqueue-next <arg> / en <arg>  Insert after current track
+  pause                       Toggle play/pause
+  next / n                    Skip forward
+  previous / pr               Skip backward
+  stop                        Stop playback
+  clear / c                   Clear playlist (current song finishes)
+  remove <pos> / rm <pos>     Remove track at playlist position
+  go [pos]                    Jump to playlist position (or show current)
+  move <from> <to>            Move track in playlist
+  shuffle                     Toggle shuffle
+  repeat [all|one|off]        Set repeat mode (or show current)
+  status / s                  Show full playback state
+  current                     Show now-playing (one line)
+  list                        Show full playlist
+  find <query> / f <query>    Search library, returns numbered results
+                              Prefix: artist:<q>, album:<q>, genre:<q>, year:<y>
+  library                     Show music directory and stats
+  playlists                   List saved playlists
+  save <name>                 Save current playlist as .m3u
+  rescan                      Rescan music library
+
+ARG resolution for play / enqueue / enqueue-next:
+  <n>           Result number from last 'must find'
+  /path         File, album directory, or .m3u playlist
+  playlist:<n>  Saved playlist from playlists directory
+  artist:<q>    Search and play artist
+  album:<q>     Search and play album
+  genre:<q>     Search and play genre
+  year:<y>      Search and play year or range (1997 or 1995-2000)
+  <text>        Free-text FTS5 search
+
 EXAMPLES:
-	must Launch with default settings
-	must --play Launch and auto-play
-	must --no-restore Launch without restoring session
-	must ~/Music/Albums/Radiohead/ Play an album directory
-  must song.mp3            Play a single track
-  must playlist.m3u        Play a playlist
-  must --random ~/Music/   Shuffle play entire library
-  must --repeat one track.flac     Repeat one track
+  must                          Launch TUI
+  must ~/Music/Radiohead/       Play an album directory (new instance)
+  must play artist:radiohead    Search and play artist (existing instance)
+  must find radiohead           Search library
+  must play 1                   Play first result from last find
+  must enqueue ~/Music/song.mp3 Add a file to playlist
+  must next                     Skip to next track
+  must status                   Show what's playing
 
 CONFIGURATION:
   Config file:     ~/.config/must/config.toml

@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
+	"github.com/pdfrg/must/internal/ctl"
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/playlist"
 	"github.com/pdfrg/must/internal/tui/modals"
@@ -47,6 +48,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case progressTickMsg:
 		return m.handleProgressTick(msg)
+
+	case ctl.CtlMessage:
+		newModel, result, cmd := m.handleCtlCommand(msg.Cmd, msg.Args)
+		if msg.ResultCh != nil {
+			msg.ResultCh <- result
+		}
+		cmds = append(cmds, cmd)
+		return newModel, tea.Batch(cmds...)
 
 	case visTickMsg:
 		return m.handleVisTick(msg)

@@ -11,6 +11,7 @@ import (
 	"github.com/pdfrg/must/assets"
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
+	"github.com/pdfrg/must/internal/ctl"
 	"github.com/pdfrg/must/internal/db"
 	pkgimage "github.com/pdfrg/must/internal/image"
 	"github.com/pdfrg/must/internal/models"
@@ -170,6 +171,8 @@ type Model struct {
 	scrobbleFlashAt time.Time
 
 	isDark bool
+
+	lastFindResults []ctl.SearchResult
 }
 
 func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool, noRestore bool, autoplay bool) Model {
@@ -188,6 +191,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		currentIndex:        -1,
 		repeatMode:          cfg.RepeatMode,
 		shuffle:             cfg.Shuffle,
+		lastFindResults:     nil,
 		layoutOverride:      layoutOverride,
 		initialLayout:       layoutModeVal(layoutOverride, cfg.Layout),
 		sleepTimer:          sleepTimer,

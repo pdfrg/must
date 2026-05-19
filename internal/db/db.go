@@ -534,6 +534,92 @@ func (ld *LibraryDB) ResetZeroDurationModTimes() (int, error) {
 	return int(affected), nil
 }
 
+func (ld *LibraryDB) GetTrackByID(id int64) (*models.Track, error) {
+	row := ld.db.QueryRow(`
+		SELECT id, path, title, artist, album, album_artist, year, genre,
+		       track_num, disc_num, duration, has_cover_art, file_mod_time
+		FROM tracks WHERE id = ?`, id)
+
+	var t models.Track
+	var hasCover int
+	err := row.Scan(&t.ID, &t.Path, &t.Title, &t.Artist, &t.Album,
+		&t.AlbumArtist, &t.Year, &t.Genre, &t.TrackNum, &t.DiscNum,
+		&t.Duration, &hasCover, &t.FileModTime)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get track by id: %w", err)
+	}
+	t.HasCoverArt = hasCover != 0
+	return &t, nil
+}
+
+func (ld *LibraryDB) SearchArtistsLike(query string) ([]string, error) {
+	pattern := "%" + query + "%"
+	rows, err := ld.db.Query(`
+		SELECT DISTINCT COALESCE(NULLIF(album_artist, ''), artist)
+		FROM tracks
+		WHERE COALESCE(NULLIF(album_artist, ''), artist) LIKE ?
+		ORDER BY 1 LIMIT 50`, pattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search artists: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var artists []string
+	seen := make(map[string]bool)
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			return nil, err
+		}
+		if !seen[a] {
+			seen[a] = true
+			artists = append(artists, a)
+		}
+	}
+	return artists, rows.Err()
+}
+
+type AlbumSearchResult struct {
+	Album, Artist string
+}
+
+func (ld *LibraryDB) SearchAlbumsLike(query string) ([]AlbumSearchResult, error) {
+	pattern := "%" + query + "%"
+	rows, err := ld.db.Query(`
+		SELECT DISTINCT album, COALESCE(NULLIF(album_artist, ''), artist)
+		FROM tracks
+		WHERE album LIKE ? AND album != ''
+		ORDER BY album LIMIT 50`, pattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search albums: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var albums []AlbumSearchResult
+	seen := make(map[string]bool)
+	for rows.Next() {
+		var a, ar string
+		if err := rows.Scan(&a, &ar); err != nil {
+			return nil, err
+		}
+		key := ar + "|" + a
+		if !seen[key] {
+			seen[key] = true
+			albums = append(albums, AlbumSearchResult{Album: a, Artist: ar})
+		}
+	}
+	return albums, rows.Err()
+}
+
+func (ld *LibraryDB) TotalDuration() (float64, error) {
+	var total float64
+	err := ld.db.QueryRow(`SELECT COALESCE(SUM(duration), 0) FROM tracks`).Scan(&total)
+	return total, err
+}
+
 func (ld *LibraryDB) SearchLike(query string) ([]models.Track, error) {
 	pattern := "%" + query + "%"
 	rows, err := ld.db.Query(`

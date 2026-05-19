@@ -75,6 +75,10 @@ MP3, FLAC, OGG, Opus, M4A, AAC, WMA, WAV
 
 See [DOCUMENTATION.md](DOCUMENTATION.md) for cli usage, keybindings, configuration reference, album art/artist image priority, XDG paths, search architecture, and database schema.
 
+## Attribution
+
+Audio visualizations: [cliamp](https://github.com/bjarneo/cliamp). Awesome music player with retro Winamp style in the terminal.
+
 ## License
 
 MIT

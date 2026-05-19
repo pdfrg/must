@@ -214,11 +214,6 @@ func (m Model) skipPrev() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if m.playbackPos.TimePos > 3 {
-		_ = m.mpvBackend.SeekAbsolute(0)
-		return m, nil
-	}
-
 	prev := m.currentIndex - 1
 	if prev < 0 {
 		if m.repeatMode == "all" {
