@@ -592,8 +592,12 @@ func (m Model) renderImagesCmd() tea.Cmd {
 		return nil
 	}
 
-	hasAlbumArt := m.cfg.ShowAlbumArt && m.albumArtLoaded && m.albumArtStr != "" && m.cfg.Layout != "compact"
-	hasLogoArt := !hasAlbumArt && m.logoArtLoaded && m.logoArtStr != "" && m.cfg.ShowAlbumArt && m.cfg.Layout != "compact"
+	layout := m.layoutMode()
+	compactLayout := layout == "compact"
+	narrowLayout := layout == "narrow"
+
+	hasAlbumArt := m.cfg.ShowAlbumArt && m.albumArtLoaded && m.albumArtStr != "" && !compactLayout
+	hasLogoArt := !hasAlbumArt && m.logoArtLoaded && m.logoArtStr != "" && m.cfg.ShowAlbumArt && !compactLayout
 	hasArtistArt := m.artistArtLoaded && m.artistArtStr != "" && m.bottomViewMode == BottomArtistBio
 
 	if !hasAlbumArt && !hasLogoArt && !hasArtistArt {
@@ -607,9 +611,15 @@ func (m Model) renderImagesCmd() tea.Cmd {
 
 		if hasAlbumArt {
 			artCol := m.width - m.albumArtWidth - 2
+			if narrowLayout {
+				artCol = 2
+			}
 			raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", 3, artCol, m.albumArtStr)
 		} else if hasLogoArt {
 			artCol := m.width - m.logoArtWidth - 2
+			if narrowLayout {
+				artCol = 2
+			}
 			raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", 3, artCol, m.logoArtStr)
 		}
 

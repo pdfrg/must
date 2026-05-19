@@ -967,6 +967,9 @@ func (m Model) handleVisTick(msg visTickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) cycleView() (tea.Model, tea.Cmd) {
+	if m.layoutMode() != "large" {
+		return m, setStatus(&m, "Bottom view unavailable in current layout", true)
+	}
 	var cmds []tea.Cmd
 	prevMode := m.bottomViewMode
 	m.bottomViewMode = (m.bottomViewMode + 1) % BottomViewModeCount
