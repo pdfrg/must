@@ -218,6 +218,9 @@ func (f Footer) View() string {
 		if ind := f.scrobbleIndicator(); ind != "" {
 			line += " " + ind
 		}
+		if ind := f.lidarrIndicator(); ind != "" {
+			line += " " + ind
+		}
 		return centerLine(line)
 	}
 

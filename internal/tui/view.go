@@ -20,9 +20,9 @@ type layoutRequirements struct {
 
 var layoutReqs = map[string]layoutRequirements{
 	"large":   {minCols: 80, minRows: 28, recCols: 108, recRows: 37},
-	"medium":  {minCols: 80, minRows: 18, recCols: 108, recRows: 24},
-	"compact": {minCols: 36, minRows: 14, recCols: 50, recRows: 18},
-	"narrow":  {minCols: 36, minRows: 30, recCols: 50, recRows: 35},
+	"medium":  {minCols: 80, minRows: 22, recCols: 108, recRows: 24},
+	"compact": {minCols: 36, minRows: 17, recCols: 42, recRows: 18},
+	"narrow":  {minCols: 36, minRows: 34, recCols: 37, recRows: 35},
 }
 
 func checkTerminalSize(width, height int, layout string) (fits bool, suboptimal bool, warning string) {
@@ -89,11 +89,21 @@ func (m Model) View() tea.View {
 		}
 	}
 
+	layout := m.layoutMode()
+
 	var b strings.Builder
 
 	headerView := m.header.View()
 	b.WriteString(headerView)
 	b.WriteString("\n\n")
+
+	// Narrow: reserve space for album art above nowplaying
+	if layout == "narrow" {
+		artHeight := 16
+		for i := 0; i < artHeight+1; i++ {
+			b.WriteString("\n")
+		}
+	}
 
 	nowPlayingView := m.renderNowPlaying()
 	b.WriteString(nowPlayingView)
@@ -101,41 +111,51 @@ func (m Model) View() tea.View {
 		b.WriteString("\n")
 	}
 
-	artHeight := 16
-	hasArt := (m.cfg.ShowAlbumArt && m.albumArtLoaded && m.layoutMode() != "compact") ||
-		(m.logoArtLoaded && m.imageRenderer != nil && m.cfg.ShowAlbumArt && m.layoutMode() != "compact")
-	if hasArt {
-		nowPlayingLines := lipgloss.Height(nowPlayingView)
-		if nowPlayingLines < artHeight {
-			for i := 0; i < artHeight-nowPlayingLines; i++ {
+	// Large/medium: pad below nowplaying so album art (right side) doesn't overflow
+	if layout != "compact" && layout != "narrow" {
+		artHeight := 16
+		hasArt := (m.cfg.ShowAlbumArt && m.albumArtLoaded && layout != "compact") ||
+			(m.logoArtLoaded && m.imageRenderer != nil && m.cfg.ShowAlbumArt && layout != "compact")
+		if hasArt {
+			nowPlayingLines := lipgloss.Height(nowPlayingView)
+			if nowPlayingLines < artHeight {
+				for i := 0; i < artHeight-nowPlayingLines; i++ {
+					b.WriteString("\n")
+				}
+			}
+		}
+	}
+
+	b.WriteString("\n")
+
+	footerView := m.renderFooter()
+
+	// Bottom section: large only
+	if layout == "large" {
+		currentHeight := lipgloss.Height(b.String())
+		m.bottomSectionStartRow = currentHeight + 1
+		footerHeight := lipgloss.Height(footerView)
+		if footerHeight == 0 {
+			footerHeight = 1
+		}
+		remainingHeight := m.height - currentHeight - footerHeight
+
+		if remainingHeight > 0 {
+			bottomView := m.renderBottomSection(remainingHeight)
+			bottomLines := strings.Split(bottomView, "\n")
+			for i := 0; i < remainingHeight; i++ {
+				if i < len(bottomLines) {
+					b.WriteString(bottomLines[i])
+				}
 				b.WriteString("\n")
 			}
 		}
+
+		b.WriteString("\n")
+	} else {
+		b.WriteString("\n")
 	}
 
-	b.WriteString("\n")
-
-	currentHeight := lipgloss.Height(b.String())
-	m.bottomSectionStartRow = currentHeight + 1
-	footerView := m.renderFooter()
-	footerHeight := lipgloss.Height(footerView)
-	if footerHeight == 0 {
-		footerHeight = 1
-	}
-	remainingHeight := m.height - currentHeight - footerHeight
-
-	if remainingHeight > 0 {
-		bottomView := m.renderBottomSection(remainingHeight)
-		bottomLines := strings.Split(bottomView, "\n")
-		for i := 0; i < remainingHeight; i++ {
-			if i < len(bottomLines) {
-				b.WriteString(bottomLines[i])
-			}
-			b.WriteString("\n")
-		}
-	}
-
-	b.WriteString("\n")
 	b.WriteString(footerView)
 
 	return m.altView(b.String())
@@ -169,26 +189,46 @@ func (m Model) renderNowPlaying() string {
 		data.StatusIsErr = m.statusIsErr
 	}
 
-	m.nowPlaying.SetWidth(m.width - 4)
-	m.nowPlaying.SetMaxWidth(0)
+	layout := m.layoutMode()
 
-	hasAlbumArt := m.cfg.ShowAlbumArt && m.albumArtLoaded && m.layoutMode() != "compact"
-	hasLogo := !hasAlbumArt && m.logoImage != nil && m.imageRenderer != nil && m.layoutMode() != "compact"
-
-	if hasAlbumArt || hasLogo {
+	switch layout {
+	case "narrow":
 		artHeight := 16
 		artWidth := int(float64(artHeight) * m.cellRatio)
 		if artWidth < 10 {
 			artWidth = 10
 		}
-		artCol := m.width - artWidth - 2
-		if artCol > 10 {
-			m.nowPlaying.SetContentWidth(artCol - 2)
+		m.nowPlaying.SetWidth(min(m.width-4, artWidth))
+		m.nowPlaying.SetMaxWidth(artWidth)
+		m.nowPlaying.SetContentWidth(0)
+
+	case "compact":
+		m.nowPlaying.SetWidth(m.width - 4)
+		m.nowPlaying.SetMaxWidth(m.width - 6)
+		m.nowPlaying.SetContentWidth(0)
+
+	default: // large, medium
+		m.nowPlaying.SetWidth(m.width - 4)
+		m.nowPlaying.SetMaxWidth(0)
+
+		hasAlbumArt := m.cfg.ShowAlbumArt && m.albumArtLoaded && layout != "compact"
+		hasLogo := !hasAlbumArt && m.logoImage != nil && m.imageRenderer != nil && layout != "compact"
+
+		if hasAlbumArt || hasLogo {
+			artHeight := 16
+			artWidth := int(float64(artHeight) * m.cellRatio)
+			if artWidth < 10 {
+				artWidth = 10
+			}
+			artCol := m.width - artWidth - 2
+			if artCol > 10 {
+				m.nowPlaying.SetContentWidth(artCol - 2)
+			} else {
+				m.nowPlaying.SetContentWidth(0)
+			}
 		} else {
 			m.nowPlaying.SetContentWidth(0)
 		}
-	} else {
-		m.nowPlaying.SetContentWidth(0)
 	}
 
 	return m.nowPlaying.View(data)

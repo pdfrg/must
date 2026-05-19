@@ -212,7 +212,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 	m.saveInput.Placeholder = "playlist name"
 	m.saveInput.SetWidth(30)
 
-	if cfg.ShowAlbumArt && cfg.Layout != "compact" {
+	if cfg.ShowAlbumArt && layoutModeVal(layoutOverride, cfg.Layout) != "compact" {
 		m.imageRenderer = pkgimage.NewRendererWithProtocol(cfg.ForceProtocol)
 
 		switch cfg.ForceProtocol {
