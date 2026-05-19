@@ -17,20 +17,22 @@ type SleepTimerMsg struct {
 }
 
 type SleepTimer struct {
-	styles   *config.ThemeStyles
-	width    int
-	height   int
-	cursor   int
-	active   bool
-	duration time.Duration
+	styles         *config.ThemeStyles
+	width          int
+	height         int
+	cursor         int
+	active         bool
+	duration       time.Duration
+	customDuration time.Duration
 }
 
 func NewSleepTimer(styles *config.ThemeStyles, active bool, dur time.Duration) *SleepTimer {
 	return &SleepTimer{
-		styles:   styles,
-		active:   active,
-		duration: dur,
-		cursor:   0,
+		styles:         styles,
+		active:         active,
+		duration:       dur,
+		customDuration: dur,
+		cursor:         0,
 	}
 }
 
@@ -66,6 +68,17 @@ func (s *SleepTimer) getSelectedDuration() time.Duration {
 	}
 }
 
+func (s *SleepTimer) adjustCustom(n int) {
+	mins := int(s.customDuration.Minutes()) + n
+	if mins < 1 {
+		mins = 1
+	}
+	if mins > 120 {
+		mins = 120
+	}
+	s.customDuration = time.Duration(mins) * time.Minute
+}
+
 func (s *SleepTimer) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
@@ -83,9 +96,22 @@ func (s *SleepTimer) Update(msg tea.Msg) tea.Cmd {
 				s.cursor++
 			}
 
+		case "left", "h":
+			if s.active {
+				s.adjustCustom(-5)
+			}
+
+		case "right", "l":
+			if s.active {
+				s.adjustCustom(5)
+			}
+
 		case "enter", " ":
 			if s.active && s.cursor == 8 {
 				return func() tea.Msg { return SleepTimerMsg{Cancelled: true} }
+			}
+			if s.active {
+				return func() tea.Msg { return SleepTimerMsg{Duration: s.customDuration} }
 			}
 			if !s.active {
 				dur := s.getSelectedDuration()
@@ -110,36 +136,53 @@ func (s *SleepTimer) View() string {
 	var b strings.Builder
 
 	if s.active {
-		remainingMins := int(s.duration.Minutes())
+		remainingMins := int(s.customDuration.Minutes())
 		headerText := fmt.Sprintf("Sleep Timer — %d min remaining", remainingMins)
 		b.WriteString(centerStyled(s.styles.AccentStyle.Bold(true).Render(headerText), contentWidth))
+		b.WriteString("\n\n")
+
+		changeLabel := fmt.Sprintf("Change: %d min", remainingMins)
+		b.WriteString(centerStyled(s.styles.ForegroundStyle.Render(changeLabel), contentWidth))
+		b.WriteString("\n")
+
+		arrows := s.styles.MutedStyle.Render("←/h  -5 min    +5 min  →/l")
+		b.WriteString(centerStyled(arrows, contentWidth))
+		b.WriteString("\n\n")
+
+		b.WriteString(s.styles.MutedStyle.Render("  Cancel"))
+		b.WriteString("\n")
+
+		b.WriteString("\n")
+		helpText := s.styles.AccentStyle.Render("Enter") + s.styles.MutedStyle.Render(" set ") +
+			s.styles.AccentStyle.Render("Esc/q") + s.styles.MutedStyle.Render(" close")
+		b.WriteString(centerStyled(helpText, contentWidth))
 	} else {
 		b.WriteString(centerStyled(s.styles.AccentStyle.Bold(true).Render("Sleep Timer"), contentWidth))
-	}
-	b.WriteString("\n\n")
+		b.WriteString("\n\n")
 
-	options := []string{
-		"5 min", "10 min", "15 min", "30 min",
-		"45 min", "60 min", "90 min", "2 hours",
-		"Cancel",
-	}
-
-	for i, label := range options {
-		style := s.styles.MutedStyle
-		prefix := "  "
-		if i == s.cursor {
-			style = s.styles.AccentStyle.Bold(true)
-			prefix = "» "
+		options := []string{
+			"5 min", "10 min", "15 min", "30 min",
+			"45 min", "60 min", "90 min", "2 hours",
+			"Cancel",
 		}
 
-		b.WriteString(style.Render(prefix + label))
-		b.WriteString("\n")
-	}
+		for i, label := range options {
+			style := s.styles.MutedStyle
+			prefix := "  "
+			if i == s.cursor {
+				style = s.styles.AccentStyle.Bold(true)
+				prefix = "» "
+			}
 
-	b.WriteString("\n")
-	helpText := s.styles.AccentStyle.Render("Enter") + s.styles.MutedStyle.Render(" set ") +
-		s.styles.AccentStyle.Render("Esc/q") + s.styles.MutedStyle.Render(" close")
-	b.WriteString(centerStyled(helpText, contentWidth))
+			b.WriteString(style.Render(prefix + label))
+			b.WriteString("\n")
+		}
+
+		b.WriteString("\n")
+		helpText := s.styles.AccentStyle.Render("Enter") + s.styles.MutedStyle.Render(" set ") +
+			s.styles.AccentStyle.Render("Esc/q") + s.styles.MutedStyle.Render(" close")
+		b.WriteString(centerStyled(helpText, contentWidth))
+	}
 	b.WriteString("\n")
 
 	modalStyle := lipgloss.NewStyle().

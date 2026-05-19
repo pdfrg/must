@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -9,6 +10,51 @@ import (
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/tui/widgets"
 )
+
+type layoutRequirements struct {
+	minCols int
+	minRows int
+	recCols int
+	recRows int
+}
+
+var layoutReqs = map[string]layoutRequirements{
+	"large":   {minCols: 80, minRows: 28, recCols: 108, recRows: 37},
+	"medium":  {minCols: 80, minRows: 18, recCols: 108, recRows: 24},
+	"compact": {minCols: 36, minRows: 14, recCols: 50, recRows: 18},
+	"narrow":  {minCols: 36, minRows: 30, recCols: 50, recRows: 35},
+}
+
+func checkTerminalSize(width, height int, layout string) (fits bool, suboptimal bool, warning string) {
+	reqs, ok := layoutReqs[layout]
+	if !ok {
+		return true, false, ""
+	}
+
+	if width < reqs.minCols || height < reqs.minRows {
+		return false, false, fmt.Sprintf("Terminal %dx%d too small for %q (needs %dx%d)",
+			width, height, layout, reqs.minCols, reqs.minRows)
+	}
+
+	if width < reqs.recCols || height < reqs.recRows {
+		return true, true, fmt.Sprintf("Terminal %dx%d may have minor display issues (recommended %dx%d for %q)",
+			width, height, reqs.recCols, reqs.recRows, layout)
+	}
+
+	return true, false, ""
+}
+
+func getFittingLayouts(width, height int) []string {
+	var fitting []string
+	layouts := []string{"large", "medium", "compact", "narrow"}
+	for _, l := range layouts {
+		reqs, ok := layoutReqs[l]
+		if ok && width >= reqs.minCols && height >= reqs.minRows {
+			fitting = append(fitting, l)
+		}
+	}
+	return fitting
+}
 
 func (m Model) altView(s string) tea.View {
 	v := tea.NewView(s)
@@ -23,6 +69,12 @@ func (m Model) altView(s string) tea.View {
 func (m Model) View() tea.View {
 	if m.width == 0 {
 		return m.altView("Loading...")
+	}
+
+	if !m.layoutCheckDone {
+		if view, ok := m.checkAndRenderLayoutPrompt(); ok {
+			return view
+		}
 	}
 
 	// Fullscreen visualizer replaces everything
@@ -253,7 +305,13 @@ func (m Model) renderFullscreenVis() tea.View {
 	if m.vis == nil {
 		return m.altView("Visualizer not initialized")
 	}
-	rows := max(3, m.height)
+
+	overlayRows := 0
+	if m.visInfoVisible && m.cfg.Visualizer.ShowInfo != "off" && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+		overlayRows = 6
+	}
+
+	rows := max(3, m.height-overlayRows)
 	m.vis.SetRows(rows)
 
 	var b strings.Builder
@@ -272,10 +330,102 @@ func (m Model) renderFullscreenVis() tea.View {
 		return m.altView(b.String())
 	}
 
-	vizContent := m.vis.Render(m.width)
-	b.WriteString(vizContent)
+	if overlayRows > 0 {
+		track := m.playlist[m.currentIndex]
+		overlay := m.buildVisInfoOverlay(track)
+		b.WriteString(overlay)
+
+		visContent := m.vis.Render(m.width)
+		b.WriteString(visContent)
+	} else {
+		vizContent := m.vis.Render(m.width)
+		b.WriteString(vizContent)
+	}
 
 	return m.altView(b.String())
+}
+
+func (m Model) buildVisInfoOverlay(track models.Track) string {
+	var b strings.Builder
+
+	title := m.styles.ForegroundStyle.Bold(true).Render(track.Title)
+	artist := m.styles.AccentStyle.Render(track.Artist)
+	album := track.Album
+	if track.Year > 0 {
+		album = fmt.Sprintf("%s (%d)", track.Album, track.Year)
+	}
+	albumStr := m.styles.MutedStyle.Render(album)
+
+	lines := []string{"", title, artist, albumStr, ""}
+	for _, line := range lines {
+		padded := lipgloss.NewStyle().PaddingLeft(2).Render(line)
+		centered := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(padded)
+		b.WriteString(centered)
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+func (m Model) checkAndRenderLayoutPrompt() (tea.View, bool) {
+	currentLayout := m.layoutMode()
+	fits, suboptimal, warning := checkTerminalSize(m.width, m.height, currentLayout)
+
+	if fits && !suboptimal {
+		m.layoutCheckDone = true
+		return tea.View{}, false
+	}
+
+	fitting := getFittingLayouts(m.width, m.height)
+
+	var b strings.Builder
+	b.WriteString(m.styles.AccentStyle.Bold(true).Render("Terminal Size Check"))
+	b.WriteString("\n\n")
+	b.WriteString(m.styles.ForegroundStyle.Render(fmt.Sprintf("Terminal: %dx%d", m.width, m.height)))
+	b.WriteString("\n")
+	b.WriteString(m.styles.MutedStyle.Render(warning))
+	b.WriteString("\n\n")
+
+	if len(fitting) > 0 {
+		b.WriteString(m.styles.AccentStyle.Render("Suggested layouts:"))
+		b.WriteString("\n")
+		for _, l := range fitting {
+			short := l[:1]
+			reqs := layoutReqs[l]
+			mark := ""
+			if l == currentLayout {
+				mark = " (current)"
+			}
+			fmt.Fprintf(&b, "  %s %s%s (%dx%d)\n", short, l, mark, reqs.recCols, reqs.recRows)
+		}
+		b.WriteString("\n")
+		b.WriteString(m.styles.MutedStyle.Render("Press l, m, c, or n to select a layout,"))
+		b.WriteString("\n")
+		b.WriteString(m.styles.MutedStyle.Render("enter/space to continue anyway, or q to quit."))
+	} else {
+		b.WriteString(m.styles.MutedStyle.Render("Terminal too small for any layout — resize and press 'c' to continue."))
+		b.WriteString("\n\n")
+		b.WriteString(m.styles.MutedStyle.Render("Press c to continue, q to quit."))
+	}
+
+	content := b.String()
+
+	lines := strings.Split(content, "\n")
+	visHeight := len(lines)
+	padTop := max(0, (m.height-visHeight)/2)
+
+	var sb strings.Builder
+	for i := 0; i < padTop; i++ {
+		sb.WriteString("\n")
+	}
+	padLeft := max(0, (m.width-60)/2)
+	for _, line := range lines {
+		sb.WriteString(strings.Repeat(" ", padLeft))
+		sb.WriteString(line)
+		sb.WriteString("\n")
+	}
+
+	return m.altView(sb.String()), true
 }
 
 func (m Model) renderSyncedLyrics(height int) string {

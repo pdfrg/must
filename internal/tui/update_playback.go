@@ -439,6 +439,8 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 	if m.vis != nil && m.bottomViewMode == BottomVisualizer {
 		m.vis.SetSeed(uint64(m.currentIndex))
 	}
+	m.visInfoVisible = true
+	m.visInfoShownAt = time.Now()
 
 	if m.bottomViewMode != BottomArtistBio {
 		m.artistArtStr = ""
@@ -579,6 +581,10 @@ func (m Model) handleImageLoaded(msg imageLoadedMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) renderImagesCmd() tea.Cmd {
 	if m.activeModal != ModalNone {
+		return nil
+	}
+
+	if m.layoutPromptActive {
 		return nil
 	}
 

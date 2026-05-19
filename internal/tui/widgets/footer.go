@@ -80,6 +80,7 @@ func NewFooter(accentStyle, mutedStyle, foregroundStyle lipgloss.Style) *Footer 
 			{Key: "G", Icon: "", Label: "Bot"},
 		},
 		bottomRightKeys: []KeyBinding{
+			//			{Key: "c", Icon: "", Label: "Copy"},
 			{Key: "/", Icon: "", Label: "Search"},
 			{Key: "l", Icon: "", Label: "Lib"},
 			{Key: "L", Icon: "", Label: "Lidarr"},

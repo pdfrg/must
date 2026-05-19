@@ -51,6 +51,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case visTickMsg:
 		return m.handleVisTick(msg)
 
+	case tea.BackgroundColorMsg:
+		m.isDark = msg.IsDark()
+		logf("Terminal background color: dark=%v", m.isDark)
+		return m, nil
+
 	case scanCompleteMsg:
 		return m.handleScanComplete(msg)
 
@@ -313,11 +318,76 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg, priorCmds []tea.Cmd) (tea
 	m.width = msg.Width
 	m.height = msg.Height
 	m.header.SetWidth(m.width)
+
+	if !m.layoutCheckDone {
+		fits, suboptimal, _ := checkTerminalSize(m.width, m.height, m.layoutMode())
+		m.layoutPromptActive = !fits || suboptimal
+		if fits && !suboptimal {
+			m.layoutCheckDone = true
+		}
+	}
+
 	priorCmds = append(priorCmds, renderAlbumArtAfterDelay())
 	return m, tea.Batch(priorCmds...)
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if !m.layoutCheckDone {
+		layout := m.layoutMode()
+		fits, suboptimal, _ := checkTerminalSize(m.width, m.height, layout)
+		if !fits || suboptimal {
+			switch msg.String() {
+			case "l":
+				m.layoutPromptActive = false
+				m.layoutOverride = "large"
+				m.layoutCheckDone = true
+				m.cfg.Layout = "large"
+				return m, tea.Batch(setStatus(&m, "Layout: large", false), clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+			case "m":
+				m.layoutPromptActive = false
+				m.layoutOverride = "medium"
+				m.layoutCheckDone = true
+				m.cfg.Layout = "medium"
+				return m, tea.Batch(setStatus(&m, "Layout: medium", false), clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+			case "c":
+				if getFittingLayouts(m.width, m.height) == nil && layout != "" {
+					break
+				}
+				m.layoutPromptActive = false
+				m.layoutOverride = "compact"
+				m.layoutCheckDone = true
+				m.cfg.Layout = "compact"
+				return m, tea.Batch(setStatus(&m, "Layout: compact", false), clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+			case "n":
+				m.layoutPromptActive = false
+				m.layoutOverride = "narrow"
+				m.layoutCheckDone = true
+				m.cfg.Layout = "narrow"
+				return m, tea.Batch(setStatus(&m, "Layout: narrow", false), clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+			case "enter", " ", "space":
+				m.layoutPromptActive = false
+				m.layoutCheckDone = true
+				return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+			case "q", "ctrl+c":
+				if len(m.playlist) > 0 {
+					SavePlaybackState(m.playlist, m.currentIndex, m.playbackPos.TimePos, m.shuffle, m.repeatMode)
+				}
+				if m.mpvBackend != nil {
+					_ = m.mpvBackend.Stop()
+				}
+				if m.libraryDB != nil {
+					_ = m.libraryDB.Close()
+				}
+				if m.themeWatcher != nil {
+					m.themeWatcher.Close()
+				}
+				return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), tea.Quit)
+			}
+			return m, nil
+		}
+		m.layoutCheckDone = true
+	}
+
 	if m.savingPlaylist {
 		return m.handleSaveInputKey(msg)
 	}
@@ -330,10 +400,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.Quit):
 		var cmds []tea.Cmd
 		cmds = append(cmds, clearKittyImagesCmdIf(m.imageProtocol))
-		if m.playing && m.currentIndex >= 0 && len(m.playlist) > 0 {
+		if len(m.playlist) > 0 {
 			SavePlaybackState(m.playlist, m.currentIndex, m.playbackPos.TimePos, m.shuffle, m.repeatMode)
-		} else {
-			ClearPlaybackState()
 		}
 		if m.mpvBackend != nil {
 			_ = m.mpvBackend.Stop()
@@ -530,6 +598,16 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keyMap.LidarrBrowser):
 		return m.openLidarr()
+
+	case key.Matches(msg, m.keyMap.CopyClipboard):
+		if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+			track := m.playlist[m.currentIndex]
+			return m, tea.Batch(
+				setStatus(&m, "Copied: "+track.FormatDisplayInfo(), false),
+				copyToClipboardCmd(track),
+			)
+		}
+		return m, setStatus(&m, "Nothing playing", true)
 
 	case key.Matches(msg, m.keyMap.SleepTimer):
 		return m.openSleepTimer()
@@ -873,6 +951,13 @@ func (m Model) handleVisTick(msg visTickMsg) (tea.Model, tea.Cmd) {
 		if m.bottomViewMode == BottomVisualizer {
 			m.vis.Tick(m.playing, m.paused)
 			cmds = append(cmds, tickVisCmd())
+
+			if m.visFullscreen && m.visInfoVisible && m.cfg.Visualizer.ShowInfo == "fade" {
+				elapsed := time.Since(m.visInfoShownAt)
+				if elapsed > time.Duration(m.cfg.Visualizer.InfoDuration)*time.Second {
+					m.visInfoVisible = false
+				}
+			}
 		} else {
 			m.vis.Close()
 			m.vis = nil
@@ -1060,6 +1145,10 @@ func (m Model) openLidarr() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) openSleepTimer() (tea.Model, tea.Cmd) {
+	layout := m.layoutMode()
+	if layout == "compact" || layout == "narrow" {
+		return m, setStatus(&m, "Sleep timer unavailable in compact/narrow layout", true)
+	}
 	var remaining time.Duration
 	if m.sleepTimerActive {
 		remaining = time.Until(m.sleepTimerExpiresAt)
@@ -1544,7 +1633,6 @@ func (m Model) enqueueHighlightedNext() (tea.Model, tea.Cmd) {
 
 	if cursor < insertAt {
 		m.currentIndex++
-	} else {
 	}
 
 	if cursor >= insertAt {
