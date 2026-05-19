@@ -5,42 +5,44 @@ import (
 )
 
 type KeyMap struct {
-	Quit          key.Binding
-	PlayPause     key.Binding
-	Next          key.Binding
-	Prev          key.Binding
-	SeekForward   key.Binding
-	SeekBackward  key.Binding
-	Repeat        key.Binding
-	Shuffle       key.Binding
-	RestartSong   key.Binding
-	CursorUp      key.Binding
-	CursorDown    key.Binding
-	PageUp        key.Binding
-	PageDown      key.Binding
-	Home          key.Binding
-	End           key.Binding
-	Enter         key.Binding
-	Enqueue       key.Binding
-	EnqueueNext   key.Binding
-	CycleView     key.Binding
-	Search        key.Binding
-	Library       key.Binding
-	Help          key.Binding
-	Escape        key.Binding
-	DeleteTrack   key.Binding
-	ClearPlaylist key.Binding
-	Rescan        key.Binding
-	Lyrics        key.Binding
-	SyncedLyrics  key.Binding
-	ArtistBio     key.Binding
-	Gallery       key.Binding
-	MoveTrackUp   key.Binding
-	MoveTrackDown key.Binding
-	SavePlaylist  key.Binding
-	Options       key.Binding
-	SleepTimer    key.Binding
-	UpdateView    key.Binding
+	Quit            key.Binding
+	PlayPause       key.Binding
+	Next            key.Binding
+	Prev            key.Binding
+	SeekForward     key.Binding
+	SeekBackward    key.Binding
+	Repeat          key.Binding
+	Shuffle         key.Binding
+	RestartSong     key.Binding
+	CursorUp        key.Binding
+	CursorDown      key.Binding
+	PageUp          key.Binding
+	PageDown        key.Binding
+	Home            key.Binding
+	End             key.Binding
+	Enter           key.Binding
+	Enqueue         key.Binding
+	EnqueueNext     key.Binding
+	CycleView       key.Binding
+	Search          key.Binding
+	Library         key.Binding
+	Help            key.Binding
+	Escape          key.Binding
+	DeleteTrack     key.Binding
+	ClearPlaylist   key.Binding
+	Rescan          key.Binding
+	Lyrics          key.Binding
+	SyncedLyrics    key.Binding
+	ArtistBio       key.Binding
+	Gallery         key.Binding
+	MoveTrackUp     key.Binding
+	MoveTrackDown   key.Binding
+	MoveTrackTop    key.Binding
+	MoveTrackBottom key.Binding
+	SavePlaylist    key.Binding
+	Options         key.Binding
+	SleepTimer      key.Binding
+	UpdateView      key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -172,6 +174,14 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("J"),
 		key.WithHelp("J", "move down"),
 	),
+	MoveTrackTop: key.NewBinding(
+		key.WithKeys("g"),
+		key.WithHelp("g", "move to top"),
+	),
+	MoveTrackBottom: key.NewBinding(
+		key.WithKeys("G"),
+		key.WithHelp("G", "move to bottom"),
+	),
 	SavePlaylist: key.NewBinding(
 		key.WithKeys("S"),
 		key.WithHelp("S", "save playlist"),
@@ -212,7 +222,7 @@ func (k KeyMap) GlobalBindings() []key.Binding {
 		k.Quit, k.Search, k.Help, k.Escape,
 		k.Rescan, k.ClearPlaylist, k.DeleteTrack,
 		k.Lyrics, k.SyncedLyrics, k.ArtistBio, k.Gallery,
-		k.MoveTrackUp, k.MoveTrackDown, k.SavePlaylist,
+		k.MoveTrackUp, k.MoveTrackDown, k.MoveTrackTop, k.MoveTrackBottom, k.SavePlaylist,
 		k.Options, k.SleepTimer, k.UpdateView,
 	}
 }
