@@ -116,19 +116,35 @@ func (n *NowPlaying) SetSleepTimer(active bool, mins int) {
 }
 
 type NowPlayingData struct {
-	Track       *models.Track
-	AudioInfo   *models.AudioInfo
-	IsPaused    bool
-	TimePos     float64
-	RepeatMode  string
-	Shuffle     bool
-	StatusMsg   string
-	StatusIsErr bool
-	SleepActive bool
-	SleepMins   int
+	Track          *models.Track
+	AudioInfo      *models.AudioInfo
+	IsPaused       bool
+	TimePos        float64
+	RepeatMode     string
+	Shuffle        bool
+	ReplayGainMode string
+	PlaylistPos    int
+	PlaylistLength int
+	StatusMsg      string
+	StatusIsErr    bool
+	SleepActive    bool
+	SleepMins      int
 }
 
-func (n NowPlaying) renderIdleView() string {
+func buildStatusLine(n NowPlaying, data NowPlayingData) string {
+	if data.StatusMsg != "" {
+		if data.StatusIsErr {
+			return n.accentStyle.Render(data.StatusMsg)
+		}
+		return n.foregroundStyle.Render(data.StatusMsg)
+	}
+	if data.PlaylistLength > 0 {
+		return n.foregroundStyle.Render(fmt.Sprintf("track %d of %d", data.PlaylistPos, data.PlaylistLength))
+	}
+	return n.mutedStyle.Render("must")
+}
+
+func (n NowPlaying) renderIdleView(data NowPlayingData) string {
 	title := n.accentStyle.Bold(true).Render("No song playing")
 	artist := n.mutedStyle.Render("—")
 	album := n.mutedStyle.Render("—")
@@ -137,7 +153,7 @@ func (n NowPlaying) renderIdleView() string {
 	timeStr := n.mutedStyle.Render("00:00 / 00:00 (0%)")
 	audioLine := n.mutedStyle.Render("󰎇 —")
 	modeLine := n.mutedStyle.Render("󰓛 stopped")
-	statusLine := n.mutedStyle.Render("must")
+	statusLine := buildStatusLine(n, data)
 
 	output := fmt.Sprintf(" %s\n %s\n %s\n\n %s\n %s\n\n %s\n\n %s\n\n %s\n",
 		title, artist, album, progView, timeStr, modeLine, audioLine, statusLine)
@@ -162,7 +178,7 @@ func (n NowPlaying) renderIdleView() string {
 
 func (n NowPlaying) View(data NowPlayingData) string {
 	if data.Track == nil {
-		return n.renderIdleView()
+		return n.renderIdleView(data)
 	}
 
 	titleText := data.Track.Title
@@ -200,6 +216,9 @@ func (n NowPlaying) View(data NowPlayingData) string {
 	if data.RepeatMode != "" && data.RepeatMode != "off" {
 		modeParts = append(modeParts, n.foregroundStyle.Render("󰑖 "+data.RepeatMode))
 	}
+	if data.ReplayGainMode != "" && data.ReplayGainMode != "off" {
+		modeParts = append(modeParts, n.foregroundStyle.Render("󰇼 "+data.ReplayGainMode))
+	}
 	if data.Shuffle {
 		modeParts = append(modeParts, n.foregroundStyle.Render("󰒟 shuffle"))
 	}
@@ -210,16 +229,7 @@ func (n NowPlaying) View(data NowPlayingData) string {
 	}
 	modeLine = strings.Join(modeParts, "  ")
 
-	var statusLine string
-	if data.StatusMsg != "" {
-		if data.StatusIsErr {
-			statusLine = n.accentStyle.Render(data.StatusMsg)
-		} else {
-			statusLine = n.foregroundStyle.Render(data.StatusMsg)
-		}
-	} else {
-		statusLine = n.mutedStyle.Render("must")
-	}
+	statusLine := buildStatusLine(n, data)
 
 	if n.sleepTimerActive || data.SleepActive {
 		mins := data.SleepMins

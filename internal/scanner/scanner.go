@@ -52,7 +52,7 @@ func (s *Scanner) Stop() {
 	s.stopped = true
 }
 
-func (s *Scanner) Scan(musicDir string) (*ScanResult, error) {
+func (s *Scanner) Scan(musicDirs []string) (*ScanResult, error) {
 	start := time.Now()
 	result := &ScanResult{}
 
@@ -88,70 +88,76 @@ func (s *Scanner) Scan(musicDir string) (*ScanResult, error) {
 		batchIsUpdate = batchIsUpdate[:0]
 	}
 
-	err := filepath.WalkDir(musicDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			result.Errors++
-			return nil
-		}
-
-		s.mu.Lock()
-		stopped := s.stopped
-		s.mu.Unlock()
-		if stopped {
-			return fmt.Errorf("scan stopped")
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-
-		ext := strings.ToLower(filepath.Ext(path))
-		if !strings.Contains(audioExts, ext) {
-			return nil
-		}
-
-		result.TotalFiles++
-		existingPaths[path] = true
-
-		info, err := d.Info()
-		if err != nil {
-			result.Errors++
-			return nil
-		}
-		modTime := info.ModTime().Unix()
-
-		existing, err := s.db.GetTrackByPath(path)
-		if err != nil {
-			result.Errors++
-			return nil
-		}
-
-		if existing != nil && existing.FileModTime == modTime {
-			return nil
-		}
-
-		track, err := s.readTrack(path, modTime)
-		if err != nil {
-			if logger != nil {
-				logger.Printf("Error reading %s: %v", path, err)
+	var walkErr error
+	for _, musicDir := range musicDirs {
+		err := filepath.WalkDir(musicDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				result.Errors++
+				return nil
 			}
-			result.Errors++
+
+			s.mu.Lock()
+			stopped := s.stopped
+			s.mu.Unlock()
+			if stopped {
+				return fmt.Errorf("scan stopped")
+			}
+
+			if d.IsDir() {
+				return nil
+			}
+
+			ext := strings.ToLower(filepath.Ext(path))
+			if !strings.Contains(audioExts, ext) {
+				return nil
+			}
+
+			result.TotalFiles++
+			existingPaths[path] = true
+
+			info, err := d.Info()
+			if err != nil {
+				result.Errors++
+				return nil
+			}
+			modTime := info.ModTime().Unix()
+
+			existing, err := s.db.GetTrackByPath(path)
+			if err != nil {
+				result.Errors++
+				return nil
+			}
+
+			if existing != nil && existing.FileModTime == modTime {
+				return nil
+			}
+
+			track, err := s.readTrack(path, modTime)
+			if err != nil {
+				if logger != nil {
+					logger.Printf("Error reading %s: %v", path, err)
+				}
+				result.Errors++
+				return nil
+			}
+
+			batch = append(batch, track)
+			batchIsUpdate = append(batchIsUpdate, existing != nil)
+			if len(batch) >= batchSize {
+				flushBatch()
+			}
+
 			return nil
+		})
+		if err != nil {
+			walkErr = err
 		}
-
-		batch = append(batch, track)
-		batchIsUpdate = append(batchIsUpdate, existing != nil)
-		if len(batch) >= batchSize {
-			flushBatch()
-		}
-
-		return nil
-	})
+	}
 
 	flushBatch()
 
-	if err != nil && err.Error() != "scan stopped" {
-		return result, err
+	if walkErr != nil && walkErr.Error() != "scan stopped" {
+		return result, walkErr
 	}
 
 	removed, err := s.db.DeleteMissingTracks(existingPaths)

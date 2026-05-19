@@ -12,9 +12,11 @@ import (
 type Config struct {
 	path                  string
 	MusicDir              string                `toml:"music_dir" comment:"root directory for library scanning (default: ~/Music)"`
+	MusicDirs             []string              `toml:"music_dirs" comment:"root directories for library scanning\nformat: comma-separated quoted paths inside brackets, e.g. [\"~/Music\", \"/mnt/music\"]\noverrides music_dir if set (default: [\"~/Music\"])"`
 	PlaylistPathMode      string                `toml:"playlist_path_mode" comment:"path format when saving playlists: relative or absolute (default: relative)"`
 	RepeatMode            string                `toml:"repeat_mode" comment:"repeat mode: off, all, one (default: off)"`
 	Shuffle               bool                  `toml:"shuffle" comment:"shuffle playback order (default: false)"`
+	ReplayGainMode        string                `toml:"replaygain_mode" comment:"replaygain volume normalization\noff, track, album (default: off)"`
 	RestoreOnStart        bool                  `toml:"restore_on_start" comment:"restore last session's playlist and position on startup (default: true)"`
 	Autoplay              bool                  `toml:"autoplay" comment:"auto-play a random album when launched with no paths (default: false)"`
 	ShowAlbumArt          bool                  `toml:"show_album_art" comment:"display album art for each song\nuses the best supported image protocol with auto fallback\nkitty > iterm2 > sixel > unicode (default: true)"`
@@ -79,9 +81,11 @@ func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
 	return &Config{
 		MusicDir:         filepath.Join(homeDir, "Music"),
+		MusicDirs:        []string{filepath.Join(homeDir, "Music")},
 		PlaylistPathMode: "relative",
 		RepeatMode:       "off",
 		Shuffle:          false,
+		ReplayGainMode:   "off",
 		RestoreOnStart:   true,
 		Autoplay:         false,
 		ShowAlbumArt:     true,
@@ -174,9 +178,19 @@ func (c *Config) Save() error {
 func (c *Config) applyDefaults() {
 	defaults := DefaultConfig()
 
-	if c.MusicDir == "" {
-		c.MusicDir = defaults.MusicDir
+	if len(c.MusicDirs) == 0 {
+		if c.MusicDir != "" {
+			c.MusicDirs = []string{c.MusicDir}
+		} else {
+			c.MusicDirs = defaults.MusicDirs
+		}
 	}
+	c.MusicDir = ""
+
+	if c.ReplayGainMode != "off" && c.ReplayGainMode != "track" && c.ReplayGainMode != "album" {
+		c.ReplayGainMode = defaults.ReplayGainMode
+	}
+
 	if c.PlaylistPathMode != "relative" && c.PlaylistPathMode != "absolute" {
 		c.PlaylistPathMode = defaults.PlaylistPathMode
 	}

@@ -39,6 +39,8 @@ func (m Model) handleCtlCommand(cmd string, args []string) (Model, ctl.CtlResult
 		return m.ctlShuffle()
 	case "repeat":
 		return m.ctlRepeat(args)
+	case "replaygain":
+		return m.ctlReplayGain(args)
 	case "go":
 		return m.ctlGo(args)
 	case "status":
@@ -270,6 +272,26 @@ func (m Model) ctlRepeat(args []string) (Model, ctl.CtlResult, tea.Cmd) {
 		return m, ctl.CtlResult{OK: true, Data: "Repeat: " + mode}, nil
 	default:
 		return m, ctl.CtlResult{OK: false, Error: "repeat requires off, all, or one"}, nil
+	}
+}
+
+func (m Model) ctlReplayGain(args []string) (Model, ctl.CtlResult, tea.Cmd) {
+	if len(args) == 0 {
+		return m, ctl.CtlResult{OK: true, Data: "ReplayGain: " + m.cfg.ReplayGainMode}, nil
+	}
+	mode := strings.ToLower(args[0])
+	switch mode {
+	case "off", "track", "album":
+		m.cfg.ReplayGainMode = mode
+		if m.mpvBackend != nil {
+			m.mpvBackend.SetReplayGainMode(mode)
+		}
+		if err := m.cfg.Save(); err != nil {
+			logf("Failed to save config: %v", err)
+		}
+		return m, ctl.CtlResult{OK: true, Data: "ReplayGain: " + mode}, setStatus(&m, "ReplayGain: "+mode, false)
+	default:
+		return m, ctl.CtlResult{OK: false, Error: "replaygain requires off, track, or album"}, nil
 	}
 }
 
@@ -696,7 +718,7 @@ func (m Model) ctlFind(args []string) ([]ctl.SearchResult, *ctl.CtlResult) {
 			results = append(results, ctl.SearchResult{
 				Type: ctl.ResultAlbum, AlbumName: a.Album, ArtistName: a.Artist,
 				TrackCount: len(tracks), Year: year,
-				Display:    fmt.Sprintf("Album: %s - %s (%d tracks)", a.Artist, a.Album, len(tracks)),
+				Display: fmt.Sprintf("Album: %s - %s (%d tracks)", a.Artist, a.Album, len(tracks)),
 			})
 			if len(results) >= 30 {
 				break
@@ -747,7 +769,9 @@ func (m Model) ctlFindFormat(results []ctl.SearchResult) ctl.CtlResult {
 
 func (m Model) ctlLibrary() ctl.CtlResult {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Music directory: %s\n", m.cfg.MusicDir)
+	for i, dir := range m.cfg.MusicDirs {
+		fmt.Fprintf(&b, "Music directory %d: %s\n", i+1, dir)
+	}
 
 	if m.libraryDB != nil {
 		count, _ := m.libraryDB.TrackCount()

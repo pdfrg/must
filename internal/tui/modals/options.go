@@ -19,6 +19,7 @@ type OptionsMsg struct {
 	VisualizerShowInfo    *string
 	RealAudio             *bool
 	Theme                 *string
+	ReplayGainMode        *string
 	Closed                bool
 }
 
@@ -33,6 +34,7 @@ const (
 	optVisualizerShowInfo
 	optRealAudio
 	optTheme
+	optReplayGain
 )
 
 var visualizerModeNames = []string{
@@ -41,6 +43,8 @@ var visualizerModeNames = []string{
 }
 
 var visualizerShowInfoOptions = []string{"fade", "on", "off"}
+
+var replayGainModeNames = []string{"Off", "Track", "Album"}
 
 func themeOptions() []string {
 	names := config.ThemeNames()
@@ -79,6 +83,7 @@ type Options struct {
 	visShowInfoIdx       int
 	realAudio            bool
 	themeIdx             int
+	replayGainIdx        int
 
 	origShowAlbumArt         bool
 	origCopyAlbumArt         bool
@@ -90,6 +95,7 @@ type Options struct {
 	origVisShowInfoIdx       int
 	origRealAudio            bool
 	origThemeIdx             int
+	origReplayGainIdx        int
 }
 
 func NewOptions(
@@ -100,6 +106,7 @@ func NewOptions(
 	visMode, visShowInfo string,
 	realAudio bool,
 	themeName string,
+	replayGainMode string,
 ) *Options {
 	visModeIdx := 0
 	for i, name := range visualizerModeNames {
@@ -119,6 +126,14 @@ func NewOptions(
 
 	themeIdx := themeIndexFromConfig(themeName)
 
+	replayGainIdx := 0
+	for i, name := range replayGainModeNames {
+		if strings.EqualFold(name, replayGainMode) {
+			replayGainIdx = i
+			break
+		}
+	}
+
 	return &Options{
 		styles: styles,
 
@@ -132,6 +147,7 @@ func NewOptions(
 		visShowInfoIdx:       visShowInfoIdx,
 		realAudio:            realAudio,
 		themeIdx:             themeIdx,
+		replayGainIdx:        replayGainIdx,
 
 		origShowAlbumArt:         showAlbumArt,
 		origCopyAlbumArt:         copyAlbumArt,
@@ -143,6 +159,7 @@ func NewOptions(
 		origVisShowInfoIdx:       visShowInfoIdx,
 		origRealAudio:            realAudio,
 		origThemeIdx:             themeIdx,
+		origReplayGainIdx:        replayGainIdx,
 	}
 }
 
@@ -163,6 +180,7 @@ func (o *Options) visibleItems() []int {
 		optVisualizerShowInfo,
 		optRealAudio,
 		optTheme,
+		optReplayGain,
 	}
 }
 
@@ -219,6 +237,8 @@ func (o *Options) Update(msg tea.Msg) tea.Cmd {
 				o.realAudio = !o.realAudio
 			case optTheme:
 				o.cycleRight()
+			case optReplayGain:
+				o.cycleRight()
 			}
 
 		case "a":
@@ -263,6 +283,12 @@ func (o *Options) cycleLeft() {
 		} else {
 			o.themeIdx = len(themeOpts) - 1
 		}
+	case optReplayGain:
+		if o.replayGainIdx > 0 {
+			o.replayGainIdx--
+		} else {
+			o.replayGainIdx = len(replayGainModeNames) - 1
+		}
 	}
 }
 
@@ -301,6 +327,12 @@ func (o *Options) cycleRight() {
 		} else {
 			o.themeIdx = 0
 		}
+	case optReplayGain:
+		if o.replayGainIdx < len(replayGainModeNames)-1 {
+			o.replayGainIdx++
+		} else {
+			o.replayGainIdx = 0
+		}
 	}
 }
 
@@ -315,10 +347,11 @@ func (o *Options) applyChanges() tea.Cmd {
 	visShowInfoChanged := o.visShowInfoIdx != o.origVisShowInfoIdx
 	realAudioChanged := o.realAudio != o.origRealAudio
 	themeChanged := o.themeIdx != o.origThemeIdx
+	replayGainChanged := o.replayGainIdx != o.origReplayGainIdx
 
 	if !albumArtChanged && !copyArtChanged && !notifEnabledChanged && !notifShowArtChanged &&
 		!transparentBgChanged && !disableThemeChanged && !visModeChanged && !visShowInfoChanged &&
-		!realAudioChanged && !themeChanged {
+		!realAudioChanged && !themeChanged && !replayGainChanged {
 		return func() tea.Msg { return OptionsMsg{Closed: true} }
 	}
 
@@ -367,6 +400,10 @@ func (o *Options) applyChanges() tea.Cmd {
 		}
 		msg.Theme = &v
 	}
+	if replayGainChanged {
+		v := strings.ToLower(replayGainModeNames[o.replayGainIdx])
+		msg.ReplayGainMode = &v
+	}
 	return func() tea.Msg { return msg }
 }
 
@@ -406,6 +443,11 @@ func (o Options) View() string {
 		themeName = themeOpts[o.themeIdx]
 	}
 
+	replayGainName := replayGainModeNames[0]
+	if o.replayGainIdx >= 0 && o.replayGainIdx < len(replayGainModeNames) {
+		replayGainName = replayGainModeNames[o.replayGainIdx]
+	}
+
 	type optItem struct {
 		id    int
 		label string
@@ -436,6 +478,8 @@ func (o Options) View() string {
 			items = append(items, optItem{id, "Real audio", o.renderToggle(o.realAudio, o.cursor == len(items))})
 		case optTheme:
 			items = append(items, optItem{id, "Theme", o.renderPicker(themeName, o.cursor == len(items))})
+		case optReplayGain:
+			items = append(items, optItem{id, "ReplayGain", o.renderPicker(replayGainName, o.cursor == len(items))})
 		}
 	}
 

@@ -84,7 +84,7 @@ func scanLibraryCmd(cfg *config.Config) tea.Cmd {
 		}
 
 		s := scanner.NewScanner(libraryDB)
-		result, err := s.Scan(cfg.MusicDir)
+		result, err := s.Scan(cfg.MusicDirs)
 		if err != nil {
 			return scanCompleteMsg{err: err, db: libraryDB}
 		}
