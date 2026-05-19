@@ -393,6 +393,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.MoveTrackDown):
 		return m.moveTrackDown()
 
+	case key.Matches(msg, m.keyMap.MoveTrackTop):
+		return m.moveTrackTop()
+
+	case key.Matches(msg, m.keyMap.MoveTrackBottom):
+		return m.moveTrackBottom()
+
 	case key.Matches(msg, m.keyMap.SavePlaylist):
 		return m.savePlaylist()
 
@@ -1244,6 +1250,66 @@ func (m Model) moveTrackDown() (tea.Model, tea.Cmd) {
 	}
 
 	return m, setStatus(&m, "Moved down", false)
+}
+
+func (m Model) moveTrackTop() (tea.Model, tea.Cmd) {
+	cursor := m.playlistWidget.GetCursor()
+	if len(m.playlist) < 2 || cursor <= 0 {
+		return m, nil
+	}
+
+	track := m.playlist[cursor]
+	m.playlist = append(m.playlist[:cursor], m.playlist[cursor+1:]...)
+	m.playlist = append([]models.Track{track}, m.playlist...)
+
+	if m.currentIndex == cursor {
+		m.currentIndex = 0
+	} else if m.currentIndex < cursor {
+		m.currentIndex++
+	}
+
+	m.playlistWidget.SetCursor(0)
+	m.updatePlaylist()
+
+	if m.mpvBackend.IsRunning() && m.playing {
+		mpvFrom := m.playlistIndexToMPVIndex(1)
+		mpvTo := 0
+		if mpvFrom >= 0 {
+			_ = m.mpvBackend.PlaylistMove(mpvFrom, mpvTo)
+		}
+	}
+
+	return m, setStatus(&m, "Moved to top", false)
+}
+
+func (m Model) moveTrackBottom() (tea.Model, tea.Cmd) {
+	cursor := m.playlistWidget.GetCursor()
+	if len(m.playlist) < 2 || cursor < 0 || cursor >= len(m.playlist)-1 {
+		return m, nil
+	}
+
+	track := m.playlist[cursor]
+	m.playlist = append(m.playlist[:cursor], m.playlist[cursor+1:]...)
+	m.playlist = append(m.playlist, track)
+
+	if m.currentIndex == cursor {
+		m.currentIndex = len(m.playlist) - 1
+	} else if m.currentIndex > cursor {
+		m.currentIndex--
+	}
+
+	m.playlistWidget.SetCursor(len(m.playlist) - 1)
+	m.updatePlaylist()
+
+	if m.mpvBackend.IsRunning() && m.playing {
+		mpvFrom := m.playlistIndexToMPVIndex(cursor)
+		mpvTo := len(m.playlist) - 1
+		if mpvFrom >= 0 {
+			_ = m.mpvBackend.PlaylistMove(mpvFrom, mpvTo)
+		}
+	}
+
+	return m, setStatus(&m, "Moved to bottom", false)
 }
 
 func (m Model) savePlaylist() (tea.Model, tea.Cmd) {

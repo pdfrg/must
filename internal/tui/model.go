@@ -311,6 +311,7 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "d", Desc: "delete track from playlist"},
 		{Key: "D", Desc: "clear playlist"},
 		{Key: "J/K", Desc: "move track down/up"},
+		{Key: "g/G", Desc: "move track to top/bottom"},
 		{Key: "S", Desc: "save playlist"},
 		{Key: "R", Desc: "rescan library"},
 		{Key: "y", Desc: "plain lyrics"},

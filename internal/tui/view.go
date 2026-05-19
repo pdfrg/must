@@ -48,10 +48,7 @@ func (m Model) View() tea.View {
 	hasArt := (m.cfg.ShowAlbumArt && m.albumArtLoaded && m.layoutMode() != "compact") ||
 		(m.logoArtLoaded && m.imageRenderer != nil && m.cfg.ShowAlbumArt && m.layoutMode() != "compact")
 	if hasArt {
-		nowPlayingLines := strings.Count(nowPlayingView, "\n")
-		if !strings.HasSuffix(nowPlayingView, "\n") {
-			nowPlayingLines++
-		}
+		nowPlayingLines := lipgloss.Height(nowPlayingView)
 		if nowPlayingLines < artHeight {
 			for i := 0; i < artHeight-nowPlayingLines; i++ {
 				b.WriteString("\n")
@@ -68,7 +65,7 @@ func (m Model) View() tea.View {
 	if footerHeight == 0 {
 		footerHeight = 1
 	}
-	remainingHeight := m.height - currentHeight - footerHeight - 1
+	remainingHeight := m.height - currentHeight - footerHeight
 
 	if remainingHeight > 0 {
 		bottomView := m.renderBottomSection(remainingHeight)
@@ -283,6 +280,23 @@ func (m Model) renderFooter() string {
 	}
 	m.footer.SetScrobbleServices(services)
 	m.footer.SetFlashStateByService(m.scrobbleStates)
+
+	lidarrConfigured := m.cfg.Lidarr.Enabled && m.cfg.Lidarr.URL != "" && m.cfg.Lidarr.APIKey != ""
+	m.footer.SetLidarrConfigured(lidarrConfigured)
+	if lidarrConfigured && m.artistInfo != nil {
+		switch {
+		case m.artistInfo.LidarrError != "":
+			m.footer.SetLidarrState(widgets.LidarrStateError)
+		case m.artistInfo.LidarrMonitored:
+			m.footer.SetLidarrState(widgets.LidarrStateMonitored)
+		case m.artistInfo.LidarrInLidarr:
+			m.footer.SetLidarrState(widgets.LidarrStateInLidarr)
+		default:
+			m.footer.SetLidarrState(widgets.LidarrStateNotInLidarr)
+		}
+	} else {
+		m.footer.SetLidarrState(widgets.LidarrStateNotInLidarr)
+	}
 
 	return m.footer.View()
 }
