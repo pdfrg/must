@@ -70,7 +70,13 @@ func SearchArtistMusicBrainz(artist string) (*MusicBrainzArtist, error) {
 		return nil, err
 	}
 	if len(result) == 0 {
+		if apiLogger != nil {
+			apiLogger.Printf("MusicBrainz: artist not found: %q", artist)
+		}
 		return nil, fmt.Errorf("artist not found on musicbrainz: %s", artist)
+	}
+	if apiLogger != nil {
+		apiLogger.Printf("MusicBrainz: found artist %q (ID=%s, country=%s)", result[0].Name, result[0].ID, result[0].Country)
 	}
 	return &MusicBrainzArtist{
 		ID:             result[0].ID,
@@ -117,11 +123,21 @@ func searchArtistMB(artistName string) ([]mbArtistEntry, error) {
 
 	artists, err := doSearch(fmt.Sprintf("artist:\"%s\"", artistName))
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("MusicBrainz: search failed for %q: %v", artistName, err)
+		}
 		return nil, err
 	}
 
 	if len(artists) == 0 {
+		if apiLogger != nil {
+			apiLogger.Printf("MusicBrainz: no results for %q", artistName)
+		}
 		return nil, nil
+	}
+
+	if apiLogger != nil {
+		apiLogger.Printf("MusicBrainz: search for %q returned %d results", artistName, len(artists))
 	}
 
 	artistLower := strings.ToLower(artistName)
@@ -166,6 +182,9 @@ func GetDiscographyMusicBrainz(artistName string, album string) (string, []MBAlb
 		return "", nil, err
 	}
 	if len(entries) == 0 {
+		if apiLogger != nil {
+			apiLogger.Printf("MusicBrainz: discography search returned no results for %q", artistName)
+		}
 		return "", nil, nil
 	}
 
@@ -243,6 +262,9 @@ func GetDiscographyMusicBrainz(artistName string, album string) (string, []MBAlb
 		albums = append(albums, MBAlbum{Title: e.title, Year: e.year})
 	}
 
+	if apiLogger != nil {
+		apiLogger.Printf("MusicBrainz: discography for %q (ID=%s) = %d albums", matchedName, mbID, len(albums))
+	}
 	return mbID, albums, nil
 }
 
@@ -255,13 +277,22 @@ func GetArtistMusicBrainz(mbid string) (*MusicBrainzLookupResponse, error) {
 
 	body, err := fetchJSON(apiURL, headers)
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("MusicBrainz: lookup for MBID %s failed: %v", mbid, err)
+		}
 		return nil, fmt.Errorf("musicbrainz lookup failed: %w", err)
 	}
 
 	var resp MusicBrainzLookupResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("MusicBrainz: parse error for MBID %s: %v", mbid, err)
+		}
 		return nil, fmt.Errorf("musicbrainz parse error: %w", err)
 	}
 
+	if apiLogger != nil {
+		apiLogger.Printf("MusicBrainz: lookup %q (MBID=%s, country=%s, relations=%d)", resp.Name, mbid, resp.Country, len(resp.Relations))
+	}
 	return &resp, nil
 }

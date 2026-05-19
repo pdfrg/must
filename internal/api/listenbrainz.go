@@ -19,7 +19,7 @@ type ListenBrainzTrack struct {
 }
 
 type ListenBrainzListen struct {
-	ListenedAt int64             `json:"listened_at"`
+	ListenedAt int64             `json:"listened_at,omitempty"`
 	Track      ListenBrainzTrack `json:"track_metadata"`
 }
 
@@ -39,7 +39,15 @@ func SubmitListenBrainz(token string, track ListenBrainzTrack, timestamp int64) 
 		Payload:    []ListenBrainzListen{listen},
 	}
 
-	return submitListenBrainzRequest(token, payload)
+	err := submitListenBrainzRequest(token, payload)
+	if err != nil {
+		if scrobbleLogger != nil {
+			scrobbleLogger.Printf("ListenBrainz scrobble failed for %q: %v", track.Title, err)
+		}
+	} else if scrobbleLogger != nil {
+		scrobbleLogger.Printf("ListenBrainz scrobbled %q", track.Title)
+	}
+	return err
 }
 
 func SubmitPlayingNowListenBrainz(token string, track ListenBrainzTrack) error {
@@ -52,7 +60,15 @@ func SubmitPlayingNowListenBrainz(token string, track ListenBrainzTrack) error {
 		Payload:    []ListenBrainzListen{listen},
 	}
 
-	return submitListenBrainzRequest(token, payload)
+	err := submitListenBrainzRequest(token, payload)
+	if err != nil {
+		if scrobbleLogger != nil {
+			scrobbleLogger.Printf("ListenBrainz NowPlaying failed for %q: %v", track.Title, err)
+		}
+	} else if scrobbleLogger != nil {
+		scrobbleLogger.Printf("ListenBrainz NowPlaying %q", track.Title)
+	}
+	return err
 }
 
 func ValidateListenBrainzToken(token string) (string, error) {

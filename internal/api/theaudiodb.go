@@ -82,6 +82,9 @@ func SearchArtistTheAudioDB(apiKey, artistName, albumName string) (*TheAudioDBAr
 				if idArtist != "" {
 					result, err := fetchTheAudioDBArtistByID(key, idArtist)
 					if err == nil && result != nil {
+						if apiLogger != nil {
+							apiLogger.Printf("TheAudioDB: found artist %q via album search", artistName)
+						}
 						return result, nil
 					}
 				}
@@ -95,18 +98,30 @@ func SearchArtistTheAudioDB(apiKey, artistName, albumName string) (*TheAudioDBAr
 
 	body, err := fetchJSON(reqURL, nil)
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("TheAudioDB: search failed for %q: %v", artistName, err)
+		}
 		return nil, fmt.Errorf("theaudiodb search failed: %w", err)
 	}
 
 	var resp theaudiodbArtistResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("TheAudioDB: parse error for %q: %v", artistName, err)
+		}
 		return nil, fmt.Errorf("theaudiodb parse error: %w", err)
 	}
 
 	if len(resp.Artists) == 0 {
+		if apiLogger != nil {
+			apiLogger.Printf("TheAudioDB: artist not found: %q", artistName)
+		}
 		return nil, fmt.Errorf("artist not found: %s", artistName)
 	}
 
+	if apiLogger != nil {
+		apiLogger.Printf("TheAudioDB: found artist %q (ID=%s)", artistName, resp.Artists[0].IDArtist)
+	}
 	return &resp.Artists[0], nil
 }
 
@@ -115,6 +130,9 @@ func fetchTheAudioDBArtistByID(apiKey, artistID string) (*TheAudioDBArtist, erro
 
 	body, err := fetchJSON(reqURL, nil)
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("TheAudioDB: artist by ID %s failed: %v", artistID, err)
+		}
 		return nil, fmt.Errorf("theaudiodb artist lookup failed: %w", err)
 	}
 
@@ -124,6 +142,9 @@ func fetchTheAudioDBArtistByID(apiKey, artistID string) (*TheAudioDBArtist, erro
 	}
 
 	if len(resp.Artists) == 0 {
+		if apiLogger != nil {
+			apiLogger.Printf("TheAudioDB: artist ID not found: %s", artistID)
+		}
 		return nil, fmt.Errorf("artist ID not found: %s", artistID)
 	}
 
@@ -136,6 +157,9 @@ func GetAlbumsByArtistIDTheAudioDB(apiKey, artistID string) ([]TheAudioDBAlbum, 
 
 	body, err := fetchJSON(reqURL, nil)
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("TheAudioDB: albums fetch for artist %s failed: %v", artistID, err)
+		}
 		return nil, fmt.Errorf("theaudiodb albums failed: %w", err)
 	}
 
@@ -144,6 +168,9 @@ func GetAlbumsByArtistIDTheAudioDB(apiKey, artistID string) ([]TheAudioDBAlbum, 
 		return nil, fmt.Errorf("theaudiodb parse error: %w", err)
 	}
 
+	if apiLogger != nil {
+		apiLogger.Printf("TheAudioDB: found %d albums for artist %s", len(resp.Album), artistID)
+	}
 	return resp.Album, nil
 }
 
@@ -161,15 +188,24 @@ func FetchAlbumArtURLTheAudioDB(apiKey, artist, album string) (string, error) {
 
 	for _, al := range albums {
 		if al.StrAlbum == album && al.StrAlbumThumb != "" {
+			if apiLogger != nil {
+				apiLogger.Printf("TheAudioDB: album art found for %s - %s", artist, album)
+			}
 			return al.StrAlbumThumb, nil
 		}
 	}
 
 	for _, al := range albums {
 		if al.StrAlbumThumb != "" {
+			if apiLogger != nil {
+				apiLogger.Printf("TheAudioDB: album art found (fallback) for %s - %s", artist, album)
+			}
 			return al.StrAlbumThumb, nil
 		}
 	}
 
+	if apiLogger != nil {
+		apiLogger.Printf("TheAudioDB: no album art for %s - %s", artist, album)
+	}
 	return "", fmt.Errorf("no album art found on TheAudioDB for %s - %s", artist, album)
 }

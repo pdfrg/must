@@ -44,12 +44,22 @@ func GetArtistSummary(artist string) (*WikipediaSummary, error) {
 
 	body, err := fetchJSON(url, headers)
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("Wikipedia: fetch failed for %q: %v", artist, err)
+		}
 		return nil, fmt.Errorf("wikipedia fetch failed: %w", err)
 	}
 
 	var resp WikipediaResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("Wikipedia: parse error for %q: %v", artist, err)
+		}
 		return nil, fmt.Errorf("wikipedia parse error: %w", err)
+	}
+
+	if apiLogger != nil {
+		apiLogger.Printf("Wikipedia: found summary for %q (title=%q, has_thumbnail=%v)", artist, resp.Title, resp.Thumbnail != nil)
 	}
 
 	summary := &WikipediaSummary{

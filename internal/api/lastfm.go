@@ -109,6 +109,13 @@ func ScrobbleLastFM(apiKey, secret, sessionKey string, track LastFMTrack, timest
 	params["format"] = "json"
 
 	_, err := lastFMRequest(params)
+	if err != nil {
+		if scrobbleLogger != nil {
+			scrobbleLogger.Printf("Last.fm scrobble failed for %q: %v", track.Title, err)
+		}
+	} else if scrobbleLogger != nil {
+		scrobbleLogger.Printf("Last.fm scrobbled %q", track.Title)
+	}
 	return err
 }
 
@@ -131,6 +138,13 @@ func UpdateNowPlayingLastFM(apiKey, secret, sessionKey string, track LastFMTrack
 	params["format"] = "json"
 
 	_, err := lastFMRequest(params)
+	if err != nil {
+		if scrobbleLogger != nil {
+			scrobbleLogger.Printf("Last.fm NowPlaying failed for %q: %v", track.Title, err)
+		}
+	} else if scrobbleLogger != nil {
+		scrobbleLogger.Printf("Last.fm NowPlaying %q", track.Title)
+	}
 	return err
 }
 

@@ -14,10 +14,11 @@ type KeyBinding struct {
 }
 
 type Footer struct {
-	accentStyle lipgloss.Style
-	mutedStyle  lipgloss.Style
-	dimStyle    lipgloss.Style
-	width       int
+	accentStyle     lipgloss.Style
+	mutedStyle      lipgloss.Style
+	foregroundStyle lipgloss.Style
+	dimStyle        lipgloss.Style
+	width           int
 
 	topKeys         []KeyBinding
 	bottomLeftKeys  []KeyBinding
@@ -47,12 +48,13 @@ const (
 	LidarrStateError       = 3
 )
 
-func NewFooter(accentStyle, mutedStyle lipgloss.Style) *Footer {
+func NewFooter(accentStyle, mutedStyle, foregroundStyle lipgloss.Style) *Footer {
 	dimStyle := mutedStyle.Bold(false)
 	return &Footer{
-		accentStyle: accentStyle,
-		mutedStyle:  mutedStyle,
-		dimStyle:    dimStyle,
+		accentStyle:     accentStyle,
+		mutedStyle:      mutedStyle,
+		foregroundStyle: foregroundStyle,
+		dimStyle:        dimStyle,
 		topKeys: []KeyBinding{
 			{Key: "p", Icon: "󰒮", Label: ""},
 			{Key: "Space", Icon: "󰐎", Label: ""},
@@ -80,6 +82,7 @@ func NewFooter(accentStyle, mutedStyle lipgloss.Style) *Footer {
 		bottomRightKeys: []KeyBinding{
 			{Key: "/", Icon: "", Label: "Search"},
 			{Key: "l", Icon: "", Label: "Lib"},
+			{Key: "L", Icon: "", Label: "Lidarr"},
 			{Key: "o", Icon: "", Label: "Opt"},
 			{Key: "z", Icon: "", Label: "Zzz"},
 			{Key: "R", Icon: "", Label: "Rescan"},
@@ -160,7 +163,7 @@ func (f Footer) lidarrIndicator() string {
 	case LidarrStateMonitored:
 		style = f.accentStyle
 	case LidarrStateInLidarr:
-		style = f.mutedStyle
+		style = f.foregroundStyle
 	case LidarrStateError:
 		style = f.mutedStyle
 	default:
@@ -173,6 +176,9 @@ func (f Footer) View() string {
 	renderLine := func(bindings []KeyBinding) string {
 		var parts []string
 		for _, kb := range bindings {
+			if kb.Key == "L" && !f.lidarrConfigured {
+				continue
+			}
 			keyStyle := f.accentStyle
 			descStyle := f.mutedStyle
 			if kb.Dim {

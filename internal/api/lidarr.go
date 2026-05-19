@@ -63,14 +63,23 @@ func (lc *LidarrClient) GetArtistByMBID(mbid string) (*LidarrArtistStatus, error
 	reqURL := fmt.Sprintf("/api/v1/artist?mbId=%s", url.PathEscape(mbid))
 	resp, err := lc.makeRequest("GET", reqURL)
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("Lidarr: artist lookup for MBID %s failed: %v", mbid, err)
+		}
 		return &LidarrArtistStatus{Error: err.Error()}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized {
+		if apiLogger != nil {
+			apiLogger.Printf("Lidarr: unauthorized for MBID %s", mbid)
+		}
 		return &LidarrArtistStatus{Error: "invalid API key"}, fmt.Errorf("lidarr: unauthorized")
 	}
 	if resp.StatusCode != http.StatusOK {
+		if apiLogger != nil {
+			apiLogger.Printf("Lidarr: status %d for MBID %s", resp.StatusCode, mbid)
+		}
 		return &LidarrArtistStatus{Error: fmt.Sprintf("status %d", resp.StatusCode)}, fmt.Errorf("lidarr: status %d", resp.StatusCode)
 	}
 
@@ -84,9 +93,15 @@ func (lc *LidarrClient) GetArtistByMBID(mbid string) (*LidarrArtistStatus, error
 	}
 
 	if len(artists) == 0 {
+		if apiLogger != nil {
+			apiLogger.Printf("Lidarr: artist MBID %s not found in Lidarr", mbid)
+		}
 		return &LidarrArtistStatus{InLidarr: false}, nil
 	}
 
+	if apiLogger != nil {
+		apiLogger.Printf("Lidarr: found artist %q (ID=%d, monitored=%v) for MBID %s", artists[0].ArtistName, artists[0].ID, artists[0].Monitored, mbid)
+	}
 	return &LidarrArtistStatus{
 		InLidarr:   true,
 		Monitored:  artists[0].Monitored,
@@ -159,4 +174,8 @@ func (lc *LidarrClient) OpenArtistURL(mbid string) string {
 
 func (lc *LidarrClient) OpenSearchURL(searchTerm string) string {
 	return fmt.Sprintf("%s/add/search?term=%s", lc.baseURL, url.PathEscape(searchTerm))
+}
+
+func (lc *LidarrClient) OpenSearchByMBID(mbid string) string {
+	return lc.OpenSearchURL("mbid:" + mbid)
 }
