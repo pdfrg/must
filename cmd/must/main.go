@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -25,6 +27,7 @@ var Version = "dev"
 func main() {
 	var layoutOverride string
 	sleepTimerDuration := time.Duration(0)
+	var alarmTime time.Time
 	var paths []string
 	randomMode := false
 	repeatMode := ""
@@ -84,6 +87,19 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Error: --sleep requires a duration argument\n")
 				os.Exit(1)
 			}
+		case "--alarm":
+			if i+1 < len(args) {
+				a, err := parseAlarmTime(args[i+1])
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					os.Exit(1)
+				}
+				alarmTime = a
+				i++
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: --alarm requires a time argument (e.g., 7:20am, 19:20)\n")
+				os.Exit(1)
+			}
 		default:
 			if strings.HasPrefix(args[i], "--") {
 				fmt.Fprintf(os.Stderr, "Error: unknown flag %q\n", args[i])
@@ -117,6 +133,10 @@ func main() {
 	for i, p := range paths {
 		expanded := expandPath(p)
 		paths[i] = expanded
+	}
+
+	if !alarmTime.IsZero() {
+		handleAlarmMode(alarmTime)
 	}
 
 	m := tui.NewModel(cfg, theme, paths, layoutOverride, sleepTimerDuration, randomMode, noRestore, autoplay)
@@ -195,6 +215,109 @@ func handleLastFMAuth() {
 	fmt.Println("Session key saved to config. Last.fm scrobbling is now enabled.")
 }
 
+// parseAlarmTime parses a wall-clock time string and returns the target time.
+// Supported formats: 7:20am, 7:20 a.m., 7:20AM, 19:20, 07:20.
+// Same-day if time is in the future, next-day if time has passed.
+func parseAlarmTime(s string) (time.Time, error) {
+	s = strings.ToLower(strings.TrimSpace(s))
+
+	patterns := []struct {
+		regex    *regexp.Regexp
+		is24Hour bool
+	}{
+		{regexp.MustCompile(`^(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)$`), false},
+		{regexp.MustCompile(`^(\d{1,2}):(\d{2})$`), true},
+	}
+
+	now := time.Now()
+	var hour, minute int
+	var isPM bool
+
+	for _, p := range patterns {
+		match := p.regex.FindStringSubmatch(s)
+		if len(match) >= 3 {
+			_, _ = fmt.Sscanf(match[1], "%d", &hour)
+			_, _ = fmt.Sscanf(match[2], "%d", &minute)
+
+			if len(match) >= 4 && match[3] != "" {
+				ampm := strings.ReplaceAll(match[3], ".", "")
+				ampm = strings.TrimSpace(ampm)
+				isPM = strings.HasPrefix(ampm, "p")
+			}
+
+			if hour > 23 || hour < 0 || minute > 59 || minute < 0 {
+				continue
+			}
+
+			if !p.is24Hour {
+				if isPM && hour != 12 {
+					hour += 12
+				} else if !isPM && hour == 12 {
+					hour = 0
+				}
+			}
+
+			target := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
+			if !target.After(now) {
+				target = target.Add(24 * time.Hour)
+			}
+
+			return target, nil
+		}
+	}
+
+	return time.Time{}, fmt.Errorf("invalid alarm time: %q (valid formats: 7:20am, 7:20 a.m., 19:20)", s)
+}
+
+// handleAlarmMode blocks until alarmTime, showing a cancelable spinner countdown.
+func handleAlarmMode(alarmTime time.Time) {
+	duration := time.Until(alarmTime)
+	if duration <= 0 {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "Alarm scheduled for %s. Press Ctrl+C to cancel.\n", alarmTime.Format("Mon 3:04 PM"))
+
+	spinners := []rune{'⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'}
+	spinnerIdx := 0
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	defer signal.Stop(sigCh)
+
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			if now.After(alarmTime) || now.Equal(alarmTime) {
+				fmt.Fprintln(os.Stderr, "\rAlarm time reached! Starting must...")
+				return
+			}
+
+			remaining := alarmTime.Sub(now)
+			hrs := int(remaining.Hours())
+			mins := int(remaining.Minutes()) % 60
+			secs := int(remaining.Seconds()) % 60
+
+			var timeStr string
+			if hrs > 0 {
+				timeStr = fmt.Sprintf("%d:%02d:%02d", hrs, mins, secs)
+			} else {
+				timeStr = fmt.Sprintf("%d:%02d", mins, secs)
+			}
+
+			fmt.Fprintf(os.Stderr, "\r%c %s remaining  ", spinners[spinnerIdx%len(spinners)], timeStr)
+			spinnerIdx++
+
+		case <-sigCh:
+			fmt.Fprintln(os.Stderr, "\rAlarm cancelled. Starting now...")
+			return
+		}
+	}
+}
+
 func printHelp() {
 	help := `must - MUSic TUI: A terminal UI for local music
 
@@ -215,6 +338,7 @@ FLAGS:
 	--repeat [off|all|one] Set repeat mode (default: all if flag given without arg)
   --layout LAYOUT          Set UI layout: large, medium, compact, narrow
   --sleep DURATION         Start sleep timer (e.g., 20m, 1.5h)
+  --alarm TIME             Start app at wall-clock time (e.g., 7:20am, 19:20)
   --lastfm-auth            Run Last.fm OAuth authentication flow
 
 EXAMPLES:
