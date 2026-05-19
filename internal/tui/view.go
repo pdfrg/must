@@ -25,6 +25,11 @@ func (m Model) View() tea.View {
 		return m.altView("Loading...")
 	}
 
+	// Fullscreen visualizer replaces everything
+	if m.visFullscreen && m.bottomViewMode == BottomVisualizer && m.vis != nil {
+		return m.renderFullscreenVis()
+	}
+
 	if m.activeModal != ModalNone {
 		modalView := m.renderModal()
 		if modalView != "" {
@@ -175,6 +180,28 @@ func (m Model) renderBottomSection(height int) string {
 		}
 		return viewContent
 
+	case BottomVisualizer:
+		if m.vis == nil {
+			return ""
+		}
+		m.vis.SetRows(max(3, height))
+		if m.vis.AudioReady() {
+			return m.vis.Render(m.width)
+		}
+		modeName := m.vis.ModeName()
+		source := m.vis.AudioSource()
+		retryStatus := m.vis.RetryStatus()
+		var lines []string
+		lines = append(lines, "")
+		if retryStatus != "" {
+			lines = append(lines, retryStatus)
+		} else {
+			lines = append(lines, "Loading "+modeName+" visualization...")
+			lines = append(lines, "Connecting to "+source+" audio...")
+		}
+		lines = append(lines, "")
+		return strings.Join(lines, "\n")
+
 	case BottomOff:
 		return ""
 	}
@@ -220,6 +247,35 @@ func (m Model) renderModal() string {
 
 func (m Model) renderWithModal(modalView string) tea.View {
 	return m.altView(modalView)
+}
+
+func (m Model) renderFullscreenVis() tea.View {
+	if m.vis == nil {
+		return m.altView("Visualizer not initialized")
+	}
+	rows := max(3, m.height)
+	m.vis.SetRows(rows)
+
+	var b strings.Builder
+
+	if !m.vis.AudioReady() {
+		modeName := m.vis.ModeName()
+		source := m.vis.AudioSource()
+		retryStatus := m.vis.RetryStatus()
+		b.WriteString("\n\n")
+		if retryStatus != "" {
+			b.WriteString(retryStatus + "\n")
+		} else {
+			b.WriteString("Loading " + modeName + " visualization...\n")
+			b.WriteString("Connecting to " + source + " audio...\n")
+		}
+		return m.altView(b.String())
+	}
+
+	vizContent := m.vis.Render(m.width)
+	b.WriteString(vizContent)
+
+	return m.altView(b.String())
 }
 
 func (m Model) renderSyncedLyrics(height int) string {

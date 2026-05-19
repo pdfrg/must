@@ -44,6 +44,10 @@ type KeyMap struct {
 	Options         key.Binding
 	SleepTimer      key.Binding
 	UpdateView      key.Binding
+	VisualizerView  key.Binding
+	VisCycleUp      key.Binding
+	VisCycleDown    key.Binding
+	VisFullscreen   key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -202,6 +206,22 @@ var DefaultKeyMap = KeyMap{
 	UpdateView: key.NewBinding(
 		key.WithKeys("u"),
 		key.WithHelp("u", "update view"),
+	),
+	VisualizerView: key.NewBinding(
+		key.WithKeys("V"),
+		key.WithHelp("V", "visualizer"),
+	),
+	VisCycleUp: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "vis mode up"),
+	),
+	VisCycleDown: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "vis mode down"),
+	),
+	VisFullscreen: key.NewBinding(
+		key.WithKeys("F"),
+		key.WithHelp("F", "fullscreen vis"),
 	),
 }
 

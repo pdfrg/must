@@ -63,6 +63,8 @@ type lyricsFetchedMsg struct {
 	err    error
 }
 
+type visTickMsg time.Time
+
 type sleepTimerTickMsg time.Time
 type quitTickMsg time.Time
 
@@ -82,6 +84,12 @@ type artistInfoFetchedMsg struct {
 
 type restorePlaybackMsg struct {
 	position float64
+}
+
+func tickVisCmd() tea.Cmd {
+	return tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
+		return visTickMsg(t)
+	})
 }
 
 func tickProgressCmd() tea.Cmd {
