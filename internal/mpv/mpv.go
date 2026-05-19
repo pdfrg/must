@@ -520,14 +520,14 @@ func (m *MPVBackend) GetAudioInfo() (*models.AudioInfo, error) {
 		}
 	}
 
-	sampleResp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "audio-samplerate"}})
+	sampleResp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "audio-params/samplerate"}})
 	if err == nil && sampleResp.Data != nil {
 		if f, ok := sampleResp.Data.(float64); ok {
 			info.SampleRate = int(f)
 		}
 	}
 
-	channelsResp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "audio-channels"}})
+	channelsResp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "audio-params/channel-count"}})
 	if err == nil && channelsResp.Data != nil {
 		if f, ok := channelsResp.Data.(float64); ok {
 			info.Channels = int(f)
