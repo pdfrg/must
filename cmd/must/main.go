@@ -40,12 +40,14 @@ var controlVerbs = map[string]bool{
 	"rescan": true,
 	"save":   true,
 	"find":   true, "f": true,
-	"library":   true,
-	"list":      true,
-	"move":      true,
-	"playlists": true,
-	"stop":      true,
-	"current":   true,
+	"library":    true,
+	"list":       true,
+	"move":       true,
+	"playlists":  true,
+	"stop":       true,
+	"current":    true,
+	"replaygain": true,
+	"rg":         true,
 }
 
 func resolveAlias(verb string) string {
@@ -68,6 +70,8 @@ func resolveAlias(verb string) string {
 		return "previous"
 	case "f":
 		return "find"
+	case "rg":
+		return "replaygain"
 	default:
 		return verb
 	}

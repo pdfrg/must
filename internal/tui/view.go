@@ -168,14 +168,17 @@ func (m Model) renderNowPlaying() string {
 	}
 
 	data := widgets.NowPlayingData{
-		Track:       track,
-		AudioInfo:   m.audioInfo,
-		IsPaused:    m.paused,
-		TimePos:     m.playbackPos.TimePos,
-		RepeatMode:  m.repeatMode,
-		Shuffle:     m.shuffle,
-		SleepActive: m.sleepTimerActive,
-		SleepMins:   int(time.Until(m.sleepTimerExpiresAt).Minutes()) + 1,
+		Track:          track,
+		AudioInfo:      m.audioInfo,
+		IsPaused:       m.paused,
+		TimePos:        m.playbackPos.TimePos,
+		RepeatMode:     m.repeatMode,
+		Shuffle:        m.shuffle,
+		ReplayGainMode: m.cfg.ReplayGainMode,
+		PlaylistPos:    m.currentIndex + 1,
+		PlaylistLength: len(m.playlist),
+		SleepActive:    m.sleepTimerActive,
+		SleepMins:      int(time.Until(m.sleepTimerExpiresAt).Minutes()) + 1,
 	}
 	if m.savingPlaylist {
 		modeStr := "[absolute]"

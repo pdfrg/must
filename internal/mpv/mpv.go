@@ -34,6 +34,7 @@ type MPVBackend struct {
 	socketPath     string
 	socketTimeout  time.Duration
 	pulseServer    string
+	replayGainMode string
 }
 
 type PlaybackPosition struct {
@@ -110,6 +111,9 @@ func (m *MPVBackend) Start(paths []string) error {
 	}
 	if m.pulseServer != "" {
 		args = append(args, "--ao=pulse")
+	}
+	if m.replayGainMode != "" && m.replayGainMode != "off" {
+		args = append(args, fmt.Sprintf("--replaygain=%s", m.replayGainMode))
 	}
 	args = append(args, paths...)
 
@@ -390,6 +394,17 @@ func (m *MPVBackend) SetMute(muted bool) error {
 		return fmt.Errorf("MPV not running")
 	}
 	_, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"set_property", "mute", muted}})
+	return err
+}
+
+func (m *MPVBackend) SetReplayGainMode(mode string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.replayGainMode = mode
+	if m.process == nil {
+		return nil
+	}
+	_, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"set_property", "replaygain", mode}})
 	return err
 }
 

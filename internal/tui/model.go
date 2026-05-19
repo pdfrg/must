@@ -265,6 +265,9 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 	if cfg.Audio.SSHAudioServer != "" {
 		m.mpvBackend.SetPulseServer(cfg.Audio.SSHAudioServer)
 	}
+	if cfg.ReplayGainMode != "" {
+		m.mpvBackend.SetReplayGainMode(cfg.ReplayGainMode)
+	}
 
 	return m
 }

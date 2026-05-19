@@ -1219,6 +1219,7 @@ func (m Model) openOptions() (tea.Model, tea.Cmd) {
 		m.cfg.Visualizer.ShowInfo,
 		m.cfg.Visualizer.RealAudio,
 		m.cfg.Theme,
+		m.cfg.ReplayGainMode,
 	)
 	return m, clearKittyImagesCmdIf(m.imageProtocol)
 }
@@ -1272,6 +1273,13 @@ func (m Model) handleOptionsModalMsg(msg modals.OptionsMsg) (tea.Model, tea.Cmd)
 		m.cfg.Theme = *msg.Theme
 		if *msg.Theme == "" {
 			m.cfg.ColorsFile = ""
+		}
+		changed = true
+	}
+	if msg.ReplayGainMode != nil {
+		m.cfg.ReplayGainMode = *msg.ReplayGainMode
+		if m.mpvBackend != nil {
+			m.mpvBackend.SetReplayGainMode(*msg.ReplayGainMode)
 		}
 		changed = true
 	}
