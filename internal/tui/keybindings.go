@@ -48,6 +48,7 @@ type KeyMap struct {
 	VisCycleUp      key.Binding
 	VisCycleDown    key.Binding
 	VisFullscreen   key.Binding
+	CopyClipboard   key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -222,6 +223,10 @@ var DefaultKeyMap = KeyMap{
 	VisFullscreen: key.NewBinding(
 		key.WithKeys("F"),
 		key.WithHelp("F", "fullscreen vis"),
+	),
+	CopyClipboard: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "copy song info"),
 	),
 }
 

@@ -131,10 +131,15 @@ type Model struct {
 	prevScrobbleEligible bool
 	prevSongStartTime    time.Time
 
-	vis           *visualizer.Visualizer
-	visFullscreen bool
+	vis            *visualizer.Visualizer
+	visFullscreen  bool
+	visInfoVisible bool
+	visInfoShownAt time.Time
 
 	layoutOverride      string
+	initialLayout       string
+	layoutCheckDone     bool
+	layoutPromptActive  bool
 	sleepTimer          time.Duration
 	sleepRemaining      time.Duration
 	sleepTimerActive    bool
@@ -163,6 +168,8 @@ type Model struct {
 
 	scrobbleStates  map[string]int
 	scrobbleFlashAt time.Time
+
+	isDark bool
 }
 
 func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool, noRestore bool, autoplay bool) Model {
@@ -182,6 +189,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		repeatMode:          cfg.RepeatMode,
 		shuffle:             cfg.Shuffle,
 		layoutOverride:      layoutOverride,
+		initialLayout:       layoutModeVal(layoutOverride, cfg.Layout),
 		sleepTimer:          sleepTimer,
 		sleepRemaining:      sleepTimer,
 		sleepTimerActive:    sleepTimer > 0,
@@ -261,6 +269,7 @@ func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		tickProgressCmd(),
 		scanLibraryCmd(m.cfg),
+		tea.RequestBackgroundColor,
 	}
 	if m.themeWatcher != nil {
 		cmds = append(cmds, watchThemeCmd(m.themeWatcher))
@@ -326,11 +335,19 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "u", Desc: "update lyrics/bio"},
 		{Key: "i", Desc: "artist bio"},
 		{Key: "I", Desc: "artist gallery"},
+		{Key: "c", Desc: "copy song info"},
 		{Key: "z", Desc: "sleep timer"},
 		{Key: "o", Desc: "options"},
 		{Key: "?", Desc: "help"},
 		{Key: "q/ctrl+c", Desc: "quit"},
 	}
+}
+
+func layoutModeVal(override, cfgLayout string) string {
+	if override != "" {
+		return override
+	}
+	return cfgLayout
 }
 
 func (m Model) layoutMode() string {

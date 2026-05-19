@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -412,6 +413,25 @@ func sendNotificationCmd(cfg *config.Config, track models.Track, withImage bool)
 	return func() tea.Msg {
 		api.SendDesktopNotification(&track, cfg, withImage)
 		return notificationSentMsg{}
+	}
+}
+
+func copyToClipboardCmd(track models.Track) tea.Cmd {
+	return func() tea.Msg {
+		info := track.FormatDisplayInfo()
+		tools := []string{"wl-copy", "xclip -selection clipboard", "xsel --clipboard --input", "pbcopy"}
+		for _, tool := range tools {
+			parts := strings.Fields(tool)
+			if len(parts) == 0 {
+				continue
+			}
+			cmd := exec.Command(parts[0], parts[1:]...)
+			cmd.Stdin = strings.NewReader(info)
+			if err := cmd.Run(); err == nil {
+				return nil
+			}
+		}
+		return nil
 	}
 }
 
