@@ -436,6 +436,10 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 	m.albumArtLoaded = false
 	m.notifSentForSong = false
 
+	if m.vis != nil && m.bottomViewMode == BottomVisualizer {
+		m.vis.SetSeed(uint64(m.currentIndex))
+	}
+
 	if m.bottomViewMode != BottomArtistBio {
 		m.artistArtStr = ""
 		m.artistArtLoaded = false
@@ -575,6 +579,10 @@ func (m Model) handleImageLoaded(msg imageLoadedMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) renderImagesCmd() tea.Cmd {
 	if m.activeModal != ModalNone {
+		return nil
+	}
+
+	if m.visFullscreen && m.bottomViewMode == BottomVisualizer {
 		return nil
 	}
 

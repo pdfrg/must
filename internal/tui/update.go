@@ -16,6 +16,7 @@ import (
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/playlist"
 	"github.com/pdfrg/must/internal/tui/modals"
+	"github.com/pdfrg/must/internal/tui/visualizer"
 )
 
 var tuiLogger *log.Logger
@@ -46,6 +47,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case progressTickMsg:
 		return m.handleProgressTick(msg)
+
+	case visTickMsg:
+		return m.handleVisTick(msg)
 
 	case scanCompleteMsg:
 		return m.handleScanComplete(msg)
@@ -295,6 +299,10 @@ func (m Model) handleThemeChanged(msg themeChangedMsg) (tea.Model, tea.Cmd) {
 	m.playlistWidget.UpdateStyles(m.styles)
 	m.footer.UpdateStyles(m.styles.AccentStyle, m.styles.MutedStyle)
 
+	if m.vis != nil {
+		m.vis.SetColors(m.styles.Accent, m.styles.Cursor, m.styles.Muted)
+	}
+
 	if m.themeWatcher != nil {
 		return m, watchThemeCmd(m.themeWatcher)
 	}
@@ -487,6 +495,39 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.Gallery):
 		return m.openGallery()
 
+	case key.Matches(msg, m.keyMap.VisualizerView):
+		if m.bottomViewMode == BottomVisualizer {
+			m.bottomViewMode = BottomPlaylist
+			return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+		}
+		var cmds []tea.Cmd
+		if m.bottomViewMode == BottomArtistBio {
+			m.artistArtStr = ""
+			m.artistArtLoaded = false
+			m.artistArtEventID = 0
+			cmds = append(cmds, clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+		}
+		m.bottomViewMode = BottomVisualizer
+		if m.vis == nil {
+			seed := uint64(0)
+			if m.playing && m.currentIndex >= 0 {
+				seed = uint64(m.currentIndex)
+			}
+			m.vis = visualizer.New(seed)
+			m.vis.SetColors(m.styles.Accent, m.styles.Cursor, m.styles.Muted)
+			mode := visualizer.ModeFromString(m.cfg.Visualizer.Mode)
+			m.vis.SetMode(mode)
+		} else {
+			m.vis.SetColors(m.styles.Accent, m.styles.Cursor, m.styles.Muted)
+		}
+		source := m.vis.EnableRealAudio(m.cfg.Visualizer.RealAudio)
+		m.vis.RequestRefresh()
+		cmds = append(cmds, tickVisCmd(), setStatus(&m, "Visualizer: "+source, false))
+		return m, tea.Batch(cmds...)
+
+	case key.Matches(msg, m.keyMap.VisFullscreen):
+		return m.toggleVisFullscreen()
+
 	case key.Matches(msg, m.keyMap.LidarrBrowser):
 		return m.openLidarr()
 
@@ -527,6 +568,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case key.Matches(msg, m.keyMap.CursorDown):
+		if m.bottomViewMode == BottomVisualizer && m.vis != nil {
+			m.vis.CycleModeReverse()
+			return m, setStatus(&m, "Visualizer: "+m.vis.ModeName(), false)
+		}
 		if m.bottomViewMode == BottomLyrics || m.bottomViewMode == BottomArtistBio {
 			m.viewport.ScrollDown(1)
 			return m, nil
@@ -534,6 +579,10 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.playlistWidget.Update(msg)
 
 	case key.Matches(msg, m.keyMap.CursorUp):
+		if m.bottomViewMode == BottomVisualizer && m.vis != nil {
+			m.vis.CycleMode()
+			return m, setStatus(&m, "Visualizer: "+m.vis.ModeName(), false)
+		}
 		if m.bottomViewMode == BottomLyrics || m.bottomViewMode == BottomArtistBio {
 			m.viewport.ScrollUp(1)
 			return m, nil
@@ -541,28 +590,28 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.playlistWidget.Update(msg)
 
 	case key.Matches(msg, m.keyMap.PageDown):
-		if m.bottomViewMode == BottomLyrics || m.bottomViewMode == BottomArtistBio {
+		if m.bottomViewMode == BottomVisualizer || m.bottomViewMode == BottomLyrics || m.bottomViewMode == BottomArtistBio {
 			m.viewport.ScrollDown(m.viewport.Height())
 			return m, nil
 		}
 		return m, m.playlistWidget.Update(msg)
 
 	case key.Matches(msg, m.keyMap.PageUp):
-		if m.bottomViewMode == BottomLyrics || m.bottomViewMode == BottomArtistBio {
+		if m.bottomViewMode == BottomVisualizer || m.bottomViewMode == BottomLyrics || m.bottomViewMode == BottomArtistBio {
 			m.viewport.ScrollUp(m.viewport.Height())
 			return m, nil
 		}
 		return m, m.playlistWidget.Update(msg)
 
 	case key.Matches(msg, m.keyMap.Home):
-		if m.bottomViewMode == BottomLyrics || m.bottomViewMode == BottomArtistBio {
+		if m.bottomViewMode == BottomVisualizer || m.bottomViewMode == BottomLyrics || m.bottomViewMode == BottomArtistBio {
 			m.viewport.GotoTop()
 			return m, nil
 		}
 		return m, m.playlistWidget.Update(msg)
 
 	case key.Matches(msg, m.keyMap.End):
-		if m.bottomViewMode == BottomLyrics || m.bottomViewMode == BottomArtistBio {
+		if m.bottomViewMode == BottomVisualizer || m.bottomViewMode == BottomLyrics || m.bottomViewMode == BottomArtistBio {
 			m.viewport.GotoBottom()
 			return m, nil
 		}
@@ -818,12 +867,58 @@ func (m Model) handleSearchModalMsg(msg modals.SearchModalMsg) (tea.Model, tea.C
 	return m, nil
 }
 
+func (m Model) handleVisTick(msg visTickMsg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+	if m.vis != nil {
+		if m.bottomViewMode == BottomVisualizer {
+			m.vis.Tick(m.playing, m.paused)
+			cmds = append(cmds, tickVisCmd())
+		} else {
+			m.vis.Close()
+			m.vis = nil
+		}
+	}
+	return m, tea.Batch(cmds...)
+}
+
 func (m Model) cycleView() (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
 	prevMode := m.bottomViewMode
 	m.bottomViewMode = (m.bottomViewMode + 1) % BottomViewModeCount
 
 	if m.bottomViewMode == BottomSyncedLyrics && len(m.syncedLyrics) == 0 {
 		m.bottomViewMode = (m.bottomViewMode + 1) % BottomViewModeCount
+	}
+
+	// Initialize visualizer when entering the view
+	if m.bottomViewMode == BottomVisualizer {
+		if prevMode == BottomArtistBio {
+			m.artistArtStr = ""
+			m.artistArtLoaded = false
+			m.artistArtEventID = 0
+			cmds = append(cmds, clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+		}
+		if m.vis == nil {
+			seed := uint64(0)
+			if m.playing && m.currentIndex >= 0 {
+				seed = uint64(m.currentIndex)
+			}
+			m.vis = visualizer.New(seed)
+			m.vis.SetColors(m.styles.Accent, m.styles.Cursor, m.styles.Muted)
+			mode := visualizer.ModeFromString(m.cfg.Visualizer.Mode)
+			m.vis.SetMode(mode)
+		} else {
+			m.vis.SetColors(m.styles.Accent, m.styles.Cursor, m.styles.Muted)
+		}
+		source := m.vis.EnableRealAudio(m.cfg.Visualizer.RealAudio)
+		m.vis.RequestRefresh()
+		cmds = append(cmds, tickVisCmd())
+		cmds = append(cmds, setStatus(&m, "Visualizer: "+source, false))
+		return m, tea.Batch(cmds...)
+	}
+
+	if m.vis != nil {
+		m.vis.Close()
 	}
 
 	if m.hasPendingUpdate {
@@ -887,6 +982,8 @@ func (m Model) cycleView() (tea.Model, tea.Cmd) {
 		viewName = "synced lyrics"
 	case BottomArtistBio:
 		viewName = "artist bio"
+	case BottomVisualizer:
+		viewName = "visualizer"
 	case BottomOff:
 		viewName = "off"
 	}
@@ -987,6 +1084,24 @@ func (m *Model) stopSleepTimer() {
 	m.sleepTimerExpiresAt = time.Time{}
 	m.quittingActive = false
 	m.quittingStartedAt = time.Time{}
+}
+
+func (m Model) toggleVisFullscreen() (tea.Model, tea.Cmd) {
+	if m.bottomViewMode != BottomVisualizer {
+		return m, setStatus(&m, "Visualizer not active", true)
+	}
+	m.visFullscreen = !m.visFullscreen
+	if m.visFullscreen {
+		return m, tea.Batch(
+			setStatus(&m, "Visualizer: fullscreen", false),
+			clearKittyImagesCmdIf(m.imageProtocol),
+		)
+	}
+	return m, tea.Batch(
+		setStatus(&m, "Visualizer: windowed", false),
+		clearKittyImagesCmdIf(m.imageProtocol),
+		renderAlbumArtAfterDelay(),
+	)
 }
 
 func (m Model) openOptions() (tea.Model, tea.Cmd) {
@@ -1457,7 +1572,7 @@ func (m Model) enqueueHighlightedNext() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateBottomView() {
-	if m.bottomViewMode == BottomPlaylist || m.bottomViewMode == BottomOff || m.bottomViewMode == BottomSyncedLyrics {
+	if m.bottomViewMode == BottomPlaylist || m.bottomViewMode == BottomVisualizer || m.bottomViewMode == BottomOff || m.bottomViewMode == BottomSyncedLyrics {
 		return
 	}
 

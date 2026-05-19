@@ -17,6 +17,7 @@ import (
 	"github.com/pdfrg/must/internal/mpv"
 	"github.com/pdfrg/must/internal/scanner"
 	"github.com/pdfrg/must/internal/tui/modals"
+	"github.com/pdfrg/must/internal/tui/visualizer"
 	"github.com/pdfrg/must/internal/tui/widgets"
 )
 
@@ -27,6 +28,7 @@ const (
 	BottomLyrics
 	BottomSyncedLyrics
 	BottomArtistBio
+	BottomVisualizer
 	BottomOff
 	BottomViewModeCount
 )
@@ -128,6 +130,9 @@ type Model struct {
 	prevTrack            *models.Track
 	prevScrobbleEligible bool
 	prevSongStartTime    time.Time
+
+	vis           *visualizer.Visualizer
+	visFullscreen bool
 
 	layoutOverride      string
 	sleepTimer          time.Duration
@@ -305,6 +310,8 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "s", Desc: "toggle shuffle"},
 		{Key: "v/tab", Desc: "cycle bottom view"},
 		{Key: "/", Desc: "search library"},
+		{Key: "↑/↓ (vis)", Desc: "cycle visualizer mode"},
+		{Key: "F", Desc: "toggle fullscreen visualizer"},
 		{Key: "l", Desc: "library browser"},
 		{Key: "e", Desc: "enqueue track/album"},
 		{Key: "E", Desc: "enqueue highlighted next"},
