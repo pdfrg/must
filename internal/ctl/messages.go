@@ -19,13 +19,13 @@ type CtlResult struct {
 type SearchResultType string
 
 const (
-	ResultTrack         SearchResultType = "track"
-	ResultArtist        SearchResultType = "artist"
-	ResultAlbum         SearchResultType = "album"
-	ResultGenre         SearchResultType = "genre"
-	ResultYear          SearchResultType = "year"
-	ResultSubsonicTrack   SearchResultType = "subsonic_track"
-	ResultPlaylist        SearchResultType = "playlist"
+	ResultTrack            SearchResultType = "track"
+	ResultArtist           SearchResultType = "artist"
+	ResultAlbum            SearchResultType = "album"
+	ResultGenre            SearchResultType = "genre"
+	ResultYear             SearchResultType = "year"
+	ResultSubsonicTrack    SearchResultType = "subsonic_track"
+	ResultPlaylist         SearchResultType = "playlist"
 	ResultSubsonicPlaylist SearchResultType = "subsonic_playlist"
 )
 
@@ -45,12 +45,12 @@ type SearchResult struct {
 
 	TrackCount int
 
-	PlaylistName      string
+	PlaylistName       string
 	SubsonicPlaylistID string
 
 	SubsonicArtistID string
 	SubsonicAlbumID  string
-	SubsonicTrack   *TrackRef
+	SubsonicTrack    *TrackRef
 }
 
 type TrackRef struct {

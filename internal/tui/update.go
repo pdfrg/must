@@ -315,6 +315,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case subsonicGenresMsg:
+		if msg.err != nil {
+			logf("Subsonic genres error: %v", msg.err)
+			return m, nil
+		}
+		if m.libraryModal != nil {
+			m.libraryModal.SetSubsonicGenres(msg.genres)
+		}
+		return m, nil
+
+	case subsonicGenreAlbumsMsg:
+		if msg.err != nil {
+			logf("Subsonic genre albums error: %v", msg.err)
+			return m, nil
+		}
+		if m.libraryModal != nil {
+			m.libraryModal.SetSubsonicGenreAlbums(msg.genreName, msg.albums)
+		}
+		return m, nil
+
 	case scrobbleResultMsg:
 		m.scrobbleFlashAt = time.Now()
 		m.scrobbleStates = make(map[string]int, len(msg.results))
@@ -799,6 +819,10 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					m.libraryModal.PendingFetchAlbumID = ""
 					extra = append(extra, subsonicAlbumTracksCmd(m.subsonicClient, id))
 				}
+				if name := m.libraryModal.PendingFetchGenreName; name != "" {
+					m.libraryModal.PendingFetchGenreName = ""
+					extra = append(extra, subsonicGenreAlbumsCmd(m.subsonicClient, name))
+				}
 			}
 			if len(extra) > 0 {
 				return m, tea.Batch(append([]tea.Cmd{cmd}, extra...)...)
@@ -1237,9 +1261,10 @@ func (m Model) openLibrary() (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	cmds = append(cmds, clearKittyImagesCmdIf(m.imageProtocol))
 
-	// If Subsonic is configured, fetch artists for the Subsonic tab
+	// If Subsonic is configured, fetch artists and genres for Subsonic tabs
 	if m.subsonicClient != nil {
 		cmds = append(cmds, subsonicArtistsCmd(m.subsonicClient))
+		cmds = append(cmds, subsonicGenresCmd(m.subsonicClient))
 	}
 
 	return m, tea.Batch(cmds...)

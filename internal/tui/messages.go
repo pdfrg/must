@@ -34,6 +34,17 @@ type subsonicAlbumTracksMsg struct {
 	err    error
 }
 
+type subsonicGenresMsg struct {
+	genres []api.GenreID3
+	err    error
+}
+
+type subsonicGenreAlbumsMsg struct {
+	genreName string
+	albums    []api.AlbumID3
+	err       error
+}
+
 type progressTickMsg time.Time
 
 type scanCompleteMsg struct {

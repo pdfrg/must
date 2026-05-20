@@ -12,6 +12,7 @@ import (
 	"github.com/dhowden/tag"
 	"github.com/pdfrg/must/internal/db"
 	"github.com/pdfrg/must/internal/duration"
+	"github.com/pdfrg/must/internal/genre"
 	imgpkg "github.com/pdfrg/must/internal/image"
 	"github.com/pdfrg/must/internal/models"
 )
@@ -191,7 +192,7 @@ func (s *Scanner) readTrack(path string, modTime int64) (*models.Track, error) {
 		track.Album = tags.Album()
 		track.AlbumArtist = tags.AlbumArtist()
 		track.Year = tags.Year()
-		track.Genre = tags.Genre()
+		track.Genre = genre.Normalize(tags.Genre())
 		trackNum, totalTracks := tags.Track()
 		discNum, totalDiscs := tags.Disc()
 		track.TrackNum = trackNum

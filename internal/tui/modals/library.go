@@ -11,6 +11,7 @@ import (
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/db"
+	"github.com/pdfrg/must/internal/genre"
 	"github.com/pdfrg/must/internal/models"
 )
 
@@ -43,6 +44,11 @@ type artistDisplay struct {
 	SubsonicID string
 }
 
+type genreDisplay struct {
+	Name       string
+	IsSubsonic bool
+}
+
 type Library struct {
 	styles *config.ThemeStyles
 	db     *db.LibraryDB
@@ -64,15 +70,15 @@ type Library struct {
 	trackCursor        int
 	trackScrollOffset  int
 
-	genres            []string
-	allGenres         []string
+	genres            []genreDisplay
+	allGenres         []genreDisplay
 	genreCursor       int
 	genreScrollOffset int
 
 	filterText      string
 	filteredArtists []artistDisplay
 	filteredAlbums  []string
-	filteredGenres  []string
+	filteredGenres  []genreDisplay
 	enqueueNextMode bool
 
 	subsonicBadge string
@@ -83,8 +89,13 @@ type Library struct {
 	subsonicAlbumsByArtist map[string][]api.AlbumID3
 	subsonicTracksByAlbum  map[string][]models.Track
 
-	PendingFetchArtistID string
-	PendingFetchAlbumID  string
+	localGenreNames       []string
+	subsonicGenreEntries  []api.GenreID3
+	subsonicAlbumsByGenre map[string][]api.AlbumID3
+
+	PendingFetchArtistID  string
+	PendingFetchAlbumID   string
+	PendingFetchGenreName string
 }
 
 func NewLibrary(styles *config.ThemeStyles, libraryDB *db.LibraryDB) *Library {
@@ -94,6 +105,7 @@ func NewLibrary(styles *config.ThemeStyles, libraryDB *db.LibraryDB) *Library {
 		focusPane:              FocusArtists,
 		subsonicAlbumsByArtist: make(map[string][]api.AlbumID3),
 		subsonicTracksByAlbum:  make(map[string][]models.Track),
+		subsonicAlbumsByGenre:  make(map[string][]api.AlbumID3),
 	}
 }
 
@@ -216,6 +228,88 @@ func (l *Library) loadSubsonicTracksForAlbum() {
 	}
 }
 
+func (l *Library) rebuildGenreDisplay() {
+	var combined []genreDisplay
+	seen := make(map[string]bool)
+	for _, name := range l.localGenreNames {
+		combined = append(combined, genreDisplay{Name: name})
+		seen[strings.ToLower(name)] = true
+	}
+	for _, g := range l.subsonicGenreEntries {
+		for _, part := range genre.Split(g.Value) {
+			low := strings.ToLower(part)
+			if !seen[low] {
+				combined = append(combined, genreDisplay{Name: part, IsSubsonic: true})
+				seen[low] = true
+			}
+		}
+	}
+	sort.Slice(combined, func(i, j int) bool {
+		return strings.ToLower(combined[i].Name) < strings.ToLower(combined[j].Name)
+	})
+	l.allGenres = combined
+	l.genres = combined
+	l.filteredGenres = nil
+	if l.genreCursor >= len(l.genres) && len(l.genres) > 0 {
+		l.genreCursor = 0
+		l.genreScrollOffset = 0
+	}
+}
+
+func (l *Library) SetSubsonicGenres(genres []api.GenreID3) {
+	l.PendingFetchGenreName = ""
+	l.subsonicGenreEntries = genres
+	l.rebuildGenreDisplay()
+	if l.browseMode == BrowseGenres && len(l.genres) > 0 && l.genreCursor < len(l.genres) {
+		if l.genres[l.genreCursor].IsSubsonic {
+			l.loadAlbumsForGenre()
+		}
+	}
+}
+
+func (l *Library) SetSubsonicGenreAlbums(genreName string, albums []api.AlbumID3) {
+	l.PendingFetchGenreName = ""
+	if l.browseMode != BrowseGenres || l.genreCursor >= len(l.genres) {
+		return
+	}
+	entry := l.genres[l.genreCursor]
+	if !entry.IsSubsonic || !strings.EqualFold(entry.Name, genreName) {
+		return
+	}
+	l.subsonicAlbumsByGenre[genreName] = albums
+	l.loadSubsonicAlbumsForGenre(genreName)
+}
+
+func (l *Library) loadSubsonicAlbumsForGenre(genreName string) {
+	if albums, ok := l.subsonicAlbumsByGenre[genreName]; ok {
+		names := make([]string, len(albums))
+		ids := make([]string, len(albums))
+		for i, a := range albums {
+			names[i] = a.Artist + " - " + a.Name
+			ids[i] = a.ID
+		}
+		l.allAlbums = names
+		l.albums = names
+		l.subsonicAlbumIDs = ids
+		l.filteredAlbums = nil
+		l.albumCursor = 0
+		l.albumScrollOffset = 0
+		l.albumTracks = nil
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
+		l.loadTracksForAlbum()
+	} else {
+		l.allAlbums = nil
+		l.albums = nil
+		l.albumTracks = nil
+		l.albumCursor = 0
+		l.albumScrollOffset = 0
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
+		l.PendingFetchGenreName = genreName
+	}
+}
+
 func (l *Library) LoadAlbumsForArtist() {
 	if len(l.artists) == 0 || l.artistCursor >= len(l.artists) {
 		return
@@ -251,6 +345,10 @@ func (l *Library) LoadAlbumsForArtist() {
 }
 
 func (l *Library) loadTracksForAlbum() {
+	if l.browseMode == BrowseGenres && l.genreCursor < len(l.genres) && l.genres[l.genreCursor].IsSubsonic {
+		l.loadSubsonicTracksForAlbum()
+		return
+	}
 	if len(l.artists) > 0 && l.artistCursor < len(l.artists) && l.artists[l.artistCursor].IsSubsonic {
 		l.loadSubsonicTracksForAlbum()
 		return
@@ -403,7 +501,7 @@ func (l *Library) applyFilter() {
 	}
 
 	if l.browseMode == BrowseGenres {
-		l.filteredGenres = filterStrings(l.allGenres, l.filterText)
+		l.filteredGenres = filterGenreDisplays(l.allGenres, l.filterText)
 		l.genres = l.filteredGenres
 		if l.genreCursor >= len(l.genres) {
 			l.genreCursor = 0
@@ -442,6 +540,17 @@ func filterStrings(items []string, query string) []string {
 func filterArtistDisplays(items []artistDisplay, query string) []artistDisplay {
 	query = strings.ToLower(query)
 	var result []artistDisplay
+	for _, item := range items {
+		if strings.Contains(strings.ToLower(item.Name), query) {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func filterGenreDisplays(items []genreDisplay, query string) []genreDisplay {
+	query = strings.ToLower(query)
+	var result []genreDisplay
 	for _, item := range items {
 		if strings.Contains(strings.ToLower(item.Name), query) {
 			result = append(result, item)
@@ -499,16 +608,16 @@ func (l *Library) handleEnqueue() tea.Cmd {
 			}
 		}
 	case FocusArtists:
-		if len(l.artists) > 0 && l.artistCursor < len(l.artists) {
-			entry := l.artists[l.artistCursor]
-			if entry.IsSubsonic {
-				for _, albumID := range l.subsonicAlbumIDs {
-					if at, ok := l.subsonicTracksByAlbum[albumID]; ok {
-						tracks = append(tracks, at...)
+		if l.browseMode == BrowseGenres {
+			if len(l.genres) > 0 && l.genreCursor < len(l.genres) {
+				entry := l.genres[l.genreCursor]
+				if entry.IsSubsonic {
+					for _, albumID := range l.subsonicAlbumIDs {
+						if at, ok := l.subsonicTracksByAlbum[albumID]; ok {
+							tracks = append(tracks, at...)
+						}
 					}
-				}
-			} else if l.browseMode == BrowseGenres {
-				if len(l.genres) > 0 && l.genreCursor < len(l.genres) && l.db != nil && len(l.albums) > 0 {
+				} else if l.db != nil && len(l.albums) > 0 {
 					for _, album := range l.albums {
 						t, err := l.db.GetTracksByAlbum(album)
 						if err == nil {
@@ -516,12 +625,19 @@ func (l *Library) handleEnqueue() tea.Cmd {
 						}
 					}
 				}
-			} else {
-				if l.db != nil {
-					t, err := l.db.GetTracksByArtist(entry.Name)
-					if err == nil && len(t) > 0 {
-						tracks = t
+			}
+		} else if len(l.artists) > 0 && l.artistCursor < len(l.artists) {
+			entry := l.artists[l.artistCursor]
+			if entry.IsSubsonic {
+				for _, albumID := range l.subsonicAlbumIDs {
+					if at, ok := l.subsonicTracksByAlbum[albumID]; ok {
+						tracks = append(tracks, at...)
 					}
+				}
+			} else if l.db != nil {
+				t, err := l.db.GetTracksByArtist(entry.Name)
+				if err == nil && len(t) > 0 {
+					tracks = t
 				}
 			}
 		}
@@ -754,32 +870,39 @@ func (l *Library) loadGenres() {
 	if l.db == nil {
 		return
 	}
-	genres, err := l.db.GetGenres()
-	if err != nil || len(genres) == 0 {
-		l.genres = nil
-		l.allGenres = nil
-		l.genreCursor = 0
-		l.genreScrollOffset = 0
+	names, err := l.db.GetGenres()
+	if err != nil {
+		l.localGenreNames = nil
+	} else {
+		l.localGenreNames = names
+	}
+	l.rebuildGenreDisplay()
+	if len(l.genres) > 0 {
+		l.loadAlbumsForGenre()
+	} else {
 		l.albums = nil
+		l.allAlbums = nil
 		l.albumTracks = nil
-		return
+		l.albumCursor = 0
+		l.albumScrollOffset = 0
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
 	}
-	l.genres = genres
-	l.allGenres = genres
-	l.filteredGenres = nil
-	if l.genreCursor >= len(l.genres) {
-		l.genreCursor = 0
-		l.genreScrollOffset = 0
-	}
-	l.loadAlbumsForGenre()
 }
 
 func (l *Library) loadAlbumsForGenre() {
-	if l.db == nil || l.genreCursor >= len(l.genres) {
+	if l.genreCursor >= len(l.genres) {
 		return
 	}
-	genre := l.genres[l.genreCursor]
-	albums, err := l.db.GetAlbumsByGenre(genre)
+	entry := l.genres[l.genreCursor]
+	if entry.IsSubsonic {
+		l.loadSubsonicAlbumsForGenre(entry.Name)
+		return
+	}
+	if l.db == nil {
+		return
+	}
+	albums, err := l.db.GetAlbumsByGenre(entry.Name)
 	if err != nil || len(albums) == 0 {
 		l.albums = nil
 		l.allAlbums = nil
@@ -813,9 +936,26 @@ func (l Library) View() string {
 		return l.styles.MutedStyle.Render("Library empty - press R to rescan")
 	}
 
-	colWidth := (l.width - 4) / 3
-	if colWidth < 16 {
-		colWidth = 16
+	avail := l.width - 4
+	var col1Width, col2Width, col3Width int
+	if l.browseMode == BrowseGenres {
+		col1Width = avail * 25 / 100
+		col2Width = avail * 45 / 100
+		col3Width = avail - col1Width - col2Width
+	} else {
+		col1Width = avail / 3
+		col2Width = avail / 3
+		col3Width = avail / 3
+	}
+	minWidth := 10
+	if col1Width < minWidth {
+		col1Width = minWidth
+	}
+	if col2Width < minWidth {
+		col2Width = minWidth
+	}
+	if col3Width < minWidth {
+		col3Width = minWidth
 	}
 	height := l.paneHeight()
 	if height < 3 {
@@ -824,12 +964,12 @@ func (l Library) View() string {
 
 	var col1, col2, col3 string
 	if l.browseMode == BrowseGenres {
-		col1 = l.renderGenreList(colWidth, height)
+		col1 = l.renderGenreList(col1Width, height)
 	} else {
-		col1 = l.renderArtistList(colWidth, height)
-		col2 = l.renderAlbumColumn(colWidth, height)
-		col3 = l.renderTrackColumn(colWidth, height)
+		col1 = l.renderArtistList(col1Width, height)
 	}
+	col2 = l.renderAlbumColumn(col2Width, height)
+	col3 = l.renderTrackColumn(col3Width, height)
 
 	sep1 := l.styles.MutedStyle.Render("│")
 	if l.focusPane == FocusArtists {
@@ -857,9 +997,9 @@ func (l Library) View() string {
 		if i < len(col3Lines) {
 			c3 = col3Lines[i]
 		}
-		c1 = l.padOrTruncateLine(c1, colWidth)
-		c2 = l.padOrTruncateLine(c2, colWidth)
-		c3 = l.padOrTruncateLine(c3, colWidth)
+		c1 = l.padOrTruncateLine(c1, col1Width)
+		c2 = l.padOrTruncateLine(c2, col2Width)
+		c3 = l.padOrTruncateLine(c3, col3Width)
 		b.WriteString(c1)
 		b.WriteString(" ")
 		b.WriteString(sep1)
@@ -1007,15 +1147,24 @@ func (l Library) renderGenreList(width, height int) string {
 		if idx >= len(items) {
 			break
 		}
-		name := ansi.Truncate(items[idx], width-2, "…")
-		if idx == l.genreCursor && focused {
-			name = l.styles.CursorStyle.Render("> " + name)
-		} else if idx == l.genreCursor {
-			name = l.styles.AccentStyle.Render(" " + name)
-		} else {
-			name = l.styles.MutedStyle.Render(" " + name)
+		entry := items[idx]
+		display := entry.Name
+		if entry.IsSubsonic {
+			badge := l.subsonicBadge
+			if badge == "" {
+				badge = "S"
+			}
+			display = "[" + badge + "] " + display
 		}
-		b.WriteString(name)
+		display = ansi.Truncate(display, width-2, "…")
+		if idx == l.genreCursor && focused {
+			display = l.styles.CursorStyle.Render("> " + display)
+		} else if idx == l.genreCursor {
+			display = l.styles.AccentStyle.Render(" " + display)
+		} else {
+			display = l.styles.MutedStyle.Render(" " + display)
+		}
+		b.WriteString(display)
 		if i < maxRows-1 {
 			b.WriteString("\n")
 		}
@@ -1043,7 +1192,18 @@ func (l Library) renderAlbumColumn(width, height int) string {
 		if idx >= len(items) {
 			break
 		}
-		name := ansi.Truncate(items[idx], width-2, "…")
+		item := items[idx]
+		if l.browseMode == BrowseGenres {
+			if parts := strings.SplitN(item, " - ", 2); len(parts) == 2 {
+				artistMax := width/2 - 3
+				if artistMax < 5 {
+					artistMax = 5
+				}
+				artist := ansi.Truncate(parts[0], artistMax, "…")
+				item = artist + " - " + parts[1]
+			}
+		}
+		name := ansi.Truncate(item, width-2, "…")
 		if idx == l.albumCursor && focused {
 			name = l.styles.CursorStyle.Render("> " + name)
 		} else if idx == l.albumCursor {

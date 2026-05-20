@@ -353,6 +353,32 @@ func subsonicAlbumTracksCmd(client *api.SubsonicClient, albumID string) tea.Cmd 
 	}
 }
 
+func subsonicGenresCmd(client *api.SubsonicClient) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return subsonicGenresMsg{err: fmt.Errorf("subsonic not configured")}
+		}
+		genres, err := client.GetGenres()
+		if err != nil {
+			return subsonicGenresMsg{err: err}
+		}
+		return subsonicGenresMsg{genres: genres}
+	}
+}
+
+func subsonicGenreAlbumsCmd(client *api.SubsonicClient, genreName string) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return subsonicGenreAlbumsMsg{err: fmt.Errorf("subsonic not configured")}
+		}
+		albums, err := client.GetAlbumList2("byGenre", 0, 0, 500, genreName)
+		if err != nil {
+			return subsonicGenreAlbumsMsg{genreName: genreName, err: err}
+		}
+		return subsonicGenreAlbumsMsg{genreName: genreName, albums: albums}
+	}
+}
+
 func loadSubsonicAlbumArtCmd(renderer *imgpkg.Renderer, client *api.SubsonicClient, track models.Track) tea.Cmd {
 	return func() tea.Msg {
 		if track.CoverArtID == "" {

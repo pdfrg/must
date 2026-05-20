@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/pdfrg/must/internal/config"
+	"github.com/pdfrg/must/internal/genre"
 	"github.com/pdfrg/must/internal/models"
 
 	_ "modernc.org/sqlite"
@@ -312,24 +313,12 @@ func (ld *LibraryDB) GetGenres() ([]string, error) {
 	return genres, rows.Err()
 }
 
-func splitGenre(genre string) []string {
-	var parts []string
-	for _, sep := range []string{";", "/"} {
-		if strings.Contains(genre, sep) {
-			for _, p := range strings.Split(genre, sep) {
-				p = strings.TrimSpace(p)
-				if p != "" {
-					parts = append(parts, p)
-				}
-			}
-			return parts
-		}
-	}
-	return []string{genre}
+func splitGenre(g string) []string {
+	return genre.Split(g)
 }
 
 func (ld *LibraryDB) GetAlbumsByGenre(genre string) ([]string, error) {
-	rows, err := ld.db.Query(`SELECT DISTINCT album FROM tracks WHERE (genre = ? OR genre LIKE ? OR genre LIKE ? OR genre LIKE ?) AND album != '' ORDER BY album`, genre, genre+";%", "%; "+genre, "%; "+genre+";%")
+	rows, err := ld.db.Query(`SELECT DISTINCT COALESCE(NULLIF(album_artist, ''), artist), album FROM tracks WHERE (genre = ? OR genre LIKE ? OR genre LIKE ? OR genre LIKE ?) AND album != '' ORDER BY album`, genre, genre+";%", "%; "+genre, "%; "+genre+";%")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query albums by genre: %w", err)
 	}
@@ -337,11 +326,11 @@ func (ld *LibraryDB) GetAlbumsByGenre(genre string) ([]string, error) {
 
 	var albums []string
 	for rows.Next() {
-		var a string
-		if err := rows.Scan(&a); err != nil {
+		var artist, album string
+		if err := rows.Scan(&artist, &album); err != nil {
 			return nil, err
 		}
-		albums = append(albums, a)
+		albums = append(albums, artist+" - "+album)
 	}
 	return albums, rows.Err()
 }
