@@ -34,6 +34,7 @@ type Config struct {
 	LastFM                LastFMConfig          `toml:"lastfm" comment:"Last.fm scrobbling\nrun 'must --lastfm-auth' once to obtain a session key"`
 	ListenBrainz          ListenBrainzConfig    `toml:"listenbrainz" comment:"ListenBrainz scrobbling\ntoken found at: https://listenbrainz.org/profile/"`
 	Lidarr                LidarrConfig          `toml:"lidarr" comment:"Lidarr music collection manager\nshows artist/album monitoring status, opens Lidarr web UI\napi_key from: Lidarr Settings > General"`
+	Subsonic              SubsonicConfig        `toml:"subsonic" comment:"Subsonic-compatible server client (Navidrome, Jellyfin, etc.)"`
 	Visualizer            VisualizerConfig      `toml:"visualizer" comment:"audio visualizer settings"`
 	NotificationsEnabled  bool                  `toml:"notifications_enabled" comment:"show desktop notifications on song changes (default: false)"`
 	NotificationsShowArt  bool                  `toml:"notifications_show_art" comment:"include album art thumbnail in notifications (default: true)"`
@@ -62,6 +63,15 @@ type LidarrConfig struct {
 	Enabled bool   `toml:"enabled" comment:"enable Lidarr integration (default: false)"`
 	URL     string `toml:"url" comment:"Lidarr base URL (e.g., http://localhost:8686)"`
 	APIKey  string `toml:"api_key" comment:"Lidarr API key from Settings > General"`
+}
+
+type SubsonicConfig struct {
+	Enabled     bool   `toml:"enabled" comment:"enable Subsonic-compatible server client (default: false)"`
+	URL         string `toml:"url" comment:"Subsonic server base URL (e.g., http://navidrome.local:4533)"`
+	Username    string `toml:"username" comment:"Subsonic username"`
+	Password    string `toml:"password" comment:"Subsonic password or hex-encoded token"`
+	ServerName  string `toml:"server_name" comment:"display name for the server (default: Subsonic)"`
+	ServerBadge string `toml:"server_badge" comment:"2-char badge shown next to remote tracks (default: S)"`
 }
 
 type TerminalPaletteConfig struct {
@@ -96,6 +106,9 @@ func DefaultConfig() *Config {
 			ShowInfo:     "fade",
 			InfoDuration: 5,
 			RealAudio:    true,
+		},
+		Subsonic: SubsonicConfig{
+			ServerBadge: "S",
 		},
 		NotificationsEnabled:  false,
 		NotificationsShowArt:  true,
@@ -236,6 +249,16 @@ func (c *Config) applyDefaults() {
 		if !validProtocols[c.ForceProtocol] {
 			c.ForceProtocol = ""
 		}
+	}
+
+	if c.Subsonic.ServerName == "" {
+		c.Subsonic.ServerName = "Subsonic"
+	}
+	if c.Subsonic.ServerBadge == "" {
+		c.Subsonic.ServerBadge = "S"
+	}
+	if len(c.Subsonic.ServerBadge) > 2 {
+		c.Subsonic.ServerBadge = c.Subsonic.ServerBadge[:2]
 	}
 }
 

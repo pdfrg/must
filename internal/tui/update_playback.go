@@ -415,7 +415,7 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 	}
 
 	if m.prevScrobbleEligible && m.prevTrack != nil {
-		cmds = append(cmds, scrobbleTrackCmd(m.cfg, *m.prevTrack, m.prevSongStartTime))
+		cmds = append(cmds, scrobbleTrackCmd(m.cfg, m.subsonicClient, *m.prevTrack, m.prevSongStartTime))
 	}
 	m.prevTrack = nil
 	m.prevScrobbleEligible = false
@@ -460,11 +460,26 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 	m.songStartTime = time.Now()
 	m.scrobbleEligible = false
 
-	cmds = append(cmds, fetchAudioInfoCmd(m.mpvBackend))
+	if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+		t := m.playlist[m.currentIndex]
+		if t.Source == models.SourceSubsonic {
+			m.audioInfo = &models.AudioInfo{
+				Codec:   t.ContentType,
+				Bitrate: float64(t.Bitrate),
+			}
+		}
+	}
+	if m.audioInfo == nil {
+		cmds = append(cmds, fetchAudioInfoCmd(m.mpvBackend))
+	}
 
 	if m.imageRenderer != nil && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-		trackPath := m.playlist[m.currentIndex].Path
-		cmds = append(cmds, loadAlbumArtCmd(m.imageRenderer, trackPath))
+		t := m.playlist[m.currentIndex]
+		if t.Source == models.SourceSubsonic {
+			cmds = append(cmds, loadSubsonicAlbumArtCmd(m.imageRenderer, m.subsonicClient, t))
+		} else {
+			cmds = append(cmds, loadAlbumArtCmd(m.imageRenderer, t.Path))
+		}
 	}
 
 	if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
@@ -747,7 +762,7 @@ func sendNowPlayingCmd(cfg *config.Config, track models.Track) tea.Cmd {
 	}
 }
 
-func scrobbleTrackCmd(cfg *config.Config, track models.Track, startTime time.Time) tea.Cmd {
+func scrobbleTrackCmd(cfg *config.Config, subsonicClient *api.SubsonicClient, track models.Track, startTime time.Time) tea.Cmd {
 	return func() tea.Msg {
 		var results []scrobbleResult
 
@@ -787,6 +802,15 @@ func scrobbleTrackCmd(cfg *config.Config, track models.Track, startTime time.Tim
 				logf("Scrobble to listenbrainz failed: %v", err)
 			} else {
 				logf("Scrobbled to listenbrainz: %s - %s", track.Artist, track.Title)
+			}
+		}
+
+		if subsonicClient != nil && track.Source == models.SourceSubsonic && track.RemoteID != "" {
+			err := subsonicClient.Scrobble(track.RemoteID, true, startTime.Unix())
+			if err != nil {
+				logf("Scrobble to subsonic failed: %v", err)
+			} else {
+				logf("Scrobbled to subsonic: %s - %s", track.Artist, track.Title)
 			}
 		}
 

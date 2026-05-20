@@ -130,7 +130,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case modals.SearchDebounceMsg:
 		if m.activeModal == ModalSearch && m.searchModal != nil {
-			return m, m.searchModal.Update(msg)
+			var cmd tea.Cmd
+			if m.subsonicClient != nil && m.searchModal.SourceWantsSubsonic() {
+				cmd = subsonicSearchCmd(m.subsonicClient, msg.Query)
+			}
+			return m, tea.Batch(m.searchModal.Update(msg), cmd)
 		}
 		return m, nil
 
@@ -236,6 +240,78 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.seq == m.statusSeq {
 			m.statusMsg = ""
 			m.statusIsErr = false
+		}
+		return m, nil
+
+	case subsonicSearchResultsMsg:
+		if m.activeModal == ModalSearch && m.searchModal != nil {
+			if msg.err != nil {
+				logf("Subsonic search error: %v", msg.err)
+				return m, nil
+			}
+			m.searchModal.AddSubsonicResults(msg.artists, msg.albums, msg.tracks)
+		}
+		return m, nil
+
+	case subsonicArtistsMsg:
+		if msg.err != nil {
+			logf("Subsonic artists error: %v", msg.err)
+			return m, nil
+		}
+		if m.libraryModal != nil {
+			m.libraryModal.SetSubsonicArtists(msg.artists)
+		}
+		return m, nil
+
+	case subsonicArtistAlbumsMsg:
+		if msg.err != nil {
+			logf("Subsonic artist albums error: %v", msg.err)
+			return m, nil
+		}
+		if m.libraryModal != nil {
+			m.libraryModal.SetSubsonicAlbums(msg.albums)
+		}
+		return m, nil
+
+	case subsonicAlbumTracksMsg:
+		if msg.err != nil {
+			logf("Subsonic album tracks error: %v", msg.err)
+			return m, nil
+		}
+		if m.libraryModal != nil {
+			m.libraryModal.SetSubsonicTracks(msg.tracks)
+		}
+		// If search modal is active, this is a search resolve — enqueue/play/enqueue-next
+		if m.activeModal == ModalSearch && m.searchModal != nil && len(msg.tracks) > 0 {
+			if m.searchModal.ResolveEnqueue {
+				m.searchModal.ResolveEnqueue = false
+				closeSearch := func() tea.Msg {
+					m.activeModal = ModalNone
+					return modals.SearchModalMsg{Enqueue: msg.tracks}
+				}
+				return m, closeSearch
+			}
+			if m.searchModal.ResolveEnqueueNext {
+				m.searchModal.ResolveEnqueueNext = false
+				closeSearch := func() tea.Msg {
+					m.activeModal = ModalNone
+					return modals.SearchModalMsg{EnqueueNext: msg.tracks}
+				}
+				return m, closeSearch
+			}
+			m.playlist = msg.tracks
+			m.shuffleOrder = nil
+			if m.shuffle {
+				m.shuffleOrder = shuffleIndices(len(m.playlist))
+			}
+			m.updatePlaylist()
+			m.activeModal = ModalNone
+			paths := m.buildMPVPlaylistPaths()
+			return m, tea.Batch(
+				startPlaybackCmd(m.mpvBackend, paths, 0),
+				m.trackChangedCmds(),
+				renderAlbumArtAfterDelay(),
+			)
 		}
 		return m, nil
 
@@ -422,7 +498,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.themeWatcher.Close()
 		}
 		if m.scrobbleEligible && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-			cmds = append(cmds, scrobbleTrackCmd(m.cfg, m.playlist[m.currentIndex], m.songStartTime))
+			cmds = append(cmds, scrobbleTrackCmd(m.cfg, m.subsonicClient, m.playlist[m.currentIndex], m.songStartTime))
 		}
 		cmds = append(cmds, tea.Quit)
 		return m, tea.Batch(cmds...)
@@ -713,11 +789,56 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case ModalLibrary:
 		if m.libraryModal != nil {
 			cmd := m.libraryModal.Update(msg)
+			var extra []tea.Cmd
+			if m.subsonicClient != nil {
+				if id := m.libraryModal.PendingFetchArtistID; id != "" {
+					m.libraryModal.PendingFetchArtistID = ""
+					extra = append(extra, subsonicArtistAlbumsCmd(m.subsonicClient, id))
+				}
+				if id := m.libraryModal.PendingFetchAlbumID; id != "" {
+					m.libraryModal.PendingFetchAlbumID = ""
+					extra = append(extra, subsonicAlbumTracksCmd(m.subsonicClient, id))
+				}
+			}
+			if len(extra) > 0 {
+				return m, tea.Batch(append([]tea.Cmd{cmd}, extra...)...)
+			}
 			return m, cmd
 		}
 	case ModalSearch:
 		if m.searchModal != nil {
 			cmd := m.searchModal.Update(msg)
+			var cmd2 tea.Cmd
+			var extra []tea.Cmd
+			if m.subsonicClient != nil {
+				if id := m.searchModal.PendingSubsonicArtistID; id != "" {
+					m.searchModal.PendingSubsonicArtistID = ""
+					extra = append(extra, subsonicArtistPlayCmd(m.subsonicClient, id))
+				}
+				if id := m.searchModal.PendingSubsonicAlbumID; id != "" {
+					m.searchModal.PendingSubsonicAlbumID = ""
+					extra = append(extra, subsonicAlbumTracksCmd(m.subsonicClient, id))
+				}
+			}
+			if name := m.searchModal.ResolveArtistName; name != "" {
+				m.searchModal.ResolveArtistName = ""
+				enq := m.searchModal.ResolveEnqueueNext
+				m.searchModal.ResolveEnqueueNext = false
+				m, cmd2 = m.resolveSearchArtist(name, enq)
+				extra = append(extra, cmd2)
+			}
+			if artist := m.searchModal.ResolveAlbumArtist; artist != "" {
+				album := m.searchModal.ResolveAlbumName
+				m.searchModal.ResolveAlbumArtist = ""
+				m.searchModal.ResolveAlbumName = ""
+				enq := m.searchModal.ResolveEnqueueNext
+				m.searchModal.ResolveEnqueueNext = false
+				m, cmd2 = m.resolveSearchAlbum(artist, album, enq)
+				extra = append(extra, cmd2)
+			}
+			if len(extra) > 0 {
+				return m, tea.Batch(append([]tea.Cmd{cmd}, extra...)...)
+			}
 			return m, cmd
 		}
 	case ModalHelp:
@@ -1105,11 +1226,73 @@ func (m Model) openLibrary() (tea.Model, tea.Cmd) {
 	m.activeModal = ModalLibrary
 	if m.libraryModal == nil {
 		m.libraryModal = modals.NewLibrary(m.styles, m.libraryDB)
+		if m.subsonicClient != nil {
+			m.libraryModal.SetSubsonicBadge(m.subsonicClient.ServerBadge())
+		}
 	}
 	m.libraryModal.SetArtists(m.artists)
 	m.libraryModal.LoadAlbumsForArtist()
 	m.libraryModal.SetSize(m.width, m.height)
-	return m, clearKittyImagesCmdIf(m.imageProtocol)
+
+	var cmds []tea.Cmd
+	cmds = append(cmds, clearKittyImagesCmdIf(m.imageProtocol))
+
+	// If Subsonic is configured, fetch artists for the Subsonic tab
+	if m.subsonicClient != nil {
+		cmds = append(cmds, subsonicArtistsCmd(m.subsonicClient))
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) resolveSearchArtist(name string, enqueueNext bool) (Model, tea.Cmd) {
+	tracks, err := m.libraryDB.GetTracksByArtist(name)
+	if err != nil || len(tracks) == 0 {
+		return m, nil
+	}
+	if enqueueNext {
+		return m, func() tea.Msg {
+			return modals.SearchModalMsg{EnqueueNext: tracks}
+		}
+	}
+	m.playlist = tracks
+	m.shuffleOrder = nil
+	if m.shuffle {
+		m.shuffleOrder = shuffleIndices(len(m.playlist))
+	}
+	m.updatePlaylist()
+	m.activeModal = ModalNone
+	paths := m.buildMPVPlaylistPaths()
+	return m, tea.Batch(
+		startPlaybackCmd(m.mpvBackend, paths, 0),
+		m.trackChangedCmds(),
+		renderAlbumArtAfterDelay(),
+	)
+}
+
+func (m Model) resolveSearchAlbum(artist, album string, enqueueNext bool) (Model, tea.Cmd) {
+	tracks, err := m.libraryDB.GetTracksByArtistAndAlbum(artist, album)
+	if err != nil || len(tracks) == 0 {
+		return m, nil
+	}
+	if enqueueNext {
+		return m, func() tea.Msg {
+			return modals.SearchModalMsg{EnqueueNext: tracks}
+		}
+	}
+	m.playlist = tracks
+	m.shuffleOrder = nil
+	if m.shuffle {
+		m.shuffleOrder = shuffleIndices(len(m.playlist))
+	}
+	m.updatePlaylist()
+	m.activeModal = ModalNone
+	paths := m.buildMPVPlaylistPaths()
+	return m, tea.Batch(
+		startPlaybackCmd(m.mpvBackend, paths, 0),
+		m.trackChangedCmds(),
+		renderAlbumArtAfterDelay(),
+	)
 }
 
 func (m Model) openHelp() (tea.Model, tea.Cmd) {

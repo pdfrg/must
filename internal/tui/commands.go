@@ -27,23 +27,29 @@ import (
 )
 
 type PlaybackState struct {
-	PlaylistPaths []string `json:"playlist_paths"`
-	CurrentIndex  int      `json:"current_index"`
-	Position      float64  `json:"position"`
-	Shuffle       bool     `json:"shuffle"`
-	RepeatMode    string   `json:"repeat_mode"`
+	PlaylistPaths     []string `json:"playlist_paths"`
+	CurrentIndex      int      `json:"current_index"`
+	Position          float64  `json:"position"`
+	Shuffle           bool     `json:"shuffle"`
+	RepeatMode        string   `json:"repeat_mode"`
+	PlaylistSources   []string `json:"playlist_sources,omitempty"`
+	PlaylistRemoteIDs []string `json:"playlist_remote_ids,omitempty"`
 }
 
 func SavePlaybackState(playlist []models.Track, currentIndex int, position float64, shuffle bool, repeatMode string) {
 	state := PlaybackState{
-		PlaylistPaths: make([]string, len(playlist)),
-		CurrentIndex:  currentIndex,
-		Position:      position,
-		Shuffle:       shuffle,
-		RepeatMode:    repeatMode,
+		PlaylistPaths:     make([]string, len(playlist)),
+		PlaylistSources:   make([]string, len(playlist)),
+		PlaylistRemoteIDs: make([]string, len(playlist)),
+		CurrentIndex:      currentIndex,
+		Position:          position,
+		Shuffle:           shuffle,
+		RepeatMode:        repeatMode,
 	}
 	for i, t := range playlist {
 		state.PlaylistPaths[i] = t.Path
+		state.PlaylistSources[i] = string(t.Source)
+		state.PlaylistRemoteIDs[i] = t.RemoteID
 	}
 
 	data, err := json.Marshal(state)
@@ -174,6 +180,222 @@ func isAudioFile(path string) bool {
 		return true
 	}
 	return false
+}
+
+func subsonicSearchCmd(client *api.SubsonicClient, query string) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return subsonicSearchResultsMsg{err: fmt.Errorf("subsonic not configured")}
+		}
+
+		field, fieldVal := parseQueryPrefix(query)
+		normalized := field
+		switch normalized {
+		case "song", "track":
+			normalized = "title"
+		}
+
+		switch normalized {
+		case "title":
+			result, err := client.Search3(fieldVal, 0, 0, 50)
+			if err != nil {
+				return subsonicSearchResultsMsg{err: err, query: query}
+			}
+			tracks := client.ChildrenToTracks(result.Song)
+			return subsonicSearchResultsMsg{
+				tracks: tracks, query: query,
+			}
+
+		case "genre":
+			songs, err := client.GetSongsByGenre(fieldVal, 50)
+			if err != nil {
+				return subsonicSearchResultsMsg{err: err, query: query}
+			}
+			albums, err := client.GetAlbumList2("byGenre", 0, 0, 20, fieldVal)
+			if err != nil {
+				return subsonicSearchResultsMsg{
+					tracks: client.ChildrenToTracks(songs),
+					query:  query,
+				}
+			}
+			return subsonicSearchResultsMsg{
+				tracks: client.ChildrenToTracks(songs),
+				albums: albums,
+				query:  query,
+			}
+
+		case "year":
+			yearMin, yearMax := parseYearRange(fieldVal)
+			if yearMin == 0 {
+				yearMin = yearMax
+			}
+			if yearMin == 0 {
+				return subsonicSearchResultsMsg{
+					err: fmt.Errorf("invalid year: %s", fieldVal), query: query,
+				}
+			}
+			if yearMax < yearMin {
+				yearMax = yearMin
+			}
+			albums, err := client.GetAlbumList2("byYear", yearMin, yearMax, 50, "")
+			if err != nil {
+				return subsonicSearchResultsMsg{err: err, query: query}
+			}
+			var allTracks []models.Track
+			for _, a := range albums {
+				album, err := client.GetAlbum(a.ID)
+				if err != nil {
+					continue
+				}
+				allTracks = append(allTracks, client.ChildrenToTracks(album.Song)...)
+			}
+			return subsonicSearchResultsMsg{
+				tracks: allTracks,
+				albums: albums,
+				query:  query,
+			}
+
+		case "artist":
+			result, err := client.Search3(fieldVal, 3, 30, 100)
+			if err != nil {
+				return subsonicSearchResultsMsg{err: err, query: query}
+			}
+			tracks := client.ChildrenToTracks(result.Song)
+			return subsonicSearchResultsMsg{
+				tracks: tracks, artists: result.Artist, albums: result.Album, query: query,
+			}
+
+		case "album":
+			result, err := client.Search3(fieldVal, 0, 3, 50)
+			if err != nil {
+				return subsonicSearchResultsMsg{err: err, query: query}
+			}
+			tracks := client.ChildrenToTracks(result.Song)
+			return subsonicSearchResultsMsg{
+				tracks: tracks, artists: result.Artist, albums: result.Album, query: query,
+			}
+
+		default:
+			result, err := client.Search3(query, 5, 10, 50)
+			if err != nil {
+				return subsonicSearchResultsMsg{err: err, query: query}
+			}
+			tracks := client.ChildrenToTracks(result.Song)
+			return subsonicSearchResultsMsg{
+				tracks: tracks, artists: result.Artist, albums: result.Album, query: query,
+			}
+		}
+	}
+}
+
+func subsonicArtistsCmd(client *api.SubsonicClient) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return subsonicArtistsMsg{err: fmt.Errorf("subsonic not configured")}
+		}
+		artists, err := client.GetArtists()
+		if err != nil {
+			return subsonicArtistsMsg{err: err}
+		}
+		var flat []api.ArtistID3
+		for _, idx := range artists.Index {
+			flat = append(flat, idx.Artist...)
+		}
+		return subsonicArtistsMsg{artists: flat}
+	}
+}
+
+func subsonicArtistPlayCmd(client *api.SubsonicClient, artistID string) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return subsonicAlbumTracksMsg{err: fmt.Errorf("subsonic not configured")}
+		}
+		artist, err := client.GetArtist(artistID)
+		if err != nil {
+			return subsonicAlbumTracksMsg{err: err}
+		}
+		var allTracks []models.Track
+		for _, album := range artist.Album {
+			albumDetail, err := client.GetAlbum(album.ID)
+			if err != nil {
+				continue
+			}
+			allTracks = append(allTracks, client.ChildrenToTracks(albumDetail.Song)...)
+		}
+		return subsonicAlbumTracksMsg{tracks: allTracks}
+	}
+}
+
+func subsonicArtistAlbumsCmd(client *api.SubsonicClient, artistID string) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return subsonicArtistAlbumsMsg{err: fmt.Errorf("subsonic not configured")}
+		}
+		artist, err := client.GetArtist(artistID)
+		if err != nil {
+			return subsonicArtistAlbumsMsg{err: err}
+		}
+		return subsonicArtistAlbumsMsg{albums: artist.Album}
+	}
+}
+
+func subsonicAlbumTracksCmd(client *api.SubsonicClient, albumID string) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return subsonicAlbumTracksMsg{err: fmt.Errorf("subsonic not configured")}
+		}
+		album, err := client.GetAlbum(albumID)
+		if err != nil {
+			return subsonicAlbumTracksMsg{err: err}
+		}
+		tracks := client.ChildrenToTracks(album.Song)
+		return subsonicAlbumTracksMsg{tracks: tracks}
+	}
+}
+
+func loadSubsonicAlbumArtCmd(renderer *imgpkg.Renderer, client *api.SubsonicClient, track models.Track) tea.Cmd {
+	return func() tea.Msg {
+		if track.CoverArtID == "" {
+			return imageLoadedMsg{err: fmt.Errorf("no cover art ID"), trackPath: track.Path}
+		}
+		// Try local cache first
+		cacheKey := "subsonic_" + track.CoverArtID
+		cachedPath := filepath.Join(config.GetArtCacheDir(), cacheKey+".jpg")
+		if img, err := imgpkg.LoadImageFromPath(cachedPath); err == nil {
+			var buf bytes.Buffer
+			if encErr := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); encErr == nil {
+				return imageLoadedMsg{imageData: buf.Bytes(), trackPath: track.Path}
+			}
+		}
+		// Download from Subsonic server
+		artURL := client.CoverArtURL(track.CoverArtID)
+		resp, err := http.Get(artURL)
+		if err != nil {
+			return imageLoadedMsg{err: fmt.Errorf("failed to fetch subsonic art: %w", err), trackPath: track.Path}
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			return imageLoadedMsg{err: fmt.Errorf("subsonic art HTTP %d", resp.StatusCode), trackPath: track.Path}
+		}
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return imageLoadedMsg{err: fmt.Errorf("failed to read subsonic art: %v", err), trackPath: track.Path}
+		}
+		// Cache it
+		if err := os.MkdirAll(filepath.Dir(cachedPath), 0755); err == nil {
+			_ = os.WriteFile(cachedPath, data, 0644)
+		}
+		// Encode and return for rendering
+		img, _, err := image.Decode(bytes.NewReader(data))
+		if err != nil {
+			return imageLoadedMsg{err: err, trackPath: track.Path}
+		}
+		var buf bytes.Buffer
+		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
+			return imageLoadedMsg{err: err, trackPath: track.Path}
+		}
+		return imageLoadedMsg{imageData: buf.Bytes(), trackPath: track.Path}
+	}
 }
 
 func shuffleIndices(n int) []int {

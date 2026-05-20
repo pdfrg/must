@@ -1,5 +1,7 @@
 package ctl
 
+import "github.com/pdfrg/must/internal/models"
+
 type CtlMessage struct {
 	Cmd      string
 	Args     []string
@@ -17,11 +19,12 @@ type CtlResult struct {
 type SearchResultType string
 
 const (
-	ResultTrack  SearchResultType = "track"
-	ResultArtist SearchResultType = "artist"
-	ResultAlbum  SearchResultType = "album"
-	ResultGenre  SearchResultType = "genre"
-	ResultYear   SearchResultType = "year"
+	ResultTrack         SearchResultType = "track"
+	ResultArtist        SearchResultType = "artist"
+	ResultAlbum         SearchResultType = "album"
+	ResultGenre         SearchResultType = "genre"
+	ResultYear          SearchResultType = "year"
+	ResultSubsonicTrack SearchResultType = "subsonic_track"
 )
 
 type SearchResult struct {
@@ -39,4 +42,10 @@ type SearchResult struct {
 	YearEnd    int
 
 	TrackCount int
+
+	SubsonicTrack *TrackRef
+}
+
+type TrackRef struct {
+	models.Track
 }

@@ -59,9 +59,10 @@ type Model struct {
 	width  int
 	height int
 
-	mpvBackend   *mpv.MPVBackend
-	libraryDB    *db.LibraryDB
-	themeWatcher *config.ThemeWatcher
+	mpvBackend     *mpv.MPVBackend
+	libraryDB      *db.LibraryDB
+	subsonicClient *api.SubsonicClient
+	themeWatcher   *config.ThemeWatcher
 
 	playlist     []models.Track
 	currentIndex int
@@ -209,6 +210,9 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 	m.footer = widgets.NewFooter(styles.AccentStyle, styles.MutedStyle, styles.ForegroundStyle)
 
 	m.searchModal = modals.NewSearch(styles, nil)
+	if cfg.Subsonic.Enabled {
+		m.searchModal.SetSubsonicBadge(cfg.Subsonic.ServerBadge)
+	}
 	m.helpModal = modals.NewHelp(styles, defaultHelpEntries())
 	m.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 
@@ -267,6 +271,21 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 	}
 	if cfg.ReplayGainMode != "" {
 		m.mpvBackend.SetReplayGainMode(cfg.ReplayGainMode)
+	}
+
+	if cfg.Subsonic.Enabled && cfg.Subsonic.URL != "" && cfg.Subsonic.Username != "" && cfg.Subsonic.Password != "" {
+		client, err := api.NewSubsonicClient(
+			cfg.Subsonic.URL,
+			cfg.Subsonic.Username,
+			cfg.Subsonic.Password,
+			cfg.Subsonic.ServerName,
+			cfg.Subsonic.ServerBadge,
+		)
+		if err == nil {
+			m.subsonicClient = client
+		} else {
+			logf("Failed to initialize Subsonic client: %v", err)
+		}
 	}
 
 	return m

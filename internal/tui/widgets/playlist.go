@@ -165,6 +165,11 @@ func (p Playlist) View() string {
 			playIcon = " "
 		}
 
+		songLabel := t.Title
+		if t.ServerBadge != "" {
+			songLabel = "[" + t.ServerBadge + "] " + t.Title
+		}
+
 		pos := fmt.Sprintf("%d", idx+1)
 		num := formatTrackNum(t, idx, multiDisc)
 		dur := formatPlaylistDuration(t.Duration)
@@ -173,7 +178,7 @@ func (p Playlist) View() string {
 			year = fmt.Sprintf("%d", t.Year)
 		}
 
-		song := ansi.Truncate(t.Title, songW-1, "…")
+		song := ansi.Truncate(songLabel, songW-1, "…")
 		artist := ansi.Truncate(t.Artist, artistW-1, "…")
 		album := ansi.Truncate(t.Album, albumW-1, "…")
 
