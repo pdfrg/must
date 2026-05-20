@@ -475,7 +475,7 @@ func (o Options) View() string {
 		case optVisualizerShowInfo:
 			items = append(items, optItem{id, " Info overlay", o.renderPicker(visShowInfoName, o.cursor == len(items))})
 		case optRealAudio:
-			items = append(items, optItem{id, "Real audio", o.renderToggle(o.realAudio, o.cursor == len(items))})
+			items = append(items, optItem{id, " Real audio", o.renderToggle(o.realAudio, o.cursor == len(items))})
 		case optTheme:
 			items = append(items, optItem{id, "Theme", o.renderPicker(themeName, o.cursor == len(items))})
 		case optReplayGain:
