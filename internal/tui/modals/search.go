@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/db"
 	"github.com/pdfrg/must/internal/models"
@@ -23,6 +24,47 @@ type SearchModalMsg struct {
 	Closed      bool
 }
 
+type SearchSource int
+
+const (
+	SearchLocal SearchSource = iota
+	SearchBoth
+	SearchSubsonic
+)
+
+func (s SearchSource) String() string {
+	switch s {
+	case SearchLocal:
+		return "Local"
+	case SearchBoth:
+		return "Both"
+	case SearchSubsonic:
+		return "Subsonic"
+	default:
+		return "?"
+	}
+}
+
+type resultKind int
+
+const (
+	resultTrack resultKind = iota
+	resultArtist
+	resultAlbum
+)
+
+type searchEntry struct {
+	Kind        resultKind
+	Track       models.Track
+	ArtistName  string
+	AlbumName   string
+	AlbumArtist string
+	SubsonicID  string
+	IsSubsonic  bool
+	AlbumCount  int
+	TrackCount  int
+}
+
 type Search struct {
 	styles *config.ThemeStyles
 	db     *db.LibraryDB
@@ -30,9 +72,20 @@ type Search struct {
 	height int
 
 	input        textinput.Model
-	results      []models.Track
+	entries      []searchEntry
 	cursor       int
 	scrollOffset int
+
+	source        SearchSource
+	subsonicBadge string
+
+	PendingSubsonicArtistID string
+	PendingSubsonicAlbumID  string
+	ResolveArtistName       string
+	ResolveAlbumArtist      string
+	ResolveAlbumName        string
+	ResolveEnqueueNext      bool
+	ResolveEnqueue          bool
 }
 
 func NewSearch(styles *config.ThemeStyles, libraryDB *db.LibraryDB) *Search {
@@ -45,12 +98,69 @@ func NewSearch(styles *config.ThemeStyles, libraryDB *db.LibraryDB) *Search {
 		styles:  styles,
 		db:      libraryDB,
 		input:   si,
-		results: []models.Track{},
+		entries: nil,
 	}
 }
 
 func (s *Search) SetDB(libraryDB *db.LibraryDB) {
 	s.db = libraryDB
+}
+
+func (s *Search) GetResults() []models.Track {
+	var tracks []models.Track
+	for _, e := range s.entries {
+		if e.Kind == resultTrack {
+			tracks = append(tracks, e.Track)
+		}
+	}
+	return tracks
+}
+
+func (s *Search) SetEntries(entries []searchEntry) {
+	s.entries = entries
+	s.cursor = 0
+	s.scrollOffset = 0
+}
+
+func (s *Search) AppendEntries(entries []searchEntry) {
+	s.entries = append(s.entries, entries...)
+}
+
+func (s *Search) Source() SearchSource { return s.source }
+
+func (s *Search) SetSource(src SearchSource) { s.source = src }
+
+func (s *Search) SourceWantsSubsonic() bool {
+	return s.source == SearchBoth || s.source == SearchSubsonic
+}
+
+func (s *Search) SetSubsonicBadge(badge string) { s.subsonicBadge = badge }
+
+func (s *Search) AddSubsonicResults(artists []api.ArtistID3, albums []api.AlbumID3, tracks []models.Track) {
+	var entries []searchEntry
+	for _, a := range artists {
+		entries = append(entries, searchEntry{
+			Kind: resultArtist, ArtistName: a.Name,
+			IsSubsonic: true, SubsonicID: a.ID, AlbumCount: a.AlbumCount,
+		})
+	}
+	for _, a := range albums {
+		entries = append(entries, searchEntry{
+			Kind: resultAlbum, AlbumName: a.Name, AlbumArtist: a.Artist,
+			IsSubsonic: true, SubsonicID: a.ID, TrackCount: a.SongCount,
+		})
+	}
+	for _, t := range tracks {
+		entries = append(entries, searchEntry{Kind: resultTrack, Track: t, IsSubsonic: true})
+	}
+
+	if s.source == SearchSubsonic {
+		s.entries = entries
+	} else {
+		s.entries = append(s.entries, entries...)
+	}
+	s.cursor = 0
+	s.scrollOffset = 0
 }
 
 func (s *Search) SetSize(width, height int) {
@@ -69,9 +179,16 @@ func (s *Search) Blur() {
 
 func (s *Search) Reset() {
 	s.input.SetValue("")
-	s.results = nil
+	s.entries = nil
 	s.cursor = 0
 	s.scrollOffset = 0
+	s.PendingSubsonicArtistID = ""
+	s.PendingSubsonicAlbumID = ""
+	s.ResolveArtistName = ""
+	s.ResolveAlbumArtist = ""
+	s.ResolveAlbumName = ""
+	s.ResolveEnqueueNext = false
+	s.ResolveEnqueue = false
 }
 
 func (s *Search) Update(msg tea.Msg) tea.Cmd {
@@ -81,45 +198,19 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 		case "esc":
 			return func() tea.Msg { return SearchModalMsg{Closed: true} }
 		case "enter":
-			if len(s.results) > 0 && s.cursor < len(s.results) {
-				return func() tea.Msg {
-					return SearchModalMsg{
-						PlayTracks: []models.Track{s.results[s.cursor]},
-						PlayIndex:  0,
-					}
-				}
-			}
-			return nil
-		case "alt+enter":
-			if len(s.results) > 0 && s.cursor < len(s.results) {
-				return s.playAlbumCmd(s.results[s.cursor])
-			}
-			return nil
-		case "alt+e":
-			if len(s.results) > 0 && s.cursor < len(s.results) {
-				return s.enqueueAlbumCmd(s.results[s.cursor])
+			if len(s.entries) > 0 && s.cursor < len(s.entries) {
+				return s.handleEnterEntry(s.entries[s.cursor])
 			}
 			return nil
 		case "ctrl+e":
-			if len(s.results) > 0 && s.cursor < len(s.results) {
-				return func() tea.Msg {
-					return SearchModalMsg{
-						Enqueue: []models.Track{s.results[s.cursor]},
-					}
-				}
+			if len(s.entries) > 0 && s.cursor < len(s.entries) {
+				return s.handleEnqueueEntry(s.entries[s.cursor])
 			}
 			return nil
-		case "E":
-			if len(s.results) > 0 && s.cursor < len(s.results) {
-				return func() tea.Msg {
-					return SearchModalMsg{
-						EnqueueNext: []models.Track{s.results[s.cursor]},
-					}
-				}
-			}
-			return nil
+		case "alt+e":
+			return s.handleEnqueueNext()
 		case "down", "ctrl+n":
-			if len(s.results) > 0 && s.cursor < len(s.results)-1 {
+			if len(s.entries) > 0 && s.cursor < len(s.entries)-1 {
 				s.cursor++
 				maxVisible := s.height - 6
 				if maxVisible < 1 {
@@ -138,13 +229,34 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 				}
 			}
 			return nil
+		case "ctrl+t":
+			s.source = (s.source + 1) % 3
+			s.clearPending()
+			if s.input.Value() != "" {
+				return debounceSearchModalCmd(s.input.Value())
+			}
+			return nil
+		case "ctrl+s":
+			s.source = SearchSubsonic
+			s.clearPending()
+			if s.input.Value() != "" {
+				return debounceSearchModalCmd(s.input.Value())
+			}
+			return nil
+		case "ctrl+l":
+			s.source = SearchLocal
+			s.clearPending()
+			if s.input.Value() != "" {
+				return debounceSearchModalCmd(s.input.Value())
+			}
+			return nil
 		default:
 			var cmd tea.Cmd
 			s.input, cmd = s.input.Update(msg)
 			if s.db != nil && s.input.Value() != "" {
 				return tea.Batch(cmd, debounceSearchModalCmd(s.input.Value()))
 			}
-			s.results = nil
+			s.entries = nil
 			s.cursor = 0
 			s.scrollOffset = 0
 			return cmd
@@ -155,7 +267,7 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 		}
 		return s.executeSearch(msg.Query)
 	case SearchResultsMsg:
-		s.results = msg.Results
+		s.entries = msg.Entries
 		s.cursor = 0
 		s.scrollOffset = 0
 		return nil
@@ -163,24 +275,115 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-func (s *Search) playAlbumCmd(t models.Track) tea.Cmd {
-	return func() tea.Msg {
-		tracks, err := s.db.GetTracksByArtistAndAlbum(t.Artist, t.Album)
-		if err != nil || len(tracks) == 0 {
-			return SearchModalMsg{PlayTracks: []models.Track{t}, PlayIndex: 0}
-		}
-		return SearchModalMsg{PlayTracks: tracks, PlayIndex: 0}
-	}
+func (s *Search) clearPending() {
+	s.PendingSubsonicArtistID = ""
+	s.PendingSubsonicAlbumID = ""
+	s.ResolveArtistName = ""
+	s.ResolveAlbumArtist = ""
+	s.ResolveAlbumName = ""
+	s.ResolveEnqueueNext = false
+	s.ResolveEnqueue = false
 }
 
-func (s *Search) enqueueAlbumCmd(t models.Track) tea.Cmd {
-	return func() tea.Msg {
-		tracks, err := s.db.GetTracksByArtistAndAlbum(t.Artist, t.Album)
-		if err != nil || len(tracks) == 0 {
-			return SearchModalMsg{Enqueue: []models.Track{t}}
+func (s *Search) handleEnterEntry(e searchEntry) tea.Cmd {
+	switch e.Kind {
+	case resultTrack:
+		return func() tea.Msg {
+			return SearchModalMsg{
+				PlayTracks: []models.Track{e.Track},
+				PlayIndex:  0,
+			}
 		}
-		return SearchModalMsg{Enqueue: tracks}
+	case resultArtist:
+		if e.IsSubsonic {
+			s.PendingSubsonicArtistID = e.SubsonicID
+			return nil
+		}
+		s.ResolveArtistName = e.ArtistName
+		return nil
+	case resultAlbum:
+		if e.IsSubsonic {
+			s.PendingSubsonicAlbumID = e.SubsonicID
+			return nil
+		}
+		s.ResolveAlbumArtist = e.AlbumArtist
+		s.ResolveAlbumName = e.AlbumName
+		return nil
 	}
+	return nil
+}
+
+func (s *Search) handleEnqueueEntry(e searchEntry) tea.Cmd {
+	switch e.Kind {
+	case resultTrack:
+		return func() tea.Msg {
+			return SearchModalMsg{
+				Enqueue: []models.Track{e.Track},
+			}
+		}
+	case resultArtist:
+		if e.IsSubsonic {
+			s.PendingSubsonicArtistID = e.SubsonicID
+			s.ResolveEnqueue = true
+			return nil
+		}
+		return func() tea.Msg {
+			tracks, err := s.db.GetTracksByArtist(e.ArtistName)
+			if err != nil || len(tracks) == 0 {
+				return SearchModalMsg{Closed: true}
+			}
+			return SearchModalMsg{Enqueue: tracks}
+		}
+	case resultAlbum:
+		if e.IsSubsonic {
+			s.PendingSubsonicAlbumID = e.SubsonicID
+			s.ResolveEnqueue = true
+			return nil
+		}
+		return func() tea.Msg {
+			tracks, err := s.db.GetTracksByArtistAndAlbum(e.AlbumArtist, e.AlbumName)
+			if err != nil || len(tracks) == 0 {
+				return SearchModalMsg{Closed: true}
+			}
+			return SearchModalMsg{Enqueue: tracks}
+		}
+	}
+	return nil
+}
+
+func (s *Search) handleEnqueueNext() tea.Cmd {
+	if len(s.entries) == 0 || s.cursor >= len(s.entries) {
+		return nil
+	}
+	e := s.entries[s.cursor]
+	switch e.Kind {
+	case resultTrack:
+		return func() tea.Msg {
+			return SearchModalMsg{
+				EnqueueNext: []models.Track{e.Track},
+			}
+		}
+	case resultArtist:
+		if e.IsSubsonic {
+			s.PendingSubsonicArtistID = e.SubsonicID
+			s.ResolveEnqueueNext = true
+			return nil
+		}
+		s.ResolveArtistName = e.ArtistName
+		s.ResolveEnqueueNext = true
+		return nil
+	case resultAlbum:
+		if e.IsSubsonic {
+			s.PendingSubsonicAlbumID = e.SubsonicID
+			s.ResolveEnqueueNext = true
+			return nil
+		}
+		s.ResolveAlbumArtist = e.AlbumArtist
+		s.ResolveAlbumName = e.AlbumName
+		s.ResolveEnqueueNext = true
+		return nil
+	}
+	return nil
 }
 
 type SearchDebounceMsg struct {
@@ -188,7 +391,7 @@ type SearchDebounceMsg struct {
 }
 
 type SearchResultsMsg struct {
-	Results []models.Track
+	Entries []searchEntry
 }
 
 func debounceSearchModalCmd(query string) tea.Cmd {
@@ -196,8 +399,6 @@ func debounceSearchModalCmd(query string) tea.Cmd {
 		return SearchDebounceMsg{Query: query}
 	})
 }
-
-// --- Parse search query ---
 
 type parsedQuery struct {
 	fields    map[string]string
@@ -245,38 +446,155 @@ func parseQuery(input string) parsedQuery {
 			}
 		}
 	}
-
 	return pq
+}
+
+func trackCountByArtist(db *db.LibraryDB, artist string) (int, error) {
+	tracks, err := db.GetTracksByArtist(artist)
+	if err != nil {
+		return 0, err
+	}
+	return len(tracks), nil
 }
 
 // --- Search execution ---
 
 func (s *Search) executeSearch(query string) tea.Cmd {
 	return func() tea.Msg {
-		pq := parseQuery(query)
+		var entries []searchEntry
 
-		var results []models.Track
-
-		if pq.hasPlain && len(pq.fields) == 0 {
-			results = s.fuzzySearchAll(pq.plainText)
-		} else if len(pq.fields) > 0 {
-			results = s.fuzzySearchFields(pq)
+		if s.source == SearchLocal || s.source == SearchBoth {
+			entries = s.localSearch(query)
 		}
 
-		if pq.hasYear && len(results) > 0 {
-			results = filterByYear(results, pq.yearMin, pq.yearMax)
+		if entries == nil {
+			entries = []searchEntry{}
 		}
 
-		if len(results) > 200 {
-			results = results[:200]
-		}
-
-		if results == nil {
-			results = []models.Track{}
-		}
-
-		return SearchResultsMsg{Results: results}
+		return SearchResultsMsg{Entries: entries}
 	}
+}
+
+func (s *Search) localSearch(query string) []searchEntry {
+	if s.db == nil {
+		return nil
+	}
+
+	pq := parseQuery(query)
+
+	var results []models.Track
+	var fieldEntries []searchEntry
+
+	if pq.hasPlain && len(pq.fields) == 0 {
+		q := pq.plainText
+		seenAlbum := make(map[string]bool)
+
+		// Artist matches + their albums
+		if artists, err := s.db.SearchArtistsLike(q); err == nil {
+			for i, name := range artists {
+				if i >= 10 {
+					break
+				}
+				count, _ := trackCountByArtist(s.db, name)
+				fieldEntries = append(fieldEntries, searchEntry{
+					Kind: resultArtist, ArtistName: name, TrackCount: count,
+				})
+				if albums, err := s.db.GetAlbumsByArtist(name); err == nil {
+					for _, album := range albums {
+						key := name + "|" + album
+						if seenAlbum[key] {
+							continue
+						}
+						seenAlbum[key] = true
+						fieldEntries = append(fieldEntries, searchEntry{
+							Kind: resultAlbum, AlbumName: album, AlbumArtist: name,
+						})
+					}
+				}
+			}
+		}
+
+		// Album-name matches (albums whose name directly contains the query)
+		if albums, err := s.db.SearchAlbumsLike(q); err == nil {
+			for _, a := range albums {
+				key := a.Artist + "|" + a.Album
+				if seenAlbum[key] {
+					continue
+				}
+				seenAlbum[key] = true
+				fieldEntries = append(fieldEntries, searchEntry{
+					Kind: resultAlbum, AlbumName: a.Album, AlbumArtist: a.Artist,
+				})
+			}
+		}
+		results = s.fuzzySearchAll(q)
+	} else if len(pq.fields) > 0 {
+		results, fieldEntries = s.searchLocalFields(pq)
+	}
+
+	if pq.hasYear && len(results) > 0 {
+		results = filterByYear(results, pq.yearMin, pq.yearMax)
+	}
+
+	if len(results) > 200 {
+		results = results[:200]
+	}
+
+	var entries []searchEntry
+	if len(fieldEntries) > 0 {
+		entries = append(entries, fieldEntries...)
+	}
+	for _, t := range results {
+		entries = append(entries, searchEntry{Kind: resultTrack, Track: t})
+	}
+	return entries
+}
+
+func (s *Search) searchLocalFields(pq parsedQuery) ([]models.Track, []searchEntry) {
+	fieldOrder := make([]string, 0, len(pq.fields))
+	for f := range pq.fields {
+		fieldOrder = append(fieldOrder, f)
+	}
+
+	var allTracks []models.Track
+	var entryResults []searchEntry
+
+	for _, field := range fieldOrder {
+		value := pq.fields[field]
+
+		switch field {
+		case "artist":
+			matches, _ := s.db.SearchArtistsLike(value)
+			for _, name := range matches {
+				count, _ := trackCountByArtist(s.db, name)
+				entryResults = append(entryResults, searchEntry{
+					Kind: resultArtist, ArtistName: name, TrackCount: count,
+				})
+			}
+			tracks := s.fuzzyExpandField("artist", value)
+			allTracks = append(allTracks, tracks...)
+
+		case "album":
+			albums, _ := s.db.SearchAlbumsLike(value)
+			for _, a := range albums {
+				entryResults = append(entryResults, searchEntry{
+					Kind: resultAlbum, AlbumName: a.Album, AlbumArtist: a.Artist,
+				})
+			}
+			tracks := s.fuzzyExpandField("album", value)
+			allTracks = append(allTracks, tracks...)
+
+		case "title":
+			tracks := s.fuzzySearchAllByField("title", value)
+			allTracks = append(allTracks, tracks...)
+
+		case "genre":
+			tracks := s.fuzzyExpandField("genre", value)
+			allTracks = append(allTracks, tracks...)
+		}
+	}
+
+	return allTracks, entryResults
 }
 
 // --- Plain fuzzy: match against combined "artist album title" strings ---
@@ -302,49 +620,6 @@ func (s *Search) fuzzySearchAll(query string) []models.Track {
 		results[i] = all[m.Index]
 	}
 	return results
-}
-
-// --- Field fuzzy: match against field vocabulary and expand to tracks ---
-
-func (s *Search) fuzzySearchFields(pq parsedQuery) []models.Track {
-	var allResults [][]models.Track
-
-	fieldOrder := make([]string, 0, len(pq.fields))
-	for f := range pq.fields {
-		fieldOrder = append(fieldOrder, f)
-	}
-
-	for _, field := range fieldOrder {
-		value := pq.fields[field]
-		var tracks []models.Track
-
-		switch field {
-		case "title":
-			tracks = s.fuzzySearchAllByField("title", value)
-		case "artist":
-			tracks = s.fuzzyExpandField("artist", value)
-		case "album":
-			tracks = s.fuzzyExpandField("album", value)
-		case "genre":
-			tracks = s.fuzzyExpandField("genre", value)
-		default:
-			continue
-		}
-
-		if len(tracks) == 0 {
-			return nil
-		}
-		allResults = append(allResults, tracks)
-	}
-
-	if len(allResults) == 0 {
-		return nil
-	}
-	if len(allResults) == 1 {
-		return allResults[0]
-	}
-
-	return intersectTracks(allResults)
 }
 
 // fuzzySearchAllByField matches against a single field for all tracks
@@ -418,40 +693,6 @@ func (s *Search) fuzzyExpandField(field, value string) []models.Track {
 	return tracks
 }
 
-// --- Result helpers ---
-
-func intersectTracks(results [][]models.Track) []models.Track {
-	if len(results) == 0 {
-		return nil
-	}
-
-	idSet := make(map[int64]int)
-	for _, t := range results[0] {
-		idSet[t.ID] = 1
-	}
-
-	for i := 1; i < len(results); i++ {
-		seen := make(map[int64]bool)
-		for _, t := range results[i] {
-			if _, exists := idSet[t.ID]; exists {
-				seen[t.ID] = true
-			}
-		}
-		idSet = make(map[int64]int)
-		for id := range seen {
-			idSet[id] = 1
-		}
-	}
-
-	var intersection []models.Track
-	for _, t := range results[0] {
-		if _, exists := idSet[t.ID]; exists {
-			intersection = append(intersection, t)
-		}
-	}
-	return intersection
-}
-
 func filterByYear(tracks []models.Track, yearMin, yearMax int) []models.Track {
 	var filtered []models.Track
 	for _, t := range tracks {
@@ -471,25 +712,52 @@ func (s Search) View() string {
 	b.WriteString(s.input.View())
 	b.WriteString("\n")
 
-	maxVisible := s.height - 6
+	b.WriteString(s.renderSourceBar())
+	b.WriteString("\n")
+
+	maxVisible := s.height - 7
 	if maxVisible < 1 {
 		maxVisible = 1
 	}
 
-	if len(s.results) > 0 {
+	if len(s.entries) > 0 {
 		for i := 0; i < maxVisible; i++ {
 			idx := s.scrollOffset + i
-			if idx >= len(s.results) {
+			if idx >= len(s.entries) {
 				break
 			}
-			t := s.results[idx]
-			dur := t.GetDurationFormatted()
-			label := fmt.Sprintf("%s - %s - %s", t.Artist, t.Album, t.Title)
-			avail := s.width - len(dur) - 6
-			if avail < 10 {
-				avail = 10
+			e := s.entries[idx]
+			badge := ""
+			if e.IsSubsonic && s.subsonicBadge != "" {
+				badge = s.styles.MutedStyle.Render("[" + s.subsonicBadge + "] ")
 			}
-			label = ansi.Truncate(label, avail, "...")
+
+			var line string
+			switch e.Kind {
+			case resultArtist:
+				if e.IsSubsonic {
+					label := fmt.Sprintf("Artist: %s (%d albums)", e.ArtistName, e.AlbumCount)
+					label = ansi.Truncate(label, s.width-10, "...")
+					line = badge + label
+				} else {
+					label := fmt.Sprintf("Artist: %s (%d tracks)", e.ArtistName, e.TrackCount)
+					label = ansi.Truncate(label, s.width-10, "...")
+					line = label
+				}
+			case resultAlbum:
+				label := fmt.Sprintf("Album: %s — %s", e.AlbumArtist, e.AlbumName)
+				label = ansi.Truncate(label, s.width-10, "...")
+				line = badge + label
+			case resultTrack:
+				dur := e.Track.GetDurationFormatted()
+				label := fmt.Sprintf("%s - %s - %s", e.Track.Artist, e.Track.Album, e.Track.Title)
+				avail := s.width - len(badge) - len(dur) - 8
+				if avail < 10 {
+					avail = 10
+				}
+				label = ansi.Truncate(label, avail, "...")
+				line = fmt.Sprintf("%s%s %s", badge, label, s.styles.MutedStyle.Render(dur))
+			}
 
 			var prefix string
 			if idx == s.cursor {
@@ -498,18 +766,18 @@ func (s Search) View() string {
 				prefix = " "
 			}
 
-			line := fmt.Sprintf("%s%s %s", prefix, label, s.styles.MutedStyle.Render(dur))
+			row := prefix + line
 			if idx == s.cursor {
-				b.WriteString(line)
+				b.WriteString(row)
 			} else {
-				b.WriteString(s.styles.ForegroundStyle.Render(line))
+				b.WriteString(s.styles.ForegroundStyle.Render(row))
 			}
 			if i < maxVisible-1 {
 				b.WriteString("\n")
 			}
 		}
 		b.WriteString("\n")
-		b.WriteString(renderSearchHelp(s.styles, len(s.results)))
+		b.WriteString(renderSearchHelp(s.styles, len(s.entries), s.source.String()))
 	} else if s.input.Value() != "" {
 		b.WriteString("\n")
 		b.WriteString(s.styles.MutedStyle.Render("No results found"))
@@ -521,19 +789,32 @@ func (s Search) View() string {
 	return lipgloss.NewStyle().Width(s.width).Render(b.String())
 }
 
-func renderSearchHelp(styles *config.ThemeStyles, numResults int) string {
+func (s Search) renderSourceBar() string {
+	labels := []string{"Local", "Both", "Subsonic"}
+	var parts []string
+	for i, l := range labels {
+		if SearchSource(i) == s.source {
+			parts = append(parts, s.styles.AccentStyle.Render("["+l+"]"))
+		} else {
+			parts = append(parts, s.styles.MutedStyle.Render(l))
+		}
+	}
+	return strings.Join(parts, "  ")
+}
+
+func renderSearchHelp(styles *config.ThemeStyles, numResults int, source string) string {
 	type helpItem struct{ key, desc string }
 	items := []helpItem{
 		{"↑↓", "nav"},
 		{"↵", "play"},
 		{"^e", "enq"},
-		{"alt+↵", "album"},
-		{"alt+e", "enq-album"},
+		{"alt+e", "next"},
+		{"^t", "source"},
 		{"esc", "close"},
 	}
 
 	var b strings.Builder
-	b.WriteString(styles.MutedStyle.Render(fmt.Sprintf("%d results ", numResults)))
+	b.WriteString(styles.MutedStyle.Render(fmt.Sprintf("%d results [%s] ", numResults, source)))
 	for i, h := range items {
 		if i > 0 {
 			b.WriteString(styles.MutedStyle.Render("  "))
@@ -545,5 +826,5 @@ func renderSearchHelp(styles *config.ThemeStyles, numResults int) string {
 }
 
 func renderSearchHint(styles *config.ThemeStyles) string {
-	return styles.MutedStyle.Render("Type to search (supports artist:, album:, title:/song:/track:, genre:, year:1997)")
+	return styles.MutedStyle.Render("Type to search (supports artist:, album:, title:/song:/track:, genre:, year:1997)  ^t source")
 }

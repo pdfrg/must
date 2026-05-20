@@ -75,11 +75,32 @@ func (m *Model) restorePlaybackState() tea.Cmd {
 	}
 
 	var tracks []models.Track
-	var missingPaths []string
+	var hasSubsonic bool
 
-	for _, p := range state.PlaylistPaths {
+	for i, p := range state.PlaylistPaths {
+		if len(state.PlaylistSources) > i && state.PlaylistSources[i] == "subsonic" {
+			hasSubsonic = true
+			id := state.PlaylistRemoteIDs[i]
+			track := models.Track{
+				Source:   models.SourceSubsonic,
+				RemoteID: id,
+				Path:     p,
+			}
+			if m.subsonicClient != nil {
+				track.ServerName = m.subsonicClient.ServerName()
+				track.ServerBadge = m.subsonicClient.ServerBadge()
+				if song, err := m.subsonicClient.GetSong(id); err == nil {
+					track = m.subsonicClient.ChildToTrack(*song)
+				}
+			}
+			if track.Title == "" {
+				track.Title = filepath.Base(p)
+			}
+			tracks = append(tracks, track)
+			continue
+		}
+
 		if _, err := os.Stat(p); err != nil {
-			missingPaths = append(missingPaths, p)
 			continue
 		}
 
@@ -130,7 +151,7 @@ func (m *Model) restorePlaybackState() tea.Cmd {
 
 	savedPos := state.Position
 
-	if len(missingPaths) > 0 {
+	if hasSubsonic {
 		SavePlaybackState(m.playlist, m.currentIndex, savedPos, m.shuffle, m.repeatMode)
 	}
 

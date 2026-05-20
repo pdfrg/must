@@ -183,6 +183,9 @@ func (n NowPlaying) View(data NowPlayingData) string {
 
 	titleText := data.Track.Title
 	artistText := data.Track.Artist
+	if data.Track.ServerBadge != "" {
+		artistText = "[" + data.Track.ServerBadge + "] " + artistText
+	}
 	albumText := fmt.Sprintf("%s (%d)", data.Track.Album, data.Track.Year)
 
 	if n.maxWidth > 0 {
@@ -226,6 +229,9 @@ func (n NowPlaying) View(data NowPlayingData) string {
 		modeParts = append(modeParts, n.mutedStyle.Render("󰏤 paused"))
 	} else {
 		modeParts = append(modeParts, n.mutedStyle.Render("▶ playing"))
+	}
+	if data.Track != nil && data.Track.ServerBadge != "" {
+		modeParts = append(modeParts, n.mutedStyle.Render(data.Track.ServerName))
 	}
 	modeLine = strings.Join(modeParts, "  ")
 

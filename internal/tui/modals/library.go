@@ -2,11 +2,13 @@ package modals
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/db"
 	"github.com/pdfrg/must/internal/models"
@@ -35,15 +37,21 @@ const (
 	BrowseGenres
 )
 
+type artistDisplay struct {
+	Name       string
+	IsSubsonic bool
+	SubsonicID string
+}
+
 type Library struct {
 	styles *config.ThemeStyles
 	db     *db.LibraryDB
 	width  int
 	height int
 
-	allArtists  []string
+	allArtists  []artistDisplay
 	allAlbums   []string
-	artists     []string
+	artists     []artistDisplay
 	albums      []string
 	albumTracks []models.Track
 	focusPane   FocusPane
@@ -62,17 +70,30 @@ type Library struct {
 	genreScrollOffset int
 
 	filterText      string
-	filteredArtists []string
+	filteredArtists []artistDisplay
 	filteredAlbums  []string
 	filteredGenres  []string
 	enqueueNextMode bool
+
+	subsonicBadge string
+
+	localArtistNames       []string
+	subsonicArtistEntries  []api.ArtistID3
+	subsonicAlbumIDs       []string
+	subsonicAlbumsByArtist map[string][]api.AlbumID3
+	subsonicTracksByAlbum  map[string][]models.Track
+
+	PendingFetchArtistID string
+	PendingFetchAlbumID  string
 }
 
 func NewLibrary(styles *config.ThemeStyles, libraryDB *db.LibraryDB) *Library {
 	return &Library{
-		styles:    styles,
-		db:        libraryDB,
-		focusPane: FocusArtists,
+		styles:                 styles,
+		db:                     libraryDB,
+		focusPane:              FocusArtists,
+		subsonicAlbumsByArtist: make(map[string][]api.AlbumID3),
+		subsonicTracksByAlbum:  make(map[string][]models.Track),
 	}
 }
 
@@ -85,19 +106,129 @@ func (l *Library) SetSize(width, height int) {
 	l.height = height
 }
 
-func (l *Library) SetArtists(artists []string) {
-	l.allArtists = artists
-	l.artists = artists
+func (l *Library) SetSubsonicBadge(badge string) { l.subsonicBadge = badge }
+
+func (l *Library) rebuildDisplay() {
+	var combined []artistDisplay
+	seen := make(map[string]bool)
+	for _, name := range l.localArtistNames {
+		combined = append(combined, artistDisplay{Name: name})
+		seen[strings.ToLower(name)] = true
+	}
+	for _, a := range l.subsonicArtistEntries {
+		combined = append(combined, artistDisplay{
+			Name:       a.Name,
+			IsSubsonic: true,
+			SubsonicID: a.ID,
+		})
+	}
+	sort.Slice(combined, func(i, j int) bool {
+		return strings.ToLower(combined[i].Name) < strings.ToLower(combined[j].Name)
+	})
+	l.allArtists = combined
+	l.artists = combined
 	l.filteredArtists = nil
+	if l.artistCursor >= len(l.artists) && len(l.artists) > 0 {
+		l.artistCursor = 0
+		l.artistScrollOffset = 0
+	}
+}
+
+func (l *Library) SetArtists(artists []string) {
+	l.localArtistNames = artists
+	l.rebuildDisplay()
 	l.filterText = ""
 }
 
-func (l *Library) LoadAlbumsForArtist() {
-	if l.db == nil || l.artistCursor >= len(l.artists) {
+func (l *Library) SetSubsonicArtists(artists []api.ArtistID3) {
+	l.PendingFetchArtistID = ""
+	l.subsonicArtistEntries = artists
+	l.rebuildDisplay()
+	l.albums = nil
+	l.allAlbums = nil
+	l.albumTracks = nil
+	// Load albums for the currently selected artist if it's Subsonic
+	if len(l.artists) > 0 && l.artistCursor < len(l.artists) {
+		if l.artists[l.artistCursor].IsSubsonic {
+			l.LoadAlbumsForArtist()
+		}
+	}
+}
+
+func (l *Library) SetSubsonicAlbums(albums []api.AlbumID3) {
+	l.PendingFetchAlbumID = ""
+	if len(l.artists) == 0 || l.artistCursor >= len(l.artists) {
 		return
 	}
-	artist := l.artists[l.artistCursor]
-	albums, err := l.db.GetAlbumsByArtist(artist)
+	entry := l.artists[l.artistCursor]
+	if !entry.IsSubsonic {
+		return
+	}
+	l.subsonicAlbumsByArtist[entry.SubsonicID] = albums
+	l.loadSubsonicAlbumsForArtist(entry.SubsonicID)
+}
+
+func (l *Library) SetSubsonicTracks(tracks []models.Track) {
+	if l.albumCursor < len(l.subsonicAlbumIDs) {
+		l.subsonicTracksByAlbum[l.subsonicAlbumIDs[l.albumCursor]] = tracks
+	}
+	l.loadSubsonicTracksForAlbum()
+}
+
+func (l *Library) loadSubsonicAlbumsForArtist(artistID string) {
+	if albums, ok := l.subsonicAlbumsByArtist[artistID]; ok {
+		names := make([]string, len(albums))
+		ids := make([]string, len(albums))
+		for i, a := range albums {
+			names[i] = a.Name
+			ids[i] = a.ID
+		}
+		l.allAlbums = names
+		l.albums = names
+		l.subsonicAlbumIDs = ids
+		l.filteredAlbums = nil
+		l.albumCursor = 0
+		l.albumScrollOffset = 0
+		l.albumTracks = nil
+		l.loadSubsonicTracksForAlbum()
+	} else {
+		l.allAlbums = nil
+		l.albums = nil
+		l.albumTracks = nil
+		l.albumCursor = 0
+		l.albumScrollOffset = 0
+		l.PendingFetchArtistID = artistID
+	}
+}
+
+func (l *Library) loadSubsonicTracksForAlbum() {
+	if l.albumCursor >= len(l.subsonicAlbumIDs) {
+		l.albumTracks = nil
+		return
+	}
+	id := l.subsonicAlbumIDs[l.albumCursor]
+	if tracks, ok := l.subsonicTracksByAlbum[id]; ok {
+		l.albumTracks = tracks
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
+	} else if l.PendingFetchArtistID == "" {
+		l.PendingFetchAlbumID = id
+	}
+}
+
+func (l *Library) LoadAlbumsForArtist() {
+	if len(l.artists) == 0 || l.artistCursor >= len(l.artists) {
+		return
+	}
+	entry := l.artists[l.artistCursor]
+	if entry.IsSubsonic {
+		l.loadSubsonicAlbumsForArtist(entry.SubsonicID)
+		return
+	}
+	if l.db == nil {
+		return
+	}
+	albums, err := l.db.GetAlbumsByArtist(entry.Name)
 	if err != nil || len(albums) == 0 {
 		l.allAlbums = nil
 		l.albums = nil
@@ -120,6 +251,10 @@ func (l *Library) LoadAlbumsForArtist() {
 }
 
 func (l *Library) loadTracksForAlbum() {
+	if len(l.artists) > 0 && l.artistCursor < len(l.artists) && l.artists[l.artistCursor].IsSubsonic {
+		l.loadSubsonicTracksForAlbum()
+		return
+	}
 	if l.db == nil || len(l.albums) == 0 || l.albumCursor >= len(l.albums) {
 		l.albumTracks = nil
 		l.trackCursor = 0
@@ -140,9 +275,9 @@ func (l *Library) loadTracksForAlbum() {
 		}
 		return
 	}
-	artist := l.artists[l.artistCursor]
+	entry := l.artists[l.artistCursor]
 	album := l.albums[l.albumCursor]
-	tracks, err := l.db.GetTracksByArtistAndAlbum(artist, album)
+	tracks, err := l.db.GetTracksByArtistAndAlbum(entry.Name, album)
 	if err == nil && len(tracks) > 0 {
 		l.albumTracks = tracks
 		l.trackCursor = 0
@@ -275,7 +410,7 @@ func (l *Library) applyFilter() {
 			l.genreScrollOffset = 0
 		}
 	} else {
-		l.filteredArtists = filterStrings(l.allArtists, l.filterText)
+		l.filteredArtists = filterArtistDisplays(l.allArtists, l.filterText)
 		l.artists = l.filteredArtists
 		if l.artistCursor >= len(l.artists) {
 			l.artistCursor = 0
@@ -298,6 +433,17 @@ func filterStrings(items []string, query string) []string {
 	var result []string
 	for _, item := range items {
 		if strings.Contains(strings.ToLower(item), query) {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func filterArtistDisplays(items []artistDisplay, query string) []artistDisplay {
+	query = strings.ToLower(query)
+	var result []artistDisplay
+	for _, item := range items {
+		if strings.Contains(strings.ToLower(item.Name), query) {
 			result = append(result, item)
 		}
 	}
@@ -347,27 +493,35 @@ func (l *Library) handleEnqueue() tea.Cmd {
 			tracks = []models.Track{l.albumTracks[l.trackCursor]}
 		}
 	case FocusAlbums:
-		if len(l.albums) > 0 && l.albumCursor < len(l.albums) && l.db != nil {
+		if len(l.albums) > 0 && l.albumCursor < len(l.albums) {
 			if len(l.albumTracks) > 0 {
 				tracks = l.albumTracks
 			}
 		}
 	case FocusArtists:
-		if l.browseMode == BrowseGenres {
-			if len(l.genres) > 0 && l.genreCursor < len(l.genres) && l.db != nil && len(l.albums) > 0 {
-				for _, album := range l.albums {
-					t, err := l.db.GetTracksByAlbum(album)
-					if err == nil {
-						tracks = append(tracks, t...)
+		if len(l.artists) > 0 && l.artistCursor < len(l.artists) {
+			entry := l.artists[l.artistCursor]
+			if entry.IsSubsonic {
+				for _, albumID := range l.subsonicAlbumIDs {
+					if at, ok := l.subsonicTracksByAlbum[albumID]; ok {
+						tracks = append(tracks, at...)
 					}
 				}
-			}
-		} else {
-			if len(l.artists) > 0 && l.artistCursor < len(l.artists) && l.db != nil {
-				artist := l.artists[l.artistCursor]
-				t, err := l.db.GetTracksByArtist(artist)
-				if err == nil && len(t) > 0 {
-					tracks = t
+			} else if l.browseMode == BrowseGenres {
+				if len(l.genres) > 0 && l.genreCursor < len(l.genres) && l.db != nil && len(l.albums) > 0 {
+					for _, album := range l.albums {
+						t, err := l.db.GetTracksByAlbum(album)
+						if err == nil {
+							tracks = append(tracks, t...)
+						}
+					}
+				}
+			} else {
+				if l.db != nil {
+					t, err := l.db.GetTracksByArtist(entry.Name)
+					if err == nil && len(t) > 0 {
+						tracks = t
+					}
 				}
 			}
 		}
@@ -673,9 +827,9 @@ func (l Library) View() string {
 		col1 = l.renderGenreList(colWidth, height)
 	} else {
 		col1 = l.renderArtistList(colWidth, height)
+		col2 = l.renderAlbumColumn(colWidth, height)
+		col3 = l.renderTrackColumn(colWidth, height)
 	}
-	col2 = l.renderAlbumColumn(colWidth, height)
-	col3 = l.renderTrackColumn(colWidth, height)
 
 	sep1 := l.styles.MutedStyle.Render("│")
 	if l.focusPane == FocusArtists {
@@ -742,25 +896,20 @@ func (l Library) renderTopBar() string {
 	if l.browseMode == BrowseGenres {
 		modeLabel = "genres"
 	}
-	var topBar string
 	if l.filterText != "" {
 		filterDisplay := l.filterText
 		if len(filterDisplay) > 30 {
 			filterDisplay = filterDisplay[:30] + "…"
 		}
-		topBar = l.styles.AccentStyle.Render(fmt.Sprintf("filter: %s", filterDisplay)) +
+		return l.styles.AccentStyle.Render(fmt.Sprintf("filter: %s", filterDisplay)) +
 			l.styles.MutedStyle.Render(fmt.Sprintf(" [%s]", modeLabel)) + "\n"
-	} else {
-		topBar = l.styles.MutedStyle.Render(fmt.Sprintf("[%s]", modeLabel)) + "\n"
 	}
-	return topBar
+	return l.styles.MutedStyle.Render(fmt.Sprintf("[%s]", modeLabel)) + "\n"
 }
 
 func (l Library) renderHelpLine() string {
-	helpPairs := []struct {
-		key  string
-		desc string
-	}{
+	type helpItem struct{ key, desc string }
+	helpPairs := []helpItem{
 		{"↑/↓", "nav"},
 		{"←/→", "focus"},
 		{"enter", "play"},
@@ -768,11 +917,9 @@ func (l Library) renderHelpLine() string {
 		{"g", "genre"},
 		{"esc", "close"},
 	}
+
 	if l.filterText != "" {
-		helpPairs = []struct {
-			key  string
-			desc string
-		}{
+		helpPairs = []helpItem{
 			{"type", "filter"},
 			{"bksp", "del"},
 			{"esc", "clear"},
@@ -819,15 +966,24 @@ func (l Library) renderArtistList(width, height int) string {
 		if idx >= len(items) {
 			break
 		}
-		name := ansi.Truncate(items[idx], width-2, "…")
-		if idx == l.artistCursor && focused {
-			name = l.styles.CursorStyle.Render("> " + name)
-		} else if idx == l.artistCursor {
-			name = l.styles.AccentStyle.Render(" " + name)
-		} else {
-			name = l.styles.MutedStyle.Render(" " + name)
+		entry := items[idx]
+		display := entry.Name
+		if entry.IsSubsonic {
+			badge := l.subsonicBadge
+			if badge == "" {
+				badge = "S"
+			}
+			display = "[" + badge + "] " + display
 		}
-		b.WriteString(name)
+		display = ansi.Truncate(display, width-2, "…")
+		if idx == l.artistCursor && focused {
+			display = l.styles.CursorStyle.Render("> " + display)
+		} else if idx == l.artistCursor {
+			display = l.styles.AccentStyle.Render(" " + display)
+		} else {
+			display = l.styles.MutedStyle.Render(" " + display)
+		}
+		b.WriteString(display)
 		if i < maxRows-1 {
 			b.WriteString("\n")
 		}

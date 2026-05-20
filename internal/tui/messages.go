@@ -11,6 +11,29 @@ import (
 	"github.com/pdfrg/must/internal/scanner"
 )
 
+type subsonicSearchResultsMsg struct {
+	tracks  []models.Track
+	artists []api.ArtistID3
+	albums  []api.AlbumID3
+	query   string
+	err     error
+}
+
+type subsonicArtistsMsg struct {
+	artists []api.ArtistID3
+	err     error
+}
+
+type subsonicArtistAlbumsMsg struct {
+	albums []api.AlbumID3
+	err    error
+}
+
+type subsonicAlbumTracksMsg struct {
+	tracks []models.Track
+	err    error
+}
+
 type progressTickMsg time.Time
 
 type scanCompleteMsg struct {

@@ -2,6 +2,13 @@ package models
 
 import "fmt"
 
+type TrackSource string
+
+const (
+	SourceLocal    TrackSource = "local"
+	SourceSubsonic TrackSource = "subsonic"
+)
+
 type Track struct {
 	ID          int64
 	Path        string
@@ -16,6 +23,14 @@ type Track struct {
 	Duration    float64
 	HasCoverArt bool
 	FileModTime int64
+
+	Source      TrackSource
+	RemoteID    string
+	CoverArtID  string
+	ServerName  string
+	ServerBadge string
+	ContentType string
+	Bitrate     int
 }
 
 type AudioInfo struct {
