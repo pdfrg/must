@@ -114,8 +114,6 @@ func (p Playlist) View() string {
 	headerBg := lightenColor(p.styles.Background, 0.30)
 	headerStyle := p.styles.MutedStyle.Background(lipgloss.Color(headerBg))
 
-	multiDisc := p.hasMultiDiscTracks()
-
 	const (
 		posW      = 4
 		playingW  = 2
@@ -123,15 +121,28 @@ func (p Playlist) View() string {
 		yearWidth = 5
 	)
 
-	var trkW int
-	var trkHeader string
-	if multiDisc {
-		trkW = 6
-		trkHeader = "Trk#"
-	} else {
-		trkW = 4
-		trkHeader = "Trk#"
+	albumMultiDisc := p.albumIsMultiDisc()
+
+	trkW := 4
+	for _, t := range p.tracks {
+		multi := albumMultiDisc[albumKey(t)]
+		if multi && t.DiscNum > 0 {
+			n := t.TrackNum
+			if n == 0 {
+				n = 99
+			}
+			w := len(fmt.Sprintf("%d/%d", t.DiscNum, n))
+			if w > trkW {
+				trkW = w
+			}
+		} else if t.TrackNum > 0 {
+			w := len(fmt.Sprintf("%d", t.TrackNum))
+			if w > trkW {
+				trkW = w
+			}
+		}
 	}
+	trkHeader := "Trk#"
 
 	fixed := posW + playingW + trkW + durWidth + yearWidth + 8
 	flexible := p.width - fixed
@@ -171,7 +182,7 @@ func (p Playlist) View() string {
 		}
 
 		pos := fmt.Sprintf("%d", idx+1)
-		num := formatTrackNum(t, idx, multiDisc)
+		num := formatTrackNum(t, idx, albumMultiDisc[albumKey(t)])
 		dur := formatPlaylistDuration(t.Duration)
 		year := ""
 		if t.Year != 0 {
@@ -204,13 +215,18 @@ func (p Playlist) View() string {
 	return b.String()
 }
 
-func (p Playlist) hasMultiDiscTracks() bool {
+func (p Playlist) albumIsMultiDisc() map[string]bool {
+	result := make(map[string]bool)
 	for _, t := range p.tracks {
 		if t.DiscNum > 1 {
-			return true
+			result[albumKey(t)] = true
 		}
 	}
-	return false
+	return result
+}
+
+func albumKey(t models.Track) string {
+	return t.Artist + " - " + t.Album
 }
 
 func formatTrackNum(t models.Track, idx int, multiDisc bool) string {
