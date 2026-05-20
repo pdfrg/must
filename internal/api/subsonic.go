@@ -240,6 +240,23 @@ func (c *SubsonicClient) GetSongsByGenre(genre string, count int) ([]Child, erro
 	return resp.SubsonicResponse.Songs.Song, nil
 }
 
+func (c *SubsonicClient) GetGenres() ([]GenreID3, error) {
+	var resp struct {
+		SubsonicResponse struct {
+			Genres *struct {
+				Genre []GenreID3 `json:"genre"`
+			} `json:"genres"`
+		} `json:"subsonic-response"`
+	}
+	if err := c.getJSON("getGenres", nil, &resp); err != nil {
+		return nil, err
+	}
+	if resp.SubsonicResponse.Genres == nil {
+		return nil, nil
+	}
+	return resp.SubsonicResponse.Genres.Genre, nil
+}
+
 func (c *SubsonicClient) GetSong(id string) (*Child, error) {
 	params := url.Values{"id": {id}}
 	var resp struct {
@@ -456,6 +473,12 @@ type SearchResult3 struct {
 	Artist []ArtistID3 `json:"artist"`
 	Album  []AlbumID3  `json:"album"`
 	Song   []Child     `json:"song"`
+}
+
+type GenreID3 struct {
+	Value      string `json:"value"`
+	SongCount  int    `json:"songCount"`
+	AlbumCount int    `json:"albumCount"`
 }
 
 type PlaylistInfo struct {
