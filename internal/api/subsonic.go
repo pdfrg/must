@@ -133,6 +133,10 @@ func (c *SubsonicClient) ServerBadge() string {
 	return c.serverBadge
 }
 
+func (c *SubsonicClient) BaseURL() string {
+	return c.baseURL
+}
+
 func (c *SubsonicClient) Ping() error {
 	return c.getJSON("ping", nil, nil)
 }

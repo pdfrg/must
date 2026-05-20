@@ -24,7 +24,9 @@ const (
 	ResultAlbum         SearchResultType = "album"
 	ResultGenre         SearchResultType = "genre"
 	ResultYear          SearchResultType = "year"
-	ResultSubsonicTrack SearchResultType = "subsonic_track"
+	ResultSubsonicTrack   SearchResultType = "subsonic_track"
+	ResultPlaylist        SearchResultType = "playlist"
+	ResultSubsonicPlaylist SearchResultType = "subsonic_playlist"
 )
 
 type SearchResult struct {
@@ -43,7 +45,12 @@ type SearchResult struct {
 
 	TrackCount int
 
-	SubsonicTrack *TrackRef
+	PlaylistName      string
+	SubsonicPlaylistID string
+
+	SubsonicArtistID string
+	SubsonicAlbumID  string
+	SubsonicTrack   *TrackRef
 }
 
 type TrackRef struct {

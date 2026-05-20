@@ -68,7 +68,9 @@ func (m Model) handleCtlCommand(cmd string, args []string) (Model, ctl.CtlResult
 	case "library":
 		return m, m.ctlLibrary(), nil
 	case "playlists":
-		return m, m.ctlPlaylists(), nil
+		results, result := m.ctlPlaylists()
+		m.lastFindResults = results
+		return m, result, nil
 	default:
 		return m, ctl.CtlResult{OK: false, Error: fmt.Sprintf("unknown command: %s", cmd)}, nil
 	}
@@ -556,7 +558,7 @@ func (m Model) ctlFind(args []string) ([]ctl.SearchResult, *ctl.CtlResult) {
 		return nil, &ctl.CtlResult{OK: false, Error: "library not loaded yet"}
 	}
 
-	query := strings.Join(args, " ")
+	query := normalizeSubsonicPrefix(m.subsonicClient, strings.Join(args, " "))
 	field, fieldVal := parseQueryPrefix(query)
 
 	var results []ctl.SearchResult
@@ -646,37 +648,203 @@ func (m Model) ctlFind(args []string) ([]ctl.SearchResult, *ctl.CtlResult) {
 		if m.subsonicClient == nil {
 			return nil, &ctl.CtlResult{OK: false, Error: "subsonic not configured"}
 		}
-		result, err := m.subsonicClient.Search3(fieldVal, 3, 5, 20)
-		if err != nil {
-			return nil, &ctl.CtlResult{OK: false, Error: fmt.Sprintf("subsonic search failed: %v", err)}
-		}
 		badge := m.subsonicClient.ServerBadge()
-		for _, a := range result.Artist {
-			results = append(results, ctl.SearchResult{
-				Type: ctl.ResultArtist, ArtistName: a.Name,
-				Display: fmt.Sprintf("[%s] Artist: %s (%d albums)", badge, a.Name, a.AlbumCount),
-			})
+
+		subField, subVal := parseQueryPrefix(fieldVal)
+		switch subField {
+		case "song", "track":
+			subField = "title"
 		}
-		for _, a := range result.Album {
+
+		switch subField {
+		case "title":
+			result, err := m.subsonicClient.Search3(subVal, 0, 0, 50)
+			if err != nil {
+				return nil, &ctl.CtlResult{OK: false, Error: fmt.Sprintf("subsonic search failed: %v", err)}
+			}
+			for _, s := range result.Song {
+				tracks := m.subsonicClient.ChildrenToTracks([]api.Child{s})
+				if len(tracks) > 0 {
+					t := tracks[0]
+					results = append(results, ctl.SearchResult{
+						Type:          ctl.ResultSubsonicTrack,
+						SubsonicTrack: &ctl.TrackRef{Track: t},
+						Title:         t.Title,
+						ArtistName:    t.Artist,
+						AlbumName:     t.Album,
+						Year:          t.Year,
+						Display:       fmt.Sprintf("[%s] Track: \"%s\" - %s - %s", badge, t.Title, t.Artist, t.Album),
+					})
+				}
+			}
+
+		case "genre":
+			songs, err := m.subsonicClient.GetSongsByGenre(subVal, 50)
+			if err != nil {
+				return nil, &ctl.CtlResult{OK: false, Error: fmt.Sprintf("subsonic genre search failed: %v", err)}
+			}
+			genreAlbums, _ := m.subsonicClient.GetAlbumList2("byGenre", 0, 0, 20, subVal)
 			results = append(results, ctl.SearchResult{
-				Type: ctl.ResultAlbum, AlbumName: a.Name, ArtistName: a.Artist,
-				TrackCount: a.SongCount,
-				Display:    fmt.Sprintf("[%s] Album: %s - %s (%d tracks)", badge, a.Artist, a.Name, a.SongCount),
+				Type: ctl.ResultGenre, GenreName: subVal, TrackCount: len(songs),
+				Display: fmt.Sprintf("[%s] Genre: %s (%d songs, %d albums)", badge, subVal, len(songs), len(genreAlbums)),
 			})
-		}
-		for _, s := range result.Song {
-			tracks := m.subsonicClient.ChildrenToTracks([]api.Child{s})
-			if len(tracks) > 0 {
-				t := tracks[0]
+			for _, a := range genreAlbums {
 				results = append(results, ctl.SearchResult{
-					Type:          ctl.ResultSubsonicTrack,
-					SubsonicTrack: &ctl.TrackRef{Track: t},
-					Title:         t.Title,
-					ArtistName:    t.Artist,
-					AlbumName:     t.Album,
-					Year:          t.Year,
-					Display:       fmt.Sprintf("[%s] Track: \"%s\" - %s - %s", badge, t.Title, t.Artist, t.Album),
+					Type: ctl.ResultAlbum, SubsonicAlbumID: a.ID,
+					AlbumName: a.Name, ArtistName: a.Artist,
+					TrackCount: a.SongCount,
+					Display:    fmt.Sprintf("[%s] Album: %s - %s (%d tracks)", badge, a.Artist, a.Name, a.SongCount),
 				})
+			}
+			for _, s := range songs {
+				tracks := m.subsonicClient.ChildrenToTracks([]api.Child{s})
+				if len(tracks) > 0 {
+					t := tracks[0]
+					results = append(results, ctl.SearchResult{
+						Type:          ctl.ResultSubsonicTrack,
+						SubsonicTrack: &ctl.TrackRef{Track: t},
+						Title:         t.Title,
+						ArtistName:    t.Artist,
+						AlbumName:     t.Album,
+						Year:          t.Year,
+						Display:       fmt.Sprintf("[%s] Track: \"%s\" - %s - %s", badge, t.Title, t.Artist, t.Album),
+					})
+				}
+			}
+
+		case "artist":
+			result, err := m.subsonicClient.Search3(subVal, 3, 30, 100)
+			if err != nil {
+				return nil, &ctl.CtlResult{OK: false, Error: fmt.Sprintf("subsonic search failed: %v", err)}
+			}
+			for _, a := range result.Artist {
+				results = append(results, ctl.SearchResult{
+					Type: ctl.ResultArtist, SubsonicArtistID: a.ID, ArtistName: a.Name,
+					Display: fmt.Sprintf("[%s] Artist: %s (%d albums)", badge, a.Name, a.AlbumCount),
+				})
+			}
+			for _, a := range result.Album {
+				results = append(results, ctl.SearchResult{
+					Type: ctl.ResultAlbum, SubsonicAlbumID: a.ID,
+					AlbumName: a.Name, ArtistName: a.Artist,
+					TrackCount: a.SongCount,
+					Display:    fmt.Sprintf("[%s] Album: %s - %s (%d tracks)", badge, a.Artist, a.Name, a.SongCount),
+				})
+			}
+			for _, s := range result.Song {
+				tracks := m.subsonicClient.ChildrenToTracks([]api.Child{s})
+				if len(tracks) > 0 {
+					t := tracks[0]
+					results = append(results, ctl.SearchResult{
+						Type:          ctl.ResultSubsonicTrack,
+						SubsonicTrack: &ctl.TrackRef{Track: t},
+						Title:         t.Title,
+						ArtistName:    t.Artist,
+						AlbumName:     t.Album,
+						Year:          t.Year,
+						Display:       fmt.Sprintf("[%s] Track: \"%s\" - %s - %s", badge, t.Title, t.Artist, t.Album),
+					})
+				}
+			}
+
+		case "album":
+			result, err := m.subsonicClient.Search3(subVal, 0, 3, 50)
+			if err != nil {
+				return nil, &ctl.CtlResult{OK: false, Error: fmt.Sprintf("subsonic search failed: %v", err)}
+			}
+			for _, a := range result.Album {
+				results = append(results, ctl.SearchResult{
+					Type: ctl.ResultAlbum, SubsonicAlbumID: a.ID,
+					AlbumName: a.Name, ArtistName: a.Artist,
+					TrackCount: a.SongCount,
+					Display:    fmt.Sprintf("[%s] Album: %s - %s (%d tracks)", badge, a.Artist, a.Name, a.SongCount),
+				})
+			}
+			for _, s := range result.Song {
+				tracks := m.subsonicClient.ChildrenToTracks([]api.Child{s})
+				if len(tracks) > 0 {
+					t := tracks[0]
+					results = append(results, ctl.SearchResult{
+						Type:          ctl.ResultSubsonicTrack,
+						SubsonicTrack: &ctl.TrackRef{Track: t},
+						Title:         t.Title,
+						ArtistName:    t.Artist,
+						AlbumName:     t.Album,
+						Year:          t.Year,
+						Display:       fmt.Sprintf("[%s] Track: \"%s\" - %s - %s", badge, t.Title, t.Artist, t.Album),
+					})
+				}
+			}
+
+		case "year":
+			yearMin, yearMax := parseYearRange(subVal)
+			if yearMin == 0 {
+				return nil, &ctl.CtlResult{OK: false, Error: fmt.Sprintf("invalid year: %s", subVal)}
+			}
+			albums, err := m.subsonicClient.GetAlbumList2("byYear", yearMin, yearMax, 50, "")
+			if err != nil {
+				return nil, &ctl.CtlResult{OK: false, Error: fmt.Sprintf("subsonic year search failed: %v", err)}
+			}
+			results = append(results, ctl.SearchResult{
+				Type: ctl.ResultYear, Year: yearMin, YearEnd: yearMax,
+				TrackCount: len(albums),
+				Display:    fmt.Sprintf("[%s] Year: %s (%d albums)", badge, subVal, len(albums)),
+			})
+			for _, a := range albums {
+				album, err := m.subsonicClient.GetAlbum(a.ID)
+				if err != nil {
+					continue
+				}
+				for _, s := range album.Song {
+					tracks := m.subsonicClient.ChildrenToTracks([]api.Child{s})
+					if len(tracks) > 0 {
+						t := tracks[0]
+						results = append(results, ctl.SearchResult{
+							Type:          ctl.ResultSubsonicTrack,
+							SubsonicTrack: &ctl.TrackRef{Track: t},
+							Title:         t.Title,
+							ArtistName:    t.Artist,
+							AlbumName:     t.Album,
+							Year:          t.Year,
+							Display:       fmt.Sprintf("[%s] Track: \"%s\" - %s - %s", badge, t.Title, t.Artist, t.Album),
+						})
+					}
+				}
+			}
+
+		default:
+			result, err := m.subsonicClient.Search3(fieldVal, 5, 10, 50)
+			if err != nil {
+				return nil, &ctl.CtlResult{OK: false, Error: fmt.Sprintf("subsonic search failed: %v", err)}
+			}
+			for _, a := range result.Artist {
+				results = append(results, ctl.SearchResult{
+					Type: ctl.ResultArtist, SubsonicArtistID: a.ID, ArtistName: a.Name,
+					Display: fmt.Sprintf("[%s] Artist: %s (%d albums)", badge, a.Name, a.AlbumCount),
+				})
+			}
+			for _, a := range result.Album {
+				results = append(results, ctl.SearchResult{
+					Type: ctl.ResultAlbum, SubsonicAlbumID: a.ID,
+					AlbumName: a.Name, ArtistName: a.Artist,
+					TrackCount: a.SongCount,
+					Display:    fmt.Sprintf("[%s] Album: %s - %s (%d tracks)", badge, a.Artist, a.Name, a.SongCount),
+				})
+			}
+			for _, s := range result.Song {
+				tracks := m.subsonicClient.ChildrenToTracks([]api.Child{s})
+				if len(tracks) > 0 {
+					t := tracks[0]
+					results = append(results, ctl.SearchResult{
+						Type:          ctl.ResultSubsonicTrack,
+						SubsonicTrack: &ctl.TrackRef{Track: t},
+						Title:         t.Title,
+						ArtistName:    t.Artist,
+						AlbumName:     t.Album,
+						Year:          t.Year,
+						Display:       fmt.Sprintf("[%s] Track: \"%s\" - %s - %s", badge, t.Title, t.Artist, t.Album),
+					})
+				}
 			}
 		}
 
@@ -823,41 +991,104 @@ func (m Model) ctlLibrary() ctl.CtlResult {
 		b.WriteString("Library not loaded yet\n")
 	}
 
+	if m.subsonicClient != nil {
+		b.WriteString("\n")
+		status := "Connected"
+		if err := m.subsonicClient.Ping(); err != nil {
+			status = fmt.Sprintf("Disconnected (%v)", err)
+		}
+		fmt.Fprintf(&b, "Subsonic: %s [%s] — %s\n", m.subsonicClient.ServerName(), m.subsonicClient.ServerBadge(), status)
+		fmt.Fprintf(&b, "  Server: %s\n", m.subsonicClient.BaseURL())
+
+		artists, err := m.subsonicClient.GetArtists()
+		if err == nil {
+			var artistCount, albumCount int
+			for _, idx := range artists.Index {
+				for _, a := range idx.Artist {
+					artistCount++
+					albumCount += a.AlbumCount
+				}
+			}
+			fmt.Fprintf(&b, "  Artists: %d  Albums: %d\n", artistCount, albumCount)
+		}
+	}
+
 	return ctl.CtlResult{OK: true, Data: strings.TrimRight(b.String(), "\n")}
 }
 
-func (m Model) ctlPlaylists() ctl.CtlResult {
+func (m Model) ctlPlaylists() ([]ctl.SearchResult, ctl.CtlResult) {
+	var results []ctl.SearchResult
+
 	dir := config.GetPlaylistSaveDir()
 	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return ctl.CtlResult{OK: false, Error: fmt.Sprintf("no playlists directory: %v", err)}
-	}
-
-	var names []string
-	for _, e := range entries {
-		if !e.IsDir() && (strings.HasSuffix(e.Name(), ".m3u") || strings.HasSuffix(e.Name(), ".m3u8")) {
-			name := strings.TrimSuffix(e.Name(), ".m3u")
-			name = strings.TrimSuffix(name, ".m3u8")
-			names = append(names, name)
+	if err == nil {
+		var names []string
+		for _, e := range entries {
+			if !e.IsDir() && (strings.HasSuffix(e.Name(), ".m3u") || strings.HasSuffix(e.Name(), ".m3u8")) {
+				name := strings.TrimSuffix(e.Name(), ".m3u")
+				name = strings.TrimSuffix(name, ".m3u8")
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			path := config.GetPlaylistSavePath(n)
+			pl, err := playlist.Load(path)
+			count := 0
+			if err == nil && pl != nil {
+				count = len(pl.Tracks)
+			}
+			results = append(results, ctl.SearchResult{
+				Type: ctl.ResultPlaylist, PlaylistName: n, TrackCount: count,
+				Display: fmt.Sprintf("%s (%d tracks)", n, count),
+			})
 		}
 	}
 
-	if len(names) == 0 {
-		return ctl.CtlResult{OK: true, Data: "No saved playlists"}
+	if m.subsonicClient != nil {
+		subsonicPlaylists, err := m.subsonicClient.GetPlaylists()
+		if err == nil {
+			badge := m.subsonicClient.ServerBadge()
+			serverName := m.subsonicClient.ServerName()
+			for _, p := range subsonicPlaylists {
+				results = append(results, ctl.SearchResult{
+					Type: ctl.ResultSubsonicPlaylist, SubsonicPlaylistID: p.ID,
+					PlaylistName: p.Name, TrackCount: p.SongCount,
+					Display: fmt.Sprintf("[%s] %s: %s (%d tracks)", badge, serverName, p.Name, p.SongCount),
+				})
+			}
+		}
 	}
 
-	sort.Strings(names)
+	if len(results) == 0 {
+		return nil, ctl.CtlResult{OK: true, Data: "No playlists found"}
+	}
+
 	var b strings.Builder
-	for i, n := range names {
-		path := config.GetPlaylistSavePath(n)
-		pl, err := playlist.Load(path)
-		count := 0
-		if err == nil && pl != nil {
-			count = len(pl.Tracks)
-		}
-		fmt.Fprintf(&b, "%d. %s (%d tracks)\n", i+1, n, count)
+	for i, r := range results {
+		fmt.Fprintf(&b, "%d. %s\n", i+1, r.Display)
 	}
-	return ctl.CtlResult{OK: true, Data: strings.TrimRight(b.String(), "\n")}
+	return results, ctl.CtlResult{OK: true, Data: strings.TrimRight(b.String(), "\n")}
+}
+
+// normalizeSubsonicPrefix rewrites the configured server name prefix (first word, case-insensitive)
+// to "subsonic:", so e.g. "navidrome:radiohead" becomes "subsonic:radiohead".
+func normalizeSubsonicPrefix(client *api.SubsonicClient, query string) string {
+	if client == nil {
+		return query
+	}
+	name := strings.ToLower(strings.TrimSpace(client.ServerName()))
+	if idx := strings.Index(name, " "); idx > 0 {
+		name = name[:idx]
+	}
+	if name == "" || name == "subsonic" {
+		return query
+	}
+	prefix := name + ":"
+	if strings.HasPrefix(strings.ToLower(query), prefix) {
+		return "subsonic:" + query[len(prefix):]
+	}
+	return query
 }
 
 func parseQueryPrefix(query string) (field, value string) {
@@ -868,7 +1099,7 @@ func parseQueryPrefix(query string) (field, value string) {
 	field = strings.ToLower(strings.TrimSpace(query[:idx]))
 	value = strings.TrimSpace(query[idx+1:])
 	switch field {
-	case "artist", "album", "genre", "year", "title", "song", "track":
+	case "artist", "album", "genre", "year", "title", "song", "track", "subsonic":
 		return field, value
 	default:
 		return "", query
@@ -997,6 +1228,11 @@ func (m *Model) resolveSingleArg(arg string) ([]models.Track, string, error) {
 		return m.resolveSubsonicQuery(arg[len("subsonic:"):])
 	}
 
+	normArg := normalizeSubsonicPrefix(m.subsonicClient, arg)
+	if normArg != arg && strings.HasPrefix(normArg, "subsonic:") {
+		return m.resolveSubsonicQuery(normArg[len("subsonic:"):])
+	}
+
 	if strings.HasPrefix(arg, "artist:") || strings.HasPrefix(arg, "album:") ||
 		strings.HasPrefix(arg, "genre:") || strings.HasPrefix(arg, "year:") {
 		return m.resolveFieldQuery(arg)
@@ -1027,6 +1263,21 @@ func (m *Model) resolveResultIndex(n int) ([]models.Track, string, error) {
 		return []models.Track{*t}, r.Display, nil
 
 	case ctl.ResultArtist:
+		if r.SubsonicArtistID != "" && m.subsonicClient != nil {
+			artist, err := m.subsonicClient.GetArtist(r.SubsonicArtistID)
+			if err != nil {
+				return nil, "", fmt.Errorf("failed to get subsonic artist: %v", err)
+			}
+			var allTracks []models.Track
+			for _, album := range artist.Album {
+				albumDetail, err := m.subsonicClient.GetAlbum(album.ID)
+				if err != nil {
+					continue
+				}
+				allTracks = append(allTracks, m.subsonicClient.ChildrenToTracks(albumDetail.Song)...)
+			}
+			return allTracks, r.Display, nil
+		}
 		if m.libraryDB == nil {
 			return nil, "", fmt.Errorf("library not loaded")
 		}
@@ -1037,6 +1288,13 @@ func (m *Model) resolveResultIndex(n int) ([]models.Track, string, error) {
 		return tracks, r.Display, nil
 
 	case ctl.ResultAlbum:
+		if r.SubsonicAlbumID != "" && m.subsonicClient != nil {
+			album, err := m.subsonicClient.GetAlbum(r.SubsonicAlbumID)
+			if err != nil {
+				return nil, "", fmt.Errorf("failed to get subsonic album: %v", err)
+			}
+			return m.subsonicClient.ChildrenToTracks(album.Song), r.Display, nil
+		}
 		if m.libraryDB == nil {
 			return nil, "", fmt.Errorf("library not loaded")
 		}
@@ -1071,6 +1329,37 @@ func (m *Model) resolveResultIndex(n int) ([]models.Track, string, error) {
 			return nil, "", fmt.Errorf("subsonic track data missing")
 		}
 		return []models.Track{r.SubsonicTrack.Track}, r.Display, nil
+
+	case ctl.ResultPlaylist:
+		if m.libraryDB == nil {
+			return nil, "", fmt.Errorf("library not loaded")
+		}
+		path := config.GetPlaylistSavePath(r.PlaylistName)
+		pl, err := playlist.Load(path)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to load playlist: %v", err)
+		}
+		var tracks []models.Track
+		for _, p := range pl.Tracks {
+			t, err := m.libraryDB.GetTrackByPath(p)
+			if err != nil || t == nil {
+				tracks = append(tracks, models.Track{Path: p, Title: filepath.Base(p)})
+				continue
+			}
+			tracks = append(tracks, *t)
+		}
+		return tracks, r.Display, nil
+
+	case ctl.ResultSubsonicPlaylist:
+		if m.subsonicClient == nil {
+			return nil, "", fmt.Errorf("subsonic not configured")
+		}
+		pl, err := m.subsonicClient.GetPlaylist(r.SubsonicPlaylistID)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get subsonic playlist: %v", err)
+		}
+		tracks := m.subsonicClient.ChildrenToTracks(pl.Entry)
+		return tracks, r.Display, nil
 
 	default:
 		return nil, "", fmt.Errorf("unknown result type: %s", r.Type)
