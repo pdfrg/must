@@ -81,6 +81,7 @@ type Library struct {
 	filteredGenres  []genreDisplay
 	enqueueNextMode bool
 	albumSort       string
+	source          SearchSource
 
 	subsonicBadge string
 
@@ -104,6 +105,7 @@ func NewLibrary(styles *config.ThemeStyles, libraryDB *db.LibraryDB) *Library {
 		styles:                 styles,
 		db:                     libraryDB,
 		focusPane:              FocusArtists,
+		source:                 SearchBoth,
 		subsonicAlbumsByArtist: make(map[string][]api.AlbumID3),
 		subsonicTracksByAlbum:  make(map[string][]models.Track),
 		subsonicAlbumsByGenre:  make(map[string][]api.AlbumID3),
@@ -132,6 +134,103 @@ func (l *Library) SetAlbumSort(sort string) {
 	}
 }
 
+func (l *Library) SetSource(src SearchSource) {
+	if l.source == src {
+		return
+	}
+	l.source = src
+	l.filterText = ""
+	if l.browseMode == BrowseGenres {
+		l.applyGenreSourceFilter()
+	} else {
+		l.applySourceFilter()
+	}
+}
+
+func (l *Library) cycleSource() {
+	l.source = (l.source + 1) % 3
+	l.filterText = ""
+	if l.browseMode == BrowseGenres {
+		l.applyGenreSourceFilter()
+	} else {
+		l.applySourceFilter()
+	}
+}
+
+func (l *Library) applySourceFilter() {
+	var filtered []artistDisplay
+	switch l.source {
+	case SearchLocal:
+		for _, a := range l.allArtists {
+			if !a.IsSubsonic {
+				filtered = append(filtered, a)
+			}
+		}
+	case SearchSubsonic:
+		for _, a := range l.allArtists {
+			if a.IsSubsonic {
+				filtered = append(filtered, a)
+			}
+		}
+	default:
+		filtered = l.allArtists
+	}
+	l.artists = filtered
+	l.filteredArtists = nil
+	if l.artistCursor >= len(l.artists) {
+		l.artistCursor = 0
+		l.artistScrollOffset = 0
+	}
+	if len(l.artists) > 0 && l.artistCursor < len(l.artists) {
+		l.LoadAlbumsForArtist()
+	} else {
+		l.albums = nil
+		l.allAlbums = nil
+		l.albumTracks = nil
+		l.albumCursor = 0
+		l.albumScrollOffset = 0
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
+	}
+}
+
+func (l *Library) applyGenreSourceFilter() {
+	var filtered []genreDisplay
+	switch l.source {
+	case SearchLocal:
+		for _, g := range l.allGenres {
+			if !g.IsSubsonic {
+				filtered = append(filtered, g)
+			}
+		}
+	case SearchSubsonic:
+		for _, g := range l.allGenres {
+			if g.IsSubsonic {
+				filtered = append(filtered, g)
+			}
+		}
+	default:
+		filtered = l.allGenres
+	}
+	l.genres = filtered
+	l.filteredGenres = nil
+	if l.genreCursor >= len(l.genres) {
+		l.genreCursor = 0
+		l.genreScrollOffset = 0
+	}
+	if len(l.genres) > 0 && l.genreCursor < len(l.genres) {
+		l.loadAlbumsForGenre()
+	} else {
+		l.albums = nil
+		l.allAlbums = nil
+		l.albumTracks = nil
+		l.albumCursor = 0
+		l.albumScrollOffset = 0
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
+	}
+}
+
 func (l *Library) rebuildDisplay() {
 	var combined []artistDisplay
 	seen := make(map[string]bool)
@@ -150,12 +249,8 @@ func (l *Library) rebuildDisplay() {
 		return strings.ToLower(combined[i].Name) < strings.ToLower(combined[j].Name)
 	})
 	l.allArtists = combined
-	l.artists = combined
 	l.filteredArtists = nil
-	if l.artistCursor >= len(l.artists) && len(l.artists) > 0 {
-		l.artistCursor = 0
-		l.artistScrollOffset = 0
-	}
+	l.applySourceFilter()
 }
 
 func (l *Library) SetArtists(artists []string) {
@@ -261,12 +356,8 @@ func (l *Library) rebuildGenreDisplay() {
 		return strings.ToLower(combined[i].Name) < strings.ToLower(combined[j].Name)
 	})
 	l.allGenres = combined
-	l.genres = combined
 	l.filteredGenres = nil
-	if l.genreCursor >= len(l.genres) && len(l.genres) > 0 {
-		l.genreCursor = 0
-		l.genreScrollOffset = 0
-	}
+	l.applyGenreSourceFilter()
 }
 
 func (l *Library) SetSubsonicGenres(genres []api.GenreID3) {
@@ -459,6 +550,12 @@ func (l *Library) Update(msg tea.Msg) tea.Cmd {
 			l.toggleBrowseMode()
 		case "backspace":
 			l.backspaceFilter()
+		case "ctrl+t":
+			l.cycleSource()
+		case "ctrl+l":
+			l.SetSource(SearchLocal)
+		case "ctrl+s":
+			l.SetSource(SearchSubsonic)
 		default:
 			k := msg.Key()
 			if k.Text != "" {
@@ -485,19 +582,9 @@ func (l *Library) backspaceFilter() {
 func (l *Library) clearFilter() {
 	l.filterText = ""
 	if l.browseMode == BrowseGenres {
-		l.genres = l.allGenres
-		l.filteredGenres = nil
-		if l.genreCursor >= len(l.genres) {
-			l.genreCursor = 0
-			l.genreScrollOffset = 0
-		}
+		l.applyGenreSourceFilter()
 	} else {
-		l.artists = l.allArtists
-		l.filteredArtists = nil
-		if l.artistCursor >= len(l.artists) {
-			l.artistCursor = 0
-			l.artistScrollOffset = 0
-		}
+		l.applySourceFilter()
 	}
 	l.albums = l.allAlbums
 	l.filteredAlbums = nil
@@ -509,10 +596,11 @@ func (l *Library) clearFilter() {
 
 func (l *Library) applyFilter() {
 	if l.filterText == "" {
-		l.artists = l.allArtists
-		l.filteredArtists = nil
-		l.genres = l.allGenres
-		l.filteredGenres = nil
+		if l.browseMode == BrowseGenres {
+			l.applyGenreSourceFilter()
+		} else {
+			l.applySourceFilter()
+		}
 		l.albums = l.allAlbums
 		l.filteredAlbums = nil
 		return
@@ -867,7 +955,6 @@ func (l *Library) toggleBrowseMode() {
 	} else {
 		l.browseMode = BrowseArtists
 		l.focusPane = FocusArtists
-		l.artists = l.allArtists
 		l.filteredArtists = nil
 		l.albums = nil
 		l.allAlbums = nil
@@ -876,11 +963,7 @@ func (l *Library) toggleBrowseMode() {
 		l.albumScrollOffset = 0
 		l.trackCursor = 0
 		l.trackScrollOffset = 0
-		if l.artistCursor >= len(l.artists) {
-			l.artistCursor = 0
-			l.artistScrollOffset = 0
-		}
-		l.LoadAlbumsForArtist()
+		l.applySourceFilter()
 	}
 }
 
@@ -947,7 +1030,7 @@ func (l *Library) loadAlbumsForGenre() {
 }
 
 func (l *Library) paneHeight() int {
-	return l.height - 3
+	return l.height - 4
 }
 
 func (l Library) View() string {
@@ -1037,8 +1120,9 @@ func (l Library) View() string {
 	}
 
 	topBar := l.renderTopBar()
+	sourceBar := l.renderSourceBar()
 	helpLine := l.renderHelpLine()
-	inner := topBar + b.String() + "\n" + helpLine
+	inner := topBar + sourceBar + b.String() + "\n" + helpLine
 	return lipgloss.NewStyle().Width(l.width).Render(inner)
 }
 
@@ -1067,6 +1151,19 @@ func (l Library) renderTopBar() string {
 			l.styles.MutedStyle.Render(fmt.Sprintf(" [%s]", modeLabel)) + "\n"
 	}
 	return l.styles.MutedStyle.Render(fmt.Sprintf("[%s]", modeLabel)) + "\n"
+}
+
+func (l Library) renderSourceBar() string {
+	labels := []string{"Local", "Both", "Subsonic"}
+	var parts []string
+	for i, label := range labels {
+		if SearchSource(i) == l.source {
+			parts = append(parts, l.styles.AccentStyle.Render("["+label+"]"))
+		} else {
+			parts = append(parts, l.styles.MutedStyle.Render(label))
+		}
+	}
+	return strings.Join(parts, "  ") + "\n"
 }
 
 func (l Library) renderHelpLine() string {
