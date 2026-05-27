@@ -1173,6 +1173,7 @@ func (l Library) renderHelpLine() string {
 		{"←/→", "focus"},
 		{"enter", "play"},
 		{"e", "enqueue"},
+		{"^t", "source"},
 		{"g", "genre"},
 		{"esc", "close"},
 	}
