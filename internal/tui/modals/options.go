@@ -20,6 +20,7 @@ type OptionsMsg struct {
 	RealAudio             *bool
 	Theme                 *string
 	ReplayGainMode        *string
+	AlbumSort             *string
 	Closed                bool
 }
 
@@ -35,6 +36,7 @@ const (
 	optRealAudio
 	optTheme
 	optReplayGain
+	optAlbumSort
 )
 
 var visualizerModeNames = []string{
@@ -45,6 +47,8 @@ var visualizerModeNames = []string{
 var visualizerShowInfoOptions = []string{"fade", "on", "off"}
 
 var replayGainModeNames = []string{"Off", "Track", "Album"}
+
+var albumSortModeNames = []string{"Alphabetical", "Year (newest)", "Year (oldest)"}
 
 func themeOptions() []string {
 	names := config.ThemeNames()
@@ -84,6 +88,7 @@ type Options struct {
 	realAudio            bool
 	themeIdx             int
 	replayGainIdx        int
+	albumSortIdx         int
 
 	origShowAlbumArt         bool
 	origCopyAlbumArt         bool
@@ -96,6 +101,7 @@ type Options struct {
 	origRealAudio            bool
 	origThemeIdx             int
 	origReplayGainIdx        int
+	origAlbumSortIdx         int
 }
 
 func NewOptions(
@@ -107,6 +113,7 @@ func NewOptions(
 	realAudio bool,
 	themeName string,
 	replayGainMode string,
+	albumSort string,
 ) *Options {
 	visModeIdx := 0
 	for i, name := range visualizerModeNames {
@@ -134,6 +141,22 @@ func NewOptions(
 		}
 	}
 
+	albumSortIdx := 0
+	for i, name := range albumSortModeNames {
+		if strings.EqualFold(name, albumSort) {
+			albumSortIdx = i
+			break
+		}
+	}
+	switch albumSort {
+	case config.SortAlpha:
+		albumSortIdx = 0
+	case config.SortYearDesc:
+		albumSortIdx = 1
+	case config.SortYearAsc:
+		albumSortIdx = 2
+	}
+
 	return &Options{
 		styles: styles,
 
@@ -148,6 +171,7 @@ func NewOptions(
 		realAudio:            realAudio,
 		themeIdx:             themeIdx,
 		replayGainIdx:        replayGainIdx,
+		albumSortIdx:         albumSortIdx,
 
 		origShowAlbumArt:         showAlbumArt,
 		origCopyAlbumArt:         copyAlbumArt,
@@ -160,6 +184,7 @@ func NewOptions(
 		origRealAudio:            realAudio,
 		origThemeIdx:             themeIdx,
 		origReplayGainIdx:        replayGainIdx,
+		origAlbumSortIdx:         albumSortIdx,
 	}
 }
 
@@ -181,6 +206,7 @@ func (o *Options) visibleItems() []int {
 		optRealAudio,
 		optTheme,
 		optReplayGain,
+		optAlbumSort,
 	}
 }
 
@@ -239,6 +265,8 @@ func (o *Options) Update(msg tea.Msg) tea.Cmd {
 				o.cycleRight()
 			case optReplayGain:
 				o.cycleRight()
+			case optAlbumSort:
+				o.cycleRight()
 			}
 
 		case "a":
@@ -289,6 +317,12 @@ func (o *Options) cycleLeft() {
 		} else {
 			o.replayGainIdx = len(replayGainModeNames) - 1
 		}
+	case optAlbumSort:
+		if o.albumSortIdx > 0 {
+			o.albumSortIdx--
+		} else {
+			o.albumSortIdx = len(albumSortModeNames) - 1
+		}
 	}
 }
 
@@ -333,6 +367,12 @@ func (o *Options) cycleRight() {
 		} else {
 			o.replayGainIdx = 0
 		}
+	case optAlbumSort:
+		if o.albumSortIdx < len(albumSortModeNames)-1 {
+			o.albumSortIdx++
+		} else {
+			o.albumSortIdx = 0
+		}
 	}
 }
 
@@ -348,10 +388,11 @@ func (o *Options) applyChanges() tea.Cmd {
 	realAudioChanged := o.realAudio != o.origRealAudio
 	themeChanged := o.themeIdx != o.origThemeIdx
 	replayGainChanged := o.replayGainIdx != o.origReplayGainIdx
+	albumSortChanged := o.albumSortIdx != o.origAlbumSortIdx
 
 	if !albumArtChanged && !copyArtChanged && !notifEnabledChanged && !notifShowArtChanged &&
 		!transparentBgChanged && !disableThemeChanged && !visModeChanged && !visShowInfoChanged &&
-		!realAudioChanged && !themeChanged && !replayGainChanged {
+		!realAudioChanged && !themeChanged && !replayGainChanged && !albumSortChanged {
 		return func() tea.Msg { return OptionsMsg{Closed: true} }
 	}
 
@@ -404,6 +445,18 @@ func (o *Options) applyChanges() tea.Cmd {
 		v := strings.ToLower(replayGainModeNames[o.replayGainIdx])
 		msg.ReplayGainMode = &v
 	}
+	if albumSortChanged {
+		var v string
+		switch o.albumSortIdx {
+		case 1:
+			v = config.SortYearDesc
+		case 2:
+			v = config.SortYearAsc
+		default:
+			v = config.SortAlpha
+		}
+		msg.AlbumSort = &v
+	}
 	return func() tea.Msg { return msg }
 }
 
@@ -448,6 +501,11 @@ func (o Options) View() string {
 		replayGainName = replayGainModeNames[o.replayGainIdx]
 	}
 
+	albumSortName := albumSortModeNames[0]
+	if o.albumSortIdx >= 0 && o.albumSortIdx < len(albumSortModeNames) {
+		albumSortName = albumSortModeNames[o.albumSortIdx]
+	}
+
 	type optItem struct {
 		id    int
 		label string
@@ -480,6 +538,8 @@ func (o Options) View() string {
 			items = append(items, optItem{id, "Theme", o.renderPicker(themeName, o.cursor == len(items))})
 		case optReplayGain:
 			items = append(items, optItem{id, "ReplayGain", o.renderPicker(replayGainName, o.cursor == len(items))})
+		case optAlbumSort:
+			items = append(items, optItem{id, "Album sort", o.renderPicker(albumSortName, o.cursor == len(items))})
 		}
 	}
 

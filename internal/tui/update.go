@@ -1255,6 +1255,7 @@ func (m Model) openLibrary() (tea.Model, tea.Cmd) {
 		}
 	}
 	m.libraryModal.SetArtists(m.artists)
+	m.libraryModal.SetAlbumSort(m.cfg.AlbumSort)
 	m.libraryModal.LoadAlbumsForArtist()
 	m.libraryModal.SetSize(m.width, m.height)
 
@@ -1428,6 +1429,7 @@ func (m Model) openOptions() (tea.Model, tea.Cmd) {
 		m.cfg.Visualizer.RealAudio,
 		m.cfg.Theme,
 		m.cfg.ReplayGainMode,
+		m.cfg.AlbumSort,
 	)
 	return m, clearKittyImagesCmdIf(m.imageProtocol)
 }
@@ -1488,6 +1490,13 @@ func (m Model) handleOptionsModalMsg(msg modals.OptionsMsg) (tea.Model, tea.Cmd)
 		m.cfg.ReplayGainMode = *msg.ReplayGainMode
 		if m.mpvBackend != nil {
 			m.mpvBackend.SetReplayGainMode(*msg.ReplayGainMode)
+		}
+		changed = true
+	}
+	if msg.AlbumSort != nil {
+		m.cfg.AlbumSort = *msg.AlbumSort
+		if m.libraryModal != nil {
+			m.libraryModal.SetAlbumSort(*msg.AlbumSort)
 		}
 		changed = true
 	}
@@ -1839,6 +1848,7 @@ func (m Model) openLibraryEnqueueNext() (tea.Model, tea.Cmd) {
 		m.libraryModal = modals.NewLibrary(m.styles, m.libraryDB)
 	}
 	m.libraryModal.SetArtists(m.artists)
+	m.libraryModal.SetAlbumSort(m.cfg.AlbumSort)
 	m.libraryModal.LoadAlbumsForArtist()
 	m.libraryModal.SetSize(m.width, m.height)
 	m.libraryModal.SetEnqueueNextMode(true)

@@ -2,6 +2,11 @@ package models
 
 import "fmt"
 
+type AlbumEntry struct {
+	Name string
+	Year int
+}
+
 type TrackSource string
 
 const (

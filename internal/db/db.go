@@ -382,6 +382,71 @@ func (ld *LibraryDB) GetAllAlbums() ([]string, error) {
 	return albums, rows.Err()
 }
 
+func albumOrderClause(sort string) string {
+	switch sort {
+	case config.SortYearDesc:
+		return `ORDER BY CASE WHEN album_year = 0 THEN 1 ELSE 0 END, album_year DESC, album`
+	case config.SortYearAsc:
+		return `ORDER BY CASE WHEN album_year = 0 THEN 1 ELSE 0 END, album_year ASC, album`
+	default:
+		return `ORDER BY album`
+	}
+}
+
+func (ld *LibraryDB) GetAlbumsByArtistSorted(artist, sort string) ([]models.AlbumEntry, error) {
+	orderBy := albumOrderClause(sort)
+	query := fmt.Sprintf(`SELECT album, COALESCE(MAX(NULLIF(year, 0)), 0) AS album_year
+		FROM tracks
+		WHERE (COALESCE(NULLIF(album_artist, ''), artist) = ? OR COALESCE(NULLIF(album_artist, ''), artist) LIKE ?)
+		AND album != '' GROUP BY album %s`, orderBy)
+	rows, err := ld.db.Query(query, artist, artist+" feat.%")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query albums: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanAlbumEntries(rows)
+}
+
+func (ld *LibraryDB) GetAlbumsByGenreSorted(genre, sort string) ([]models.AlbumEntry, error) {
+	orderBy := albumOrderClause(sort)
+	query := fmt.Sprintf(`SELECT COALESCE(NULLIF(album_artist, ''), artist) || ' - ' || album,
+		COALESCE(MAX(NULLIF(year, 0)), 0) AS album_year
+		FROM tracks
+		WHERE (genre = ? OR genre LIKE ? OR genre LIKE ? OR genre LIKE ?)
+		AND album != '' GROUP BY COALESCE(NULLIF(album_artist, ''), artist), album %s`, orderBy)
+	rows, err := ld.db.Query(query, genre, genre+";%", "%; "+genre, "%; "+genre+";%")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query albums by genre: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanAlbumEntries(rows)
+}
+
+func (ld *LibraryDB) GetAllAlbumsSorted(sort string) ([]models.AlbumEntry, error) {
+	orderBy := albumOrderClause(sort)
+	query := fmt.Sprintf(`SELECT album, COALESCE(MAX(NULLIF(year, 0)), 0) AS album_year
+		FROM tracks
+		WHERE album != '' GROUP BY album %s`, orderBy)
+	rows, err := ld.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query albums: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return scanAlbumEntries(rows)
+}
+
+func scanAlbumEntries(rows *sql.Rows) ([]models.AlbumEntry, error) {
+	var entries []models.AlbumEntry
+	for rows.Next() {
+		var e models.AlbumEntry
+		if err := rows.Scan(&e.Name, &e.Year); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
 func (ld *LibraryDB) GetTracksByField(field string, values []string) ([]models.Track, error) {
 	if len(values) == 0 {
 		return nil, nil
