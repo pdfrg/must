@@ -9,6 +9,12 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+const (
+	SortAlpha    = "alpha"
+	SortYearDesc = "year_desc"
+	SortYearAsc  = "year_asc"
+)
+
 type Config struct {
 	path                  string
 	MusicDir              string                `toml:"music_dir" comment:"root directory for library scanning (default: ~/Music)"`
@@ -16,6 +22,7 @@ type Config struct {
 	PlaylistPathMode      string                `toml:"playlist_path_mode" comment:"path format when saving playlists: relative or absolute (default: relative)"`
 	RepeatMode            string                `toml:"repeat_mode" comment:"repeat mode: off, all, one (default: off)"`
 	Shuffle               bool                  `toml:"shuffle" comment:"shuffle playback order (default: false)"`
+	AlbumSort             string                `toml:"album_sort" comment:"album sort order in library browser\nalpha: alphabetical (default)\nyear_desc: by year, newest first\nyear_asc: by year, oldest first"`
 	ReplayGainMode        string                `toml:"replaygain_mode" comment:"replaygain volume normalization\noff, track, album (default: off)"`
 	RestoreOnStart        bool                  `toml:"restore_on_start" comment:"restore last session's playlist and position on startup (default: true)"`
 	Autoplay              bool                  `toml:"autoplay" comment:"auto-play a random album when launched with no paths (default: false)"`
@@ -95,6 +102,7 @@ func DefaultConfig() *Config {
 		PlaylistPathMode: "relative",
 		RepeatMode:       "off",
 		Shuffle:          false,
+		AlbumSort:        SortAlpha,
 		ReplayGainMode:   "off",
 		RestoreOnStart:   true,
 		Autoplay:         false,
@@ -209,6 +217,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.RepeatMode != "off" && c.RepeatMode != "all" && c.RepeatMode != "one" {
 		c.RepeatMode = defaults.RepeatMode
+	}
+	if c.AlbumSort != SortAlpha && c.AlbumSort != SortYearDesc && c.AlbumSort != SortYearAsc {
+		c.AlbumSort = defaults.AlbumSort
 	}
 	if c.AlbumArtPath == "" {
 		c.AlbumArtPath = defaults.AlbumArtPath
