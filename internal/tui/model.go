@@ -212,6 +212,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 	m.searchModal = modals.NewSearch(styles, nil)
 	if cfg.Subsonic.Enabled {
 		m.searchModal.SetSubsonicBadge(cfg.Subsonic.ServerBadge)
+		m.searchModal.SetSource(modals.SearchBoth)
 	}
 	m.helpModal = modals.NewHelp(styles, defaultHelpEntries())
 	m.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
