@@ -64,6 +64,9 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 	if restoreCmd != nil {
 		cmds = append(cmds, restoreCmd)
 	}
+	if len(m.playlist) > 0 && len(m.paths) > 0 {
+		cmds = append(cmds, m.playTrack(0))
+	}
 	cmds = append(cmds, setStatus(&m, m.scanMsg, false))
 	return m, tea.Batch(cmds...)
 }
@@ -107,7 +110,7 @@ func (m *Model) restorePlaybackState() tea.Cmd {
 		if t := findTrackByPath(p, m.libraryDB); t != nil {
 			tracks = append(tracks, *t)
 		} else {
-			tracks = append(tracks, models.Track{Path: p, Title: filepath.Base(p)})
+			tracks = append(tracks, readTrackFromFile(p))
 		}
 	}
 

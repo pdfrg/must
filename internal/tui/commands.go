@@ -20,10 +20,13 @@ import (
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/db"
+	"github.com/pdfrg/must/internal/duration"
 	imgpkg "github.com/pdfrg/must/internal/image"
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/playlist"
 	"github.com/pdfrg/must/internal/scanner"
+
+	"github.com/dhowden/tag"
 )
 
 type PlaybackState struct {
@@ -123,7 +126,7 @@ func loadPathsIntoPlaylist(paths []string, libraryDB *db.LibraryDB) []models.Tra
 				if t := findTrackByPath(trackPath, libraryDB); t != nil {
 					tracks = append(tracks, *t)
 				} else {
-					tracks = append(tracks, models.Track{Path: trackPath, Title: filepath.Base(trackPath)})
+					tracks = append(tracks, readTrackFromFile(trackPath))
 				}
 			}
 			continue
@@ -133,7 +136,7 @@ func loadPathsIntoPlaylist(paths []string, libraryDB *db.LibraryDB) []models.Tra
 			if t := findTrackByPath(p, libraryDB); t != nil {
 				tracks = append(tracks, *t)
 			} else {
-				tracks = append(tracks, models.Track{Path: p, Title: filepath.Base(p)})
+				tracks = append(tracks, readTrackFromFile(p))
 			}
 		}
 	}
@@ -154,7 +157,7 @@ func loadDirTracks(dir string, libraryDB *db.LibraryDB) []models.Track {
 		if t := findTrackByPath(path, libraryDB); t != nil {
 			tracks = append(tracks, *t)
 		} else {
-			tracks = append(tracks, models.Track{Path: path, Title: filepath.Base(path)})
+			tracks = append(tracks, readTrackFromFile(path))
 		}
 		return nil
 	})
@@ -180,6 +183,40 @@ func isAudioFile(path string) bool {
 		return true
 	}
 	return false
+}
+
+func readTrackFromFile(path string) models.Track {
+	t := models.Track{Path: path, Title: filepath.Base(path)}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return t
+	}
+	defer f.Close()
+
+	metadata, err := tag.ReadFrom(f)
+	if err == nil {
+		t.Title = metadata.Title()
+		t.Artist = metadata.Artist()
+		t.Album = metadata.Album()
+		t.AlbumArtist = metadata.AlbumArtist()
+		t.Year = metadata.Year()
+		t.Genre = metadata.Genre()
+		t.TrackNum, _ = metadata.Track()
+		t.DiscNum, _ = metadata.Disc()
+		t.HasCoverArt = metadata.Picture() != nil
+	}
+
+	if t.Title == "" {
+		t.Title = filepath.Base(path)
+	}
+
+	dur, err := duration.FileDuration(path)
+	if err == nil && dur > 0 {
+		t.Duration = dur
+	}
+
+	return t
 }
 
 func subsonicSearchCmd(client *api.SubsonicClient, query string) tea.Cmd {
