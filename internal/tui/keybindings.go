@@ -43,6 +43,7 @@ type KeyMap struct {
 	SavePlaylist    key.Binding
 	Options         key.Binding
 	SleepTimer      key.Binding
+	TempDirs        key.Binding
 	UpdateView      key.Binding
 	VisualizerView  key.Binding
 	VisCycleUp      key.Binding
@@ -203,6 +204,10 @@ var DefaultKeyMap = KeyMap{
 	SleepTimer: key.NewBinding(
 		key.WithKeys("z"),
 		key.WithHelp("z", "sleep timer"),
+	),
+	TempDirs: key.NewBinding(
+		key.WithKeys("T"),
+		key.WithHelp("T", "temp dirs"),
 	),
 	UpdateView: key.NewBinding(
 		key.WithKeys("u"),

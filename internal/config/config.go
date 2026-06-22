@@ -43,6 +43,7 @@ type Config struct {
 	Lidarr                LidarrConfig          `toml:"lidarr" comment:"Lidarr music collection manager\nshows artist/album monitoring status, opens Lidarr web UI\napi_key from: Lidarr Settings > General"`
 	Subsonic              SubsonicConfig        `toml:"subsonic" comment:"Subsonic-compatible server client (Navidrome, Jellyfin, etc.)"`
 	Visualizer            VisualizerConfig      `toml:"visualizer" comment:"audio visualizer settings"`
+	TempDirs              []string              `toml:"temp_dirs" comment:"directories containing temp/download albums (each subfolder = one album)\nformat: comma-separated quoted paths inside brackets, e.g. [\"~/Downloads\", \"/tmp/music\"]\npress T in the TUI to browse (default: [])"`
 	NotificationsEnabled  bool                  `toml:"notifications_enabled" comment:"show desktop notifications on song changes (default: false)"`
 	NotificationsShowArt  bool                  `toml:"notifications_show_art" comment:"include album art thumbnail in notifications (default: true)"`
 	Layout                string                `toml:"layout" comment:"UI layout mode\nlarge: full layout with all elements (default)\nmedium: no bottom view (no playlist/lyrics/visualizer)\ncompact: no album art, no bottom view, mini footer\nnarrow: album art top-left, now playing below, mini footer (default: large)"`
