@@ -589,6 +589,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.SavePlaylist):
 		return m.savePlaylist()
 
+	case key.Matches(msg, m.keyMap.ReversePlaylist):
+		return m.reversePlaylist()
+
 	case key.Matches(msg, m.keyMap.EnqueueNext):
 		return m.enqueueHighlightedNext()
 
@@ -1913,6 +1916,43 @@ func (m Model) moveTrackBottom() (tea.Model, tea.Cmd) {
 	}
 
 	return m, setStatus(&m, "Moved to bottom", false)
+}
+
+func (m Model) reversePlaylist() (tea.Model, tea.Cmd) {
+	if len(m.playlist) < 2 {
+		return m, setStatus(&m, "Playlist too short to reverse", true)
+	}
+
+	currPath := m.playlist[m.currentIndex].Path
+
+	for i, j := 0, len(m.playlist)-1; i < j; i, j = i+1, j-1 {
+		m.playlist[i], m.playlist[j] = m.playlist[j], m.playlist[i]
+	}
+
+	m.currentIndex = -1
+	for i := range m.playlist {
+		if m.playlist[i].Path == currPath {
+			m.currentIndex = i
+			break
+		}
+	}
+
+	m.shuffleOrder = nil
+	if m.shuffle {
+		m.shuffleOrder = shuffleIndices(len(m.playlist))
+	}
+
+	m.playlistWidget.SetCursor(m.currentIndex)
+	m.updatePlaylist()
+
+	paths := m.buildMPVPlaylistPaths()
+	playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
+
+	return m, tea.Batch(
+		startPlaybackCmd(m.mpvBackend, paths, playIdx),
+		m.trackChangedCmds(),
+		setStatus(&m, "Playlist reversed", false),
+	)
 }
 
 func (m Model) savePlaylist() (tea.Model, tea.Cmd) {

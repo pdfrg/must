@@ -357,6 +357,7 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "D", Desc: "clear playlist"},
 		{Key: "J/K", Desc: "move track down/up"},
 		{Key: "g/G", Desc: "move track to top/bottom"},
+		{Key: "X", Desc: "reverse playlist order"},
 		{Key: "S", Desc: "save playlist"},
 		{Key: "R", Desc: "rescan library"},
 		{Key: "y", Desc: "plain lyrics"},
