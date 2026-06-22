@@ -336,6 +336,11 @@ func (m Model) renderModal() string {
 			m.sleepTimerModal.SetSize(m.width, m.height)
 			return m.sleepTimerModal.View()
 		}
+	case ModalTempDirs:
+		if m.tempDirsModal != nil {
+			m.tempDirsModal.SetSize(m.width, m.height)
+			return m.tempDirsModal.View()
+		}
 	}
 	return ""
 }

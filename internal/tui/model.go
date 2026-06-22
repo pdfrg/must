@@ -44,6 +44,7 @@ const (
 	ModalGallery
 	ModalOptions
 	ModalSleepTimer
+	ModalTempDirs
 )
 
 type Model struct {
@@ -160,6 +161,7 @@ type Model struct {
 	galleryModal    *modals.Gallery
 	optionsModal    *modals.Options
 	sleepTimerModal *modals.SleepTimer
+	tempDirsModal   *modals.TempDirs
 	viewport        viewport.Model
 	viewportReady   bool
 
@@ -364,6 +366,7 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "I", Desc: "artist gallery"},
 		{Key: "c", Desc: "copy song info"},
 		{Key: "z", Desc: "sleep timer"},
+		{Key: "T", Desc: "temp directories"},
 		{Key: "o", Desc: "options"},
 		{Key: "?", Desc: "help"},
 		{Key: "q/ctrl+c", Desc: "quit"},

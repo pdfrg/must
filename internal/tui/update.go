@@ -97,6 +97,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case modals.OptionsMsg:
 		return m.handleOptionsModalMsg(msg)
 
+	case modals.TempDirsModalMsg:
+		return m.handleTempDirsModalMsg(msg)
+
 	case modals.SleepTimerMsg:
 		m.activeModal = ModalNone
 		if msg.Closed {
@@ -717,6 +720,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.SleepTimer):
 		return m.openSleepTimer()
 
+	case key.Matches(msg, m.keyMap.TempDirs):
+		return m.openTempDirs()
+
 	case key.Matches(msg, m.keyMap.Options):
 		return m.openOptions()
 
@@ -883,6 +889,11 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case ModalSleepTimer:
 		if m.sleepTimerModal != nil {
 			cmd := m.sleepTimerModal.Update(msg)
+			return m, cmd
+		}
+	case ModalTempDirs:
+		if m.tempDirsModal != nil {
+			cmd := m.tempDirsModal.Update(msg)
 			return m, cmd
 		}
 	}
@@ -1394,6 +1405,127 @@ func (m *Model) stopSleepTimer() {
 	m.sleepTimerExpiresAt = time.Time{}
 	m.quittingActive = false
 	m.quittingStartedAt = time.Time{}
+}
+
+func (m Model) openTempDirs() (tea.Model, tea.Cmd) {
+	if len(m.cfg.TempDirs) == 0 {
+		return m, setStatus(&m, "No temp dirs configured — set temp_dirs in config", true)
+	}
+	m.tempDirsModal = modals.NewTempDirs(m.styles)
+	m.tempDirsModal.SetSize(m.width, m.height)
+	m.tempDirsModal.SetDirs(m.cfg.TempDirs)
+	m.activeModal = ModalTempDirs
+	return m, clearKittyImagesCmdIf(m.imageProtocol)
+}
+
+func (m Model) handleTempDirsModalMsg(msg modals.TempDirsModalMsg) (tea.Model, tea.Cmd) {
+	if msg.Closed {
+		m.activeModal = ModalNone
+		m.tempDirsModal = nil
+		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+	}
+
+	tracks := loadDirTracks(msg.DirPath, m.libraryDB)
+	if len(tracks) == 0 {
+		m.activeModal = ModalNone
+		m.tempDirsModal = nil
+		return m, setStatus(&m, "No audio files found", true)
+	}
+
+	switch msg.Action {
+	case "play":
+		m.playlist = tracks
+		m.currentIndex = 0
+		m.shuffleOrder = nil
+		if m.shuffle {
+			m.shuffleOrder = shuffleIndices(len(m.playlist))
+		}
+		m.updatePlaylist()
+		m.playlistWidget.SetCursor(0)
+		m.activeModal = ModalNone
+		m.tempDirsModal = nil
+		paths := m.buildMPVPlaylistPaths()
+		return m, tea.Batch(
+			startPlaybackCmd(m.mpvBackend, paths, 0),
+			m.trackChangedCmds(),
+			renderAlbumArtAfterDelay(),
+		)
+
+	case "enqueue":
+		wasPlaying := m.playing && m.mpvBackend.IsRunning()
+		m.playlist = append(m.playlist, tracks...)
+		m.updatePlaylist()
+		m.activeModal = ModalNone
+		m.tempDirsModal = nil
+
+		if wasPlaying {
+			newPaths := make([]string, len(tracks))
+			for i, t := range tracks {
+				newPaths[i] = t.Path
+			}
+			_ = m.mpvBackend.AppendToPlaylist(newPaths)
+			return m, tea.Batch(
+				setStatus(&m, fmt.Sprintf("Enqueued %d track(s)", len(tracks)), false),
+				renderAlbumArtAfterDelay(),
+			)
+		} else if len(m.playlist) > 0 {
+			paths := m.buildMPVPlaylistPaths()
+			playIdx := m.playlistIndexToMPVIndex(len(m.playlist) - len(tracks))
+			return m, tea.Batch(
+				startPlaybackCmd(m.mpvBackend, paths, playIdx),
+				m.trackChangedCmds(),
+				setStatus(&m, fmt.Sprintf("Enqueued %d track(s) — playing", len(tracks)), false),
+				renderAlbumArtAfterDelay(),
+			)
+		}
+
+		return m, setStatus(&m, fmt.Sprintf("Enqueued %d track(s)", len(tracks)), false)
+
+	case "enqueue_next":
+		wasPlaying := m.playing && m.mpvBackend.IsRunning()
+		insertAt := m.currentIndex + 1
+		if insertAt > len(m.playlist) {
+			insertAt = len(m.playlist)
+		}
+
+		m.playlist = append(m.playlist[:insertAt], append(tracks, m.playlist[insertAt:]...)...)
+
+		if m.currentIndex >= insertAt {
+			m.currentIndex += len(tracks)
+		}
+
+		m.updatePlaylist()
+		m.activeModal = ModalNone
+		m.tempDirsModal = nil
+
+		if wasPlaying {
+			mpvInsertAt := m.playlistIndexToMPVIndex(m.currentIndex)
+			newPaths := make([]string, len(tracks))
+			for i, t := range tracks {
+				newPaths[i] = t.Path
+			}
+			_ = m.mpvBackend.InsertInPlaylist(newPaths, mpvInsertAt)
+			return m, tea.Batch(
+				setStatus(&m, fmt.Sprintf("Enqueued next %d track(s)", len(tracks)), false),
+				renderAlbumArtAfterDelay(),
+			)
+		} else if len(m.playlist) > 0 {
+			paths := m.buildMPVPlaylistPaths()
+			playIdx := m.playlistIndexToMPVIndex(insertAt)
+			return m, tea.Batch(
+				startPlaybackCmd(m.mpvBackend, paths, playIdx),
+				m.trackChangedCmds(),
+				setStatus(&m, fmt.Sprintf("Enqueued next %d track(s) — playing", len(tracks)), false),
+				renderAlbumArtAfterDelay(),
+			)
+		}
+
+		return m, setStatus(&m, fmt.Sprintf("Enqueued next %d track(s)", len(tracks)), false)
+	}
+
+	m.activeModal = ModalNone
+	m.tempDirsModal = nil
+	return m, nil
 }
 
 func (m Model) toggleVisFullscreen() (tea.Model, tea.Cmd) {
