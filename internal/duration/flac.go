@@ -37,11 +37,11 @@ func flacDuration(f *os.File) (float64, error) {
 			}
 
 			sampleRate := int(binary.BigEndian.Uint32([]byte{
-				0, streamInfo[0], streamInfo[1], streamInfo[2],
-			}) >> 4)
+				streamInfo[10], streamInfo[11], streamInfo[12], 0,
+			}) >> 12)
 
-			totalSamplesHi := int(streamInfo[6]&0xF) << 32
-			totalSamplesLo := int(binary.BigEndian.Uint32(streamInfo[7:11]))
+			totalSamplesHi := int(streamInfo[13]&0x0F) << 32
+			totalSamplesLo := int(binary.BigEndian.Uint32(streamInfo[14:18]))
 			totalSamples := totalSamplesHi | totalSamplesLo
 
 			if totalSamples == 0 || sampleRate == 0 {
