@@ -6,7 +6,7 @@
 
 <img src="assets/must_bubbles_logo.png" alt="must icon" width="200" align="left" style="margin-right: 20px; margin-top: -20px; margin-bottom: 20px;">
 
-### A fast, beautiful TUI music player for your local music library. Built with Go + Bubble Tea.
+### A fast, beautiful TUI music player for your local music library _AND_ Subsonic-compatible streaming server. Built with Go + Bubble Tea.
 
 ![must default view](assets/must_default_view.png)
 
@@ -16,19 +16,19 @@
 
 1. TUI speed — incredibly fast, responsive, keyboard-driven.
 
-2. Prominent high-res album art _in the terminal_.
+2. Play local music files, from your streaming server, or **both at the same time**.
 
-3. Easy keybindings, always visible in footer. No memorization needed.
+3. Prominent high-res album art _in the terminal_.
 
-4. Lyrics and artist info view, with artist thumb, image gallery, discography, and bio.
+4. Easy keybindings, always visible in footer. No memorization needed.
 
-5. Fuzzy search all or specific tags (artist, album, year, genre).
+5. Lyrics and artist info view, with artist thumb, image gallery, discography, and bio.
 
-6. Omarchy theme integration with live reloads.
+6. Fuzzy search all or specific tags (artist, album, year, genre).
 
-7. IPC control — control must from the command line while it's running.
+7. Omarchy theme integration with live reloads.
 
-8. Simple, doesn't try to do everything.
+8. IPC control — control must from the command line while it's running.
 
 ## Features
 
@@ -45,8 +45,9 @@
 - **Playlist Management**: Reorder (J/K/g/G), save (S), delete (d), clear (D), enqueue next (E), move to top/bottom
 - **Session Restore**: Automatically restores last session on startup
 - **Sleep Timer & Alarm Clock**: Fall asleep or wake up to your music
-- **4 Layouts**: `large` (default), `medium`, `compact`, `narrow`
+- **4 Layouts**: `large` (default), `medium`, `compact`, `narrow` (sidebar or mobile format)
 - **IPC Control**: Control a running must instance from the terminal (`must play`, `must next`, `must find radiohead`, etc.)
+- **Subsonic/Navidrome Integration**: Search and stream from any Subsonic-compatible server (Navidrome, Jellyfin, etc.). Use `subsonic:artist:<q>`, `subsonic:album:<q>`, etc. in IPC searches, or configure a server name alias like `navidrome:<q>`. Search modal supports local-only, subsonic-only, or combined search mode.
 - **Options Modal**: Adjust replaygain, view, and visualizer settings on the fly
 
 ## Installation

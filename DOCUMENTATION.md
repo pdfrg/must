@@ -65,8 +65,11 @@ COMMANDS:
   list                        Show full playlist
   find <query> / f <query>    Search library, returns numbered results
                               Prefix: artist:<q>, album:<q>, genre:<q>, year:<y>
-  library                     Show music directory and stats
-  playlists                   List saved playlists
+                              Subsonic: subsonic:artist:<q>, subsonic:album:<q>,
+                                subsonic:song:<q>, subsonic:genre:<q>, subsonic:year:<y>
+                              (config server_name prefix also works, e.g. navidrome:<q>)
+  library                     Show music directory, library stats, and Subsonic status
+  playlists                   List saved and Subsonic playlists
   save <name>                 Save current playlist as .m3u
   rescan                      Rescan music library
 
@@ -74,6 +77,7 @@ ARG resolution for play / enqueue / enqueue-next:
   <n>           Result number from last 'must find'
   /path         File, album directory, or .m3u playlist
   playlist:<n>  Saved playlist from playlists directory
+  subsonic:<q>  Search Subsonic server and play (or server_name:<q>)
   artist:<q>    Search and play artist
   album:<q>     Search and play album
   genre:<q>     Search and play genre
@@ -178,8 +182,21 @@ Config file: `~/.config/must/config.toml` (auto-created with defaults on first r
 | `[lastfm]` | Last.fm scrobbling (run `must --lastfm-auth`) |
 | `[listenbrainz]` | ListenBrainz scrobbling |
 | `[lidarr]` | Lidarr music manager integration |
+| `[subsonic]` | Subsonic-compatible server client (Navidrome, Jellyfin, etc.) |
 | `notifications_enabled` | Desktop notifications on song change |
 | `notifications_show_art` | Include album art thumbnail in notifications |
+
+### Subsonic Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `[subsonic]` | | Subsonic-compatible server client (Navidrome, Jellyfin, etc.) |
+| `enabled` | `false` | Enable Subsonic server integration |
+| `url` | `""` | Server base URL (e.g., `http://navidrome.local:4533`) |
+| `username` | `""` | Subsonic username |
+| `password` | `""` | Subsonic password or hex-encoded token |
+| `server_name` | `"Subsonic"` | Display name for the server; used as a prefix in IPC commands (e.g., `navidrome:radiohead`) |
+| `server_badge` | `"S"` | 1-2 char badge shown next to remote search results and tracks |
 
 ### Audio Settings
 
@@ -258,6 +275,16 @@ CREATE VIRTUAL TABLE tracks_fts USING fts5(
 - **Porter stemmer**: "correction" matches "corrected"
 - **Prefix queries**: `rad*` matches "radio", "radiohead"
 - **Fallback**: SQL LIKE for patterns FTS5 can't handle
+
+### Subsonic Search
+
+When configured, Subsonic search is available through IPC commands and the search modal:
+
+- **IPC `find`**: Use `subsonic:artist:<q>`, `subsonic:album:<q>`, `subsonic:song:<q>` (alias `track`/`title`), `subsonic:genre:<q>`, or `subsonic:year:<y>` for field-specific remote search. Plain `subsonic:<q>` does a combined artist/album/song search.
+- **Server name alias**: The config `server_name` value can be used as a prefix instead of `subsonic`. Example: with `server_name = "Navidrome"`, use `navidrome:radiohead` — it normalizes to `subsonic:radiohead`.
+- **Search modal**: Three source modes cycled via `Ctrl+t`: Local only (`Ctrl+l`), Subsonic only (`Ctrl+s`), or Both combined.
+- **Result display**: Remote results are tagged with the configured `server_badge` (e.g., `[S] Artist: Radiohead (9 albums)`). Use result numbers from `must find` to play remote tracks.
+- **Streaming**: Playing a Subsonic result streams the audio from the remote server via MPV.
 
 ### Audio Info Properties
 

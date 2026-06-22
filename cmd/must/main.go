@@ -464,8 +464,11 @@ CONTROL COMMANDS (when must is already running):
   list                        Show full playlist
   find <query> / f <query>    Search library, returns numbered results
                               Prefix: artist:<q>, album:<q>, genre:<q>, year:<y>
-  library                     Show music directory and stats
-  playlists                   List saved playlists
+                              Subsonic: subsonic:artist:<q>, subsonic:album:<q>,
+                                subsonic:song:<q>, subsonic:genre:<q>, subsonic:year:<y>
+                              (config server_name prefix also works, e.g. navidrome:<q>)
+  library                     Show music directory, library stats, and Subsonic status
+  playlists                   List saved and Subsonic playlists
   save <name>                 Save current playlist as .m3u
   rescan                      Rescan music library
 
@@ -473,6 +476,7 @@ ARG resolution for play / enqueue / enqueue-next:
   <n>           Result number from last 'must find'
   /path         File, album directory, or .m3u playlist
   playlist:<n>  Saved playlist from playlists directory
+  subsonic:<q>  Search Subsonic server and play (or server_name:<q>)
   artist:<q>    Search and play artist
   album:<q>     Search and play album
   genre:<q>     Search and play genre
