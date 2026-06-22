@@ -50,6 +50,7 @@ type KeyMap struct {
 	VisCycleDown    key.Binding
 	VisFullscreen   key.Binding
 	CopyClipboard   key.Binding
+	ReversePlaylist key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -233,6 +234,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("c"),
 		key.WithHelp("c", "copy song info"),
 	),
+	ReversePlaylist: key.NewBinding(
+		key.WithKeys("X"),
+		key.WithHelp("X", "reverse playlist"),
+	),
 }
 
 func (k KeyMap) PlaybackBindings() []key.Binding {
@@ -257,7 +262,7 @@ func (k KeyMap) GlobalBindings() []key.Binding {
 		k.Quit, k.Search, k.Help, k.Escape,
 		k.Rescan, k.ClearPlaylist, k.DeleteTrack,
 		k.Lyrics, k.SyncedLyrics, k.ArtistBio, k.Gallery, k.LidarrBrowser,
-		k.MoveTrackUp, k.MoveTrackDown, k.MoveTrackTop, k.MoveTrackBottom, k.SavePlaylist,
+		k.MoveTrackUp, k.MoveTrackDown, k.MoveTrackTop, k.MoveTrackBottom, k.SavePlaylist, k.ReversePlaylist,
 		k.Options, k.SleepTimer, k.UpdateView,
 	}
 }
