@@ -192,6 +192,10 @@ func (m Model) renderNowPlaying() string {
 		data.StatusIsErr = m.statusIsErr
 	}
 
+	if m.scanning && track == nil && data.StatusMsg == "" {
+		data.StatusMsg = "Scanning music library..."
+	}
+
 	layout := m.layoutMode()
 
 	switch layout {

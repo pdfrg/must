@@ -1624,7 +1624,7 @@ func (m Model) handleOptionsModalMsg(msg modals.OptionsMsg) (tea.Model, tea.Cmd)
 	if msg.ReplayGainMode != nil {
 		m.cfg.ReplayGainMode = *msg.ReplayGainMode
 		if m.mpvBackend != nil {
-			m.mpvBackend.SetReplayGainMode(*msg.ReplayGainMode)
+			_ = m.mpvBackend.SetReplayGainMode(*msg.ReplayGainMode)
 		}
 		changed = true
 	}
@@ -1787,6 +1787,7 @@ func (m Model) rescanLibrary() (tea.Model, tea.Cmd) {
 		m.libraryDB = nil
 	}
 	m.libraryReady = false
+	m.scanning = true
 	m.artists = nil
 	return m, scanLibraryCmd(m.cfg)
 }
@@ -2009,22 +2010,6 @@ func (m Model) handleSaveInputKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.saveInput, cmd = m.saveInput.Update(msg)
 		return m, cmd
 	}
-}
-
-func (m Model) openLibraryEnqueueNext() (tea.Model, tea.Cmd) {
-	if !m.libraryReady || m.libraryDB == nil {
-		return m, setStatus(&m, "Library not ready", true)
-	}
-	m.activeModal = ModalLibrary
-	if m.libraryModal == nil {
-		m.libraryModal = modals.NewLibrary(m.styles, m.libraryDB)
-	}
-	m.libraryModal.SetArtists(m.artists)
-	m.libraryModal.SetAlbumSort(m.cfg.AlbumSort)
-	m.libraryModal.LoadAlbumsForArtist()
-	m.libraryModal.SetSize(m.width, m.height)
-	m.libraryModal.SetEnqueueNextMode(true)
-	return m, clearKittyImagesCmdIf(m.imageProtocol)
 }
 
 func (m Model) enqueueHighlightedNext() (tea.Model, tea.Cmd) {

@@ -287,7 +287,7 @@ func (m Model) ctlReplayGain(args []string) (Model, ctl.CtlResult, tea.Cmd) {
 	case "off", "track", "album":
 		m.cfg.ReplayGainMode = mode
 		if m.mpvBackend != nil {
-			m.mpvBackend.SetReplayGainMode(mode)
+			_ = m.mpvBackend.SetReplayGainMode(mode)
 		}
 		if err := m.cfg.Save(); err != nil {
 			logf("Failed to save config: %v", err)
