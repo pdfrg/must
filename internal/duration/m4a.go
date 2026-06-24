@@ -91,15 +91,15 @@ func parseMoovAtom(f *os.File, remaining int64) (float64, error) {
 				if _, err := io.ReadFull(f, data); err != nil {
 					break
 				}
-				timescale = int64(binary.BigEndian.Uint32(data[4:8]))
-				duration = int64(binary.BigEndian.Uint32(data[8:12]))
+				timescale = int64(binary.BigEndian.Uint32(data[12:16]))
+				duration = int64(binary.BigEndian.Uint32(data[16:20]))
 			} else {
 				data := make([]byte, 111)
 				if _, err := io.ReadFull(f, data); err != nil {
 					break
 				}
-				timescale = int64(binary.BigEndian.Uint32(data[12:16]))
-				duration = int64(binary.BigEndian.Uint64(data[16:24]))
+				timescale = int64(binary.BigEndian.Uint32(data[20:24]))
+				duration = int64(binary.BigEndian.Uint64(data[24:32]))
 			}
 
 			if timescale > 0 && duration > 0 {
