@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -199,12 +198,14 @@ func main() {
 
 	// Check for existing running instance
 	socketPath := config.GetCtlSocketPath()
-	if conn, err := net.DialTimeout("unix", socketPath, 100*time.Millisecond); err == nil {
+	if conn, err := ctl.DialSocket(socketPath, 100*time.Millisecond); err == nil {
 		_ = conn.Close()
 		fmt.Fprintf(os.Stderr, "must is already running. Use 'must status' or similar commands.\n")
 		os.Exit(1)
 	}
-	_ = os.Remove(socketPath)
+	if runtime.GOOS != "windows" {
+		_ = os.Remove(socketPath)
+	}
 
 	if randomMode {
 		cfg.Shuffle = true

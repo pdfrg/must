@@ -1,0 +1,40 @@
+project_name: must
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: must
+    main: ./cmd/must
+    binary: must
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+      - -X github.com/pdfrg/must/internal/api.LastFMAPIKey={{.Env.LASTFM_KEY}}
+      - -X github.com/pdfrg/must/internal/api.LastFMSharedSecret={{.Env.LASTFM_SECRET}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: must
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+
+release:
+  github:
+    owner: pdfrg
+    name: must
+  draft: true

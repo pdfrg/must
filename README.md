@@ -72,6 +72,11 @@
 - **Go 1.26+** — To build from source
 - **Any NerdFont** — For proper symbol display
 
+> **Note:** Windows and macOS support is experimental and untested.
+> Feedback, fixes, or improvements would be greatly appreciated.
+
+New to mpv or NerdFonts? See [HELP.md](HELP.md) for platform-specific setup instructions.
+
 ### Recommended
 
 - **mpv-mpris** — Required for media key support
