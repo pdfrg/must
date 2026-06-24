@@ -8,7 +8,7 @@
 
 ### A fast, beautiful TUI music player for your local music library _AND_ Subsonic-compatible streaming server. Built with Go + Bubble Tea.
 
-![must default view](assets/must_default_view.png)
+![must default view](assets/must_playlist.png)
 
 **See additional [SCREENSHOTS](SCREENSHOTS.md)**
 
@@ -31,6 +31,8 @@
 8. IPC control — control must from the command line while it's running.
 
 9. Download/temp directory browser — trial those potentially janky mp3s you grabbed before promoting them to your library.
+
+![must visualizer](assets/must_visualizer.png)
 
 ## Features
 
