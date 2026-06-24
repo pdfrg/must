@@ -1,12 +1,10 @@
 [![CI](https://github.com/pdfrg/must/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pdfrg/must/actions/workflows/ci.yml)
 
-**If you like must, please check out [rptui](https://github.com/pdfrg/rptui), a Radio Paradise TUI.**
+<img src="assets/must_bubbles_logo.png" alt="must icon" width="200" align="left" style="margin-right: 20px; margin-top: -20px; margin-bottom: 20px;">
 
 # must - MUSic TUI
 
-<img src="assets/must_bubbles_logo.png" alt="must icon" width="200" align="left" style="margin-right: 20px; margin-top: -20px; margin-bottom: 20px;">
-
-### A fast, beautiful TUI music player for your local music library _AND_ Subsonic-compatible streaming server. Built with Go + Bubble Tea.
+### A fast, beautiful TUI music player for your local music library _and_ Subsonic-compatible streaming server. Built with Go + Bubble Tea.
 
 ![must default view](assets/must_playlist.png)
 
@@ -95,6 +93,10 @@ See [DOCUMENTATION.md](DOCUMENTATION.md) for cli usage, IPC control commands, ke
 ## Attribution
 
 Audio visualizations: [cliamp](https://github.com/bjarneo/cliamp). Awesome music player with retro Winamp style in the terminal.
+
+## See Also
+
+**If you like must, please check out [rptui](https://github.com/pdfrg/rptui), a Radio Paradise TUI.**
 
 ## License
 
