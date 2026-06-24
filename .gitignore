@@ -4,3 +4,6 @@ roadmap.txt
 *.db
 .build-secrets
 dist/
+AGENTS.md
+ISSUES.md
+PROGRESS.md

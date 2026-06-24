@@ -30,6 +30,8 @@
 
 8. IPC control — control must from the command line while it's running.
 
+9. Download/temp directory browser — trial those potentially janky mp3s you grabbed before promoting them to your library.
+
 ## Features
 
 - **Local Music Library**: Scan and browse your music collection with a 3-column browser (artists, albums, tracks), genre browsing, and field-specific search
@@ -42,13 +44,14 @@
 - **Lidarr Integration**: View artist/album monitoring status, open in Lidarr
 - **Visualizer**: 9 real-time audio visualizations (bars, braille, wave, stars, rain, etc.)
 - **Themes**: 6 built-in themes, custom colors.toml, automatic Omarchy theme detection with live-reloads
-- **Playlist Management**: Reorder (J/K/g/G), save (S), delete (d), clear (D), enqueue next (E), move to top/bottom
+- **Playlist Management**: Reorder (J/K/g/G), save (S), delete (d), clear (D), enqueue next (E), and reverse playlist order (X).
 - **Session Restore**: Automatically restores last session on startup
 - **Sleep Timer & Alarm Clock**: Fall asleep or wake up to your music
 - **4 Layouts**: `large` (default), `medium`, `compact`, `narrow` (sidebar or mobile format)
 - **IPC Control**: Control a running must instance from the terminal (`must play`, `must next`, `must find radiohead`, etc.)
 - **Subsonic/Navidrome Integration**: Search and stream from any Subsonic-compatible server (Navidrome, Jellyfin, etc.). Use `subsonic:artist:<q>`, `subsonic:album:<q>`, etc. in IPC searches, or configure a server name alias like `navidrome:<q>`. Search modal supports local-only, subsonic-only, or combined search mode.
 - **Options Modal**: Adjust replaygain, view, and visualizer settings on the fly
+- **Temp Directories Modal**: Easily find and play music not stored in the main library.  Perfect for listening to recent downloads before deciding whether to add to your library.
 
 ## Installation
 
