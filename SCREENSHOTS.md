@@ -32,10 +32,41 @@
 
 ![options](assets/must_options_modal.png)
 
+## IPC Commands
+
+![ipc](assets/must_ipc.png)
+
+## IPC Find
+
+![find](assets/must_ipc_find.png)
+
 ## Attribution
 
-All screenshots feature the excellent [Omarchy Vurple Theme](https://github.com/tahfizhabib/omarchy-vurple-theme).
+All screenshots above feature the excellent [Omarchy Vurple Theme](https://github.com/tahfizhabib/omarchy-vurple-theme).
 
+# Built-in Themes
 
+## Catppuccin-Mocha
 
+![catppuccin-mocha](assets/must_catppuccin_mocha.png)
+
+## Gruvbox-Dark
+
+![gruvbox-dark](assets/must_gruvbox_dark.png)
+
+## Dark-Red
+
+![dark-red](assets/must_dark_red.png)
+
+## Osaka-Jade
+
+![osaka-jade](assets/must_osaka_jade.png)
+
+## Synth
+
+![synth](assets/must_synth.png)
+
+## Basic
+
+![basic](assets/must_basic.png)
 
