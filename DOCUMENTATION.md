@@ -208,6 +208,32 @@ Config file: `~/.config/must/config.toml` (auto-created with defaults on first r
 | `[audio]` | | Audio output settings |
 | `ssh_audio_server` | `""` | Audio server address for SSH forwarding (e.g., `tcp:localhost:4713`) |
 
+## Scrobbling (Optional)
+
+To enable scrobbling, you will need to configure at least one service:
+
+**Last.fm**: Two options...
+1. Build from source or `go install`:
+   Requires your own Last.fm API account — free, easy sign-up at [last.fm](https://www.last.fm/api/account/create).
+   Pass API key and shared secret as build flags:
+
+   ```bash
+   go build -ldflags "-s -w -X github.com/pdfrg/must/internal/api.LastFMAPIKey=YOUR_KEY -X github.com/pdfrg/must/internal/api.LastFMSharedSecret=YOUR_SECRET" -o must ./cmd/must
+   ```
+2. Download a pre-built binary with the API key and shared secret already built-in from the [releases page](https://github.com/pdfrg/must/releases).
+
+For both methods (1) and (2): run `must --lastfm-auth`.
+This will open your default browser to the Last.fm login page to authorize the app.
+The session key will be automatically added to your must config file.
+Session keys do not expire.
+
+**ListenBrainz**: Get a free token from https://listenbrainz.org/settings/
+
+Set via config file:
+```toml
+listenbrainz_token = "your-token"
+```
+
 ## Album Art Priority
 
 1. Embedded cover art (from tags)

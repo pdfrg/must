@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
-	"path/filepath"
+	"runtime"
 	"sync"
 
 	tea "charm.land/bubbletea/v2"
@@ -17,13 +17,7 @@ type Server struct {
 }
 
 func StartServer(socketPath string, program *tea.Program) (*Server, error) {
-	dir := filepath.Dir(socketPath)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, err
-	}
-	_ = os.Remove(socketPath)
-
-	listener, err := net.Listen("unix", socketPath)
+	listener, err := ctlListen(socketPath)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +47,9 @@ func StartServer(socketPath string, program *tea.Program) (*Server, error) {
 func (s *Server) Stop() {
 	_ = s.listener.Close()
 	s.wg.Wait()
-	_ = os.Remove(s.sockPath)
+	if runtime.GOOS != "windows" {
+		_ = os.Remove(s.sockPath)
+	}
 }
 
 func handleConn(conn net.Conn, program *tea.Program) {

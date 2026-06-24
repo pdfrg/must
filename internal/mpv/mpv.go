@@ -90,8 +90,6 @@ func (m *MPVBackend) Start(paths []string) error {
 			return fmt.Errorf("failed to create socket directory: %w", err)
 		}
 		_ = os.Remove(m.socketPath)
-	} else {
-		_ = os.Remove(m.socketPath)
 	}
 
 	if m.pulseServer != "" {
@@ -121,7 +119,11 @@ func (m *MPVBackend) Start(paths []string) error {
 		logger.Printf("MPV Start: socket=%s, paths=%d", m.socketPath, len(paths))
 	}
 
-	m.process = exec.Command("mpv", args...)
+	binaryName := "mpv"
+	if runtime.GOOS == "windows" {
+		binaryName = "mpv.exe"
+	}
+	m.process = exec.Command(binaryName, args...)
 	m.process.Stdout = nil
 
 	if m.pulseServer != "" {
@@ -164,9 +166,11 @@ func (m *MPVBackend) Start(paths []string) error {
 
 	time.Sleep(200 * time.Millisecond)
 
-	if _, err := os.Stat(m.socketPath); os.IsNotExist(err) {
-		if logger != nil {
-			logger.Printf("WARNING: MPV socket not created at %s", m.socketPath)
+	if runtime.GOOS != "windows" {
+		if _, err := os.Stat(m.socketPath); os.IsNotExist(err) {
+			if logger != nil {
+				logger.Printf("WARNING: MPV socket not created at %s", m.socketPath)
+			}
 		}
 	}
 
@@ -188,7 +192,9 @@ func (m *MPVBackend) stopLocked() error {
 	m.currentPaths = nil
 	m.isPaused = false
 	m.pauseStartTime = time.Time{}
-	_ = os.Remove(m.socketPath)
+	if runtime.GOOS != "windows" {
+		_ = os.Remove(m.socketPath)
+	}
 	return nil
 }
 
@@ -587,14 +593,7 @@ func (m *MPVBackend) GetSocketPath() string {
 }
 
 func (m *MPVBackend) sendIPCCommandLocked(cmd IPCCommand) (*IPCResponse, error) {
-	var conn net.Conn
-	var err error
-
-	if runtime.GOOS == "windows" {
-		conn, err = net.Dial("pipe", m.socketPath)
-	} else {
-		conn, err = net.Dial("unix", m.socketPath)
-	}
+	conn, err := dialMPV(m.socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MPV socket: %w", err)
 	}

@@ -7,8 +7,12 @@ import (
 	"time"
 )
 
+func DialSocket(socketPath string, timeout time.Duration) (net.Conn, error) {
+	return ctlDial(socketPath, timeout)
+}
+
 func SendCommand(socketPath, cmd string, args []string) (*CtlResult, error) {
-	conn, err := net.DialTimeout("unix", socketPath, 2*time.Second)
+	conn, err := ctlDial(socketPath, 2*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("must is not running: %w", err)
 	}
