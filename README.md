@@ -1,10 +1,19 @@
 [![CI](https://github.com/pdfrg/must/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pdfrg/must/actions/workflows/ci.yml)
 
-<img src="assets/must_bubbles_logo.png" alt="must icon" width="200" align="left" style="margin-right: 20px; margin-top: -20px; margin-bottom: 20px;">
+<table>
+<tr>
+<td><img src="assets/must_bubbles_logo.png" alt="must icon" width="200"></td>
+<td>
 
 # must - MUSic TUI
 
 ### A fast, beautiful TUI music player for your local music library _and_ Subsonic-compatible streaming server. Built with Go + Bubble Tea.
+
+</td>
+</tr>
+</table>
+
+<br>
 
 ![must default view](assets/must_playlist.png)
 
