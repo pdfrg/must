@@ -101,6 +101,7 @@ ARG resolution for play / enqueue / enqueue-next:
 | `D` | Clear playlist |
 | `J` / `K` | Move track down / up |
 | `g` / `G` | Move track to top / bottom |
+| `X` | Reverse playlist order |
 | `S` | Save playlist to M3U |
 | `R` | Rescan library |
 | `c` | Copy song info to clipboard |
@@ -109,6 +110,7 @@ ARG resolution for play / enqueue / enqueue-next:
 | `i` | Artist bio |
 | `I` | Artist gallery |
 | `L` | Lidarr browser |
+| `T` | Temp directories modal | 
 | `o` | Options modal |
 | `z` | Sleep timer |
 | `V` | Visualizer view |
@@ -139,6 +141,7 @@ Config file: `~/.config/must/config.toml` (auto-created with defaults on first r
 | `restore_on_start` | `true` | Restore last session on startup |
 | `autoplay` | `false` | Auto-play a random album on launch |
 | `layout` | `large` | UI layout: large, medium, compact, narrow |
+| `temp_dirs` | `["~/Downloads", "/tmp/music"]` | Array of directories for music not in main library |
 
 ### Display & Theme Settings
 
