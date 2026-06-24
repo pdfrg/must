@@ -33,11 +33,11 @@
 
 6. Fuzzy search all or specific tags (artist, album, year, genre).
 
-7. Omarchy theme integration with live reloads.
+7. IPC control — control must from the command line while it's running.
 
-8. IPC control — control must from the command line while it's running.
+8. Download/temp directory browser — trial those potentially janky mp3s you grabbed before promoting them to your library.
 
-9. Download/temp directory browser — trial those potentially janky mp3s you grabbed before promoting them to your library.
+9. Omarchy theme integration with live reloads.
 
 ![must visualizer](assets/must_visualizer.png)
 
@@ -81,6 +81,7 @@ New to mpv or NerdFonts? See [HELP.md](HELP.md) for platform-specific setup inst
 
 - **mpv-mpris** — Required for media key support
 - **libnotify** — Required for desktop notifications. `libnotify-bin` on Debian/Ubuntu.
+- **Kitty, Ghostty, or Rio terminal** — For best image support
 
 ### Build from Source
 
