@@ -10,7 +10,7 @@
 
 ![must default view](assets/must_playlist.png)
 
-**See additional [SCREENSHOTS](SCREENSHOTS.md)**
+**See additional [SCREENSHOTS.md](SCREENSHOTS.md).  Includes themes, views, modals, and IPC examples.**
 
 ## There's a million music players, why must?
 
@@ -54,14 +54,21 @@
 - **Subsonic/Navidrome Integration**: Search and stream from any Subsonic-compatible server (Navidrome, Jellyfin, etc.). Use `subsonic:artist:<q>`, `subsonic:album:<q>`, etc. in IPC searches, or configure a server name alias like `navidrome:<q>`. Search modal supports local-only, subsonic-only, or combined search mode.
 - **Options Modal**: Adjust replaygain, view, and visualizer settings on the fly
 - **Temp Directories Modal**: Easily find and play music not stored in the main library.  Perfect for listening to recent downloads before deciding whether to add to your library.
+- **Media Keys Support**: Use your keyboard's media keys to control playback (e.g. Fn+F4 to play/pause).  Requires `mpv-mpris`.
+- **Desktop Notifications**: On song changes, with optional album art.  Requires `libnotify`.
 
 ## Installation
 
 ### Prerequisites
 
 - **mpv** — Required for audio playback
-- **Go 1.23+** — To build from source
+- **Go 1.26+** — To build from source
 - **Any NerdFont** — For proper symbol display
+
+### Recommended
+
+- **mpv-mpris** — Required for media key support
+- **libnotify** — Required for desktop notifications. `libnotify-bin` on Debian/Ubuntu.
 
 ### Build from Source
 
