@@ -192,7 +192,7 @@ func readTrackFromFile(path string) models.Track {
 	if err != nil {
 		return t
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	metadata, err := tag.ReadFrom(f)
 	if err == nil {

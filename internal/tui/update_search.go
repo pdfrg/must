@@ -16,6 +16,7 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 	}
 
 	m.libraryReady = true
+	m.scanning = false
 	m.scanResult = msg.result
 	m.libraryDB = msg.db
 	logf("Library scan complete: %v", msg.result)

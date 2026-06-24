@@ -78,6 +78,7 @@ type Model struct {
 	audioInfo   *models.AudioInfo
 
 	libraryReady bool
+	scanning     bool
 	scanMsg      string
 	scanResult   *scanner.ScanResult
 
@@ -190,6 +191,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		randomMode:          randomMode,
 		noRestore:           noRestore,
 		autoplay:            autoplay,
+		scanning:            true,
 		playlist:            []models.Track{},
 		currentIndex:        -1,
 		repeatMode:          cfg.RepeatMode,
@@ -273,7 +275,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		m.mpvBackend.SetPulseServer(cfg.Audio.SSHAudioServer)
 	}
 	if cfg.ReplayGainMode != "" {
-		m.mpvBackend.SetReplayGainMode(cfg.ReplayGainMode)
+		_ = m.mpvBackend.SetReplayGainMode(cfg.ReplayGainMode)
 	}
 
 	if cfg.Subsonic.Enabled && cfg.Subsonic.URL != "" && cfg.Subsonic.Username != "" && cfg.Subsonic.Password != "" {
