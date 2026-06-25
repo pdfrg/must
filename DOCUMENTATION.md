@@ -173,7 +173,7 @@ Config file: `~/.config/must/config.toml` (auto-created with defaults on first r
 | `mode` | `Segmented` | Default mode: Bars, Braille, ClassicPeak, Wave, Stars, BrailleBars, Rain, Segmented, Binary |
 | `show_info` | `fade` | Song info overlay: fade, on, off |
 | `info_duration` | `5` | Seconds to show song info overlay |
-| `real_audio` | `true` | Use real audio capture (PipeWire/PulseAudio on Linux) |
+| `real_audio` | `true` | Use real audio capture. Linux: PipeWire/PulseAudio. Windows: WASAPI (built-in). macOS: SoX + BlackHole. |
 
 ### API Keys & Integrations
 

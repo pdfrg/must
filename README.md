@@ -72,8 +72,9 @@
 - **Go 1.26+** — To build from source
 - **Any NerdFont** — For proper symbol display
 
-> **Note:** Windows and macOS support is experimental and untested.
-> Feedback, fixes, or improvements would be greatly appreciated.
+> **Note:** Windows and macOS support includes real audio visualization
+> (WASAPI on Windows, SoX+BlackHole on macOS). Other platform features are
+> experimental and untested — feedback appreciated.
 
 New to mpv or NerdFonts? See [HELP.md](HELP.md) for platform-specific setup instructions.
 
@@ -82,6 +83,15 @@ New to mpv or NerdFonts? See [HELP.md](HELP.md) for platform-specific setup inst
 - **mpv-mpris** — Required for media key support
 - **libnotify** — Required for desktop notifications. `libnotify-bin` on Debian/Ubuntu.
 - **Kitty, Ghostty, or Rio terminal** — For best image support
+
+### Visualizer (Windows & macOS)
+
+- **Windows**: Real audio capture uses built-in WASAPI — no additional software needed.
+- **macOS**: Install SoX and BlackHole:
+  ```
+  brew install sox blackhole-2ch
+  ```
+  Then configure a Multi-Output Device in Audio MIDI Setup to route system audio through BlackHole.
 
 ### Build from Source
 
