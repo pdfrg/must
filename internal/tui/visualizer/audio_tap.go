@@ -160,6 +160,7 @@ type AudioTap struct {
 	closed     bool
 	sampleSize int
 	useStderr  bool
+	cleanup    func()
 }
 
 func findMonitorSourceNode() (int, error) {
@@ -579,11 +580,16 @@ func (t *AudioTap) Close() {
 		return
 	}
 	t.closed = true
+	if t.cleanup != nil {
+		t.cleanup()
+	}
 	if t.cmd != nil && t.cmd.Process != nil {
 		_ = t.cmd.Process.Kill()
 		_ = t.cmd.Wait()
+		<-t.done
+	} else {
+		close(t.done)
 	}
-	<-t.done
 }
 
 func (t *AudioTap) IsAlive() bool {

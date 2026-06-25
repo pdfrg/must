@@ -7,8 +7,8 @@ If you get stuck, feel free to open an issue and we'll help.
 
 Installing it is simple on every major platform.
 
-**Note:** Windows and macOS support is experimental and untested.
-Feedback, fixes, or improvements would be greatly appreciated.
+**Note:** Windows and macOS support includes real audio visualization.
+Other platform features are experimental and untested — feedback appreciated.
 
 ### Windows (Recommended: Scoop)
 
