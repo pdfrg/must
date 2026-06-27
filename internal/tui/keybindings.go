@@ -51,6 +51,8 @@ type KeyMap struct {
 	VisFullscreen   key.Binding
 	CopyClipboard   key.Binding
 	ReversePlaylist key.Binding
+	ToggleHeader    key.Binding
+	ToggleFooter    key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -238,6 +240,14 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("X"),
 		key.WithHelp("X", "reverse playlist"),
 	),
+	ToggleHeader: key.NewBinding(
+		key.WithKeys("H"),
+		key.WithHelp("H", "toggle header"),
+	),
+	ToggleFooter: key.NewBinding(
+		key.WithKeys("M"),
+		key.WithHelp("M", "toggle footer"),
+	),
 }
 
 func (k KeyMap) PlaybackBindings() []key.Binding {
@@ -264,5 +274,6 @@ func (k KeyMap) GlobalBindings() []key.Binding {
 		k.Lyrics, k.SyncedLyrics, k.ArtistBio, k.Gallery, k.LidarrBrowser,
 		k.MoveTrackUp, k.MoveTrackDown, k.MoveTrackTop, k.MoveTrackBottom, k.SavePlaylist, k.ReversePlaylist,
 		k.Options, k.SleepTimer, k.UpdateView,
+		k.ToggleHeader, k.ToggleFooter,
 	}
 }

@@ -32,6 +32,7 @@ type Footer struct {
 
 	lidarrConfigured bool
 	lidarrState      int
+	hidden           bool
 }
 
 const (
@@ -155,6 +156,10 @@ func (f Footer) scrobbleIndicator() string {
 	return strings.Join(parts, "")
 }
 
+func (f *Footer) SetHidden(hidden bool) {
+	f.hidden = hidden
+}
+
 func (f Footer) lidarrIndicator() string {
 	if !f.lidarrConfigured {
 		return ""
@@ -174,6 +179,9 @@ func (f Footer) lidarrIndicator() string {
 }
 
 func (f Footer) View() string {
+	if f.hidden {
+		return ""
+	}
 	renderLine := func(bindings []KeyBinding) string {
 		var parts []string
 		for _, kb := range bindings {

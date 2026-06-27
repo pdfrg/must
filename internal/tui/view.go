@@ -93,9 +93,11 @@ func (m Model) View() tea.View {
 
 	var b strings.Builder
 
-	headerView := m.header.View()
-	b.WriteString(headerView)
-	b.WriteString("\n\n")
+	if m.showHeader {
+		headerView := m.header.View()
+		b.WriteString(headerView)
+		b.WriteString("\n\n")
+	}
 
 	// Narrow: reserve space for album art above nowplaying
 	if layout == "narrow" {
@@ -135,7 +137,7 @@ func (m Model) View() tea.View {
 		currentHeight := lipgloss.Height(b.String())
 		m.bottomSectionStartRow = currentHeight + 1
 		footerHeight := lipgloss.Height(footerView)
-		if footerHeight == 0 {
+		if footerHeight == 0 && m.showFooter {
 			footerHeight = 1
 		}
 		remainingHeight := m.height - currentHeight - footerHeight
@@ -151,12 +153,16 @@ func (m Model) View() tea.View {
 			}
 		}
 
-		b.WriteString("\n")
-	} else {
+		if m.showFooter {
+			b.WriteString("\n")
+		}
+	} else if m.showFooter {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(footerView)
+	if m.showFooter {
+		b.WriteString(footerView)
+	}
 
 	return m.altView(b.String())
 }

@@ -48,6 +48,8 @@ type Config struct {
 	NotificationsShowArt  bool                  `toml:"notifications_show_art" comment:"include album art thumbnail in notifications (default: true)"`
 	Layout                string                `toml:"layout" comment:"UI layout mode\nlarge: full layout with all elements (default)\nmedium: no bottom view (no playlist/lyrics/visualizer)\ncompact: no album art, no bottom view, mini footer\nnarrow: album art top-left, now playing below, mini footer (default: large)"`
 	ForceProtocol         string                `toml:"force_protocol" comment:"force a specific image protocol instead of auto-detecting\noptions: kitty, sixel, halfblocks, iterm2, or empty for auto-detect (default: '')"`
+	ShowHeader            bool                  `toml:"show_header" comment:"show header bar with title (default: true)"`
+	ShowFooter            bool                  `toml:"show_footer" comment:"show footer bar with keybindings (default: true)"`
 	Audio                 AudioConfig           `toml:"audio" comment:"audio output settings"`
 }
 
@@ -126,6 +128,8 @@ func DefaultConfig() *Config {
 		TheAudioDBApiKey:      "123",
 		TransparentBackground: false,
 		DisableTheme:          false,
+		ShowHeader:            true,
+		ShowFooter:            true,
 		TerminalPalette: TerminalPaletteConfig{
 			Cursor: 2,
 			Accent: 4,
