@@ -258,6 +258,42 @@ protocols transparently).
 
 ---
 
+## Eye Candy
+
+Terminal music players span a wide range of visual polish — from purely
+utilitarian ncurses layouts to deliberately crafted interfaces. This matters
+most to users who spend significant time in the player and care about the
+aesthetic experience.
+
+| Dimension | must | cliamp | kew | rmpc | cmus | ncmpcpp |
+|-----------|------|--------|-----|------|------|---------|
+| **Album art display** | Full-width, prominent, multi-protocol | None | Sixel side/toggle | Side panel, multi-protocol | None | None |
+| **Visualizers** | 9 built-in types, real audio capture, fullscreen | Built-in + Lua plugin visualizers | Spectrum + external Chroma | Via Cava (external) | None | Via FIFO + FFTW (config-heavy) |
+| **Theme depth** | 6 themes + native Omarchy live-reload | 20 themes + community Omarchy hook | 26+ themes, album-color extraction | No theme system | Terminal colors only | Configurable ncurses colors |
+| **Layout variety** | 4 distinct layouts (large to narrow), responsive | Compact mode toggle | Custom pane positioning (4.1+) | Configurable columns | Fixed single layout | Extended song format only |
+| **Progress indicators** | **Gradient progress bars with elapsed/total** | Simple percentage | Bar-style progress | Basic indicator | ASCII progress | Text percentage |
+| **Typography & icons** | Nerd Font throughout, organized footer icons | Icons in EQ/transport, Winamp-style | Unicode symbols | Icon set | ASCII only | Unicode symbols |
+| **Startup presentation** | Bubble Tea logo with album art fallback | Winamp-style header | Album art on launch | Plain text | Plain text | Plain text |
+| **Overall vibe** | Polished modern TUI — feels like a GUI app | Retro Winamp — dense, nostalgic | Clean modern — utilitarian with art | Functional — browser-focused | Utilitarian — speed over looks | Utilitarian — feature over form |
+
+must and kew lead the pack here, but in different directions. kew's visual
+appeal comes from its excellent Sixel album art and album-color theming.
+must's comes from deliberate UI design — gradient progress bars, thoughtful
+spacing, color-harmonized themes, smooth view transitions, and a layout that
+adapts gracefully to any terminal size. The Bubble Tea framework provides
+polish (rounded corners, lipgloss styling) that ncurses-based players simply
+can't match.
+
+cliamp's visual identity is distinct: the Winamp-inspired EQ bars, spectrum
+analyzer, and compact layout evoke a specific nostalgic feeling. It's not
+*polished* in the modern sense, but it's deliberately styled and recognizable.
+
+For Omarchy users specifically, the combination of must's album art, gradient
+progress bars, visualizers, and live theme sync creates a cohesive desktop
+experience that no other terminal player matches.
+
+---
+
 ## Omarchy Integration Comparison
 
 Omarchy users will care about this specifically.
