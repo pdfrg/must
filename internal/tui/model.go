@@ -151,6 +151,9 @@ type Model struct {
 	quittingActive      bool
 	quittingStartedAt   time.Time
 
+	showHeader     bool
+	showFooter     bool
+
 	header         *widgets.Header
 	nowPlaying     *widgets.NowPlaying
 	playlistWidget *widgets.Playlist
@@ -206,12 +209,17 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		bottomViewMode:      BottomPlaylist,
 		activeModal:         ModalNone,
 		artistCache:         make(map[string]*models.ArtistInfo),
+		showHeader:          cfg.ShowHeader,
+		showFooter:          cfg.ShowFooter,
 	}
 
 	m.header = widgets.NewHeader(styles.Header, "must - MUSic TUI")
 	m.nowPlaying = widgets.NewNowPlaying(styles, styles.Accent, styles.Cursor, styles.Background)
 	m.playlistWidget = widgets.NewPlaylist(styles)
 	m.footer = widgets.NewFooter(styles.AccentStyle, styles.MutedStyle, styles.ForegroundStyle)
+
+	m.header.SetHidden(!m.showHeader)
+	m.footer.SetHidden(!m.showFooter)
 
 	m.searchModal = modals.NewSearch(styles, nil)
 	if cfg.Subsonic.Enabled {
@@ -372,6 +380,8 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "T", Desc: "temp directories"},
 		{Key: "o", Desc: "options"},
 		{Key: "?", Desc: "help"},
+		{Key: "H", Desc: "toggle header"},
+		{Key: "M", Desc: "toggle footer"},
 		{Key: "q/ctrl+c", Desc: "quit"},
 	}
 }

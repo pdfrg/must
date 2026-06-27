@@ -7,9 +7,10 @@ import (
 )
 
 type Header struct {
-	style lipgloss.Style
-	width int
-	title string
+	style  lipgloss.Style
+	width  int
+	title  string
+	hidden bool
 }
 
 func NewHeader(style lipgloss.Style, title string) *Header {
@@ -31,7 +32,14 @@ func (h *Header) UpdateStyles(style lipgloss.Style) {
 	h.style = style
 }
 
+func (h *Header) SetHidden(hidden bool) {
+	h.hidden = hidden
+}
+
 func (h Header) View() string {
+	if h.hidden {
+		return ""
+	}
 	if h.width <= 0 || len(h.title) >= h.width {
 		return h.style.Render(h.title)
 	}
