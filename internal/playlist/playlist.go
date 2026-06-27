@@ -62,7 +62,8 @@ func Save(path string, paths []string, opts *SaveOptions) error {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	f, err := os.Create(path)
+	tmpPath := path + ".tmp"
+	f, err := os.Create(tmpPath)
 	if err != nil {
 		return fmt.Errorf("failed to create playlist: %w", err)
 	}
@@ -70,6 +71,7 @@ func Save(path string, paths []string, opts *SaveOptions) error {
 
 	writer := bufio.NewWriter(f)
 	if _, err := writer.WriteString("#EXTM3U\n"); err != nil {
+		_ = os.Remove(tmpPath)
 		return err
 	}
 
@@ -100,16 +102,30 @@ func Save(path string, paths []string, opts *SaveOptions) error {
 			}
 			extinf := fmt.Sprintf("#EXTINF:%d,%s\n", duration, label)
 			if _, err := writer.WriteString(extinf); err != nil {
+				_ = os.Remove(tmpPath)
 				return err
 			}
 		}
 
 		if _, err := writer.WriteString(entryPath + "\n"); err != nil {
+			_ = os.Remove(tmpPath)
 			return err
 		}
 	}
 
-	return writer.Flush()
+	if err := writer.Flush(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }
 
 func SaveLegacy(path string, paths []string) error {

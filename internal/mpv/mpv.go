@@ -27,6 +27,7 @@ func SetLogger(l *log.Logger) {
 type MPVBackend struct {
 	mu             sync.Mutex
 	process        *exec.Cmd
+	processExited  chan struct{}
 	currentPaths   []string
 	isPaused       bool
 	pauseStartTime time.Time
@@ -162,7 +163,11 @@ func (m *MPVBackend) Start(paths []string) error {
 	m.isPaused = false
 	m.pauseStartTime = time.Time{}
 
-	go func() { _ = m.process.Wait() }()
+	m.processExited = make(chan struct{})
+	go func() {
+		_ = m.process.Wait()
+		close(m.processExited)
+	}()
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -186,7 +191,9 @@ func (m *MPVBackend) Stop() error {
 func (m *MPVBackend) stopLocked() error {
 	if m.process != nil {
 		_ = m.process.Process.Kill()
-		_ = m.process.Wait()
+		if m.processExited != nil {
+			<-m.processExited
+		}
 		m.process = nil
 	}
 	m.currentPaths = nil

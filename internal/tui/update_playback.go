@@ -402,7 +402,7 @@ func startPlaybackCmd(backend *mpv.MPVBackend, paths []string, startIndex int) t
 			return statusClearMsg{}
 		}
 		_ = backend.PlaylistPlayIndex(startIndex)
-		return trackChangedMsg{}
+		return nil
 	}
 }
 
