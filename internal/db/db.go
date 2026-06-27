@@ -318,7 +318,7 @@ func splitGenre(g string) []string {
 }
 
 func (ld *LibraryDB) GetAlbumsByGenre(genre string) ([]string, error) {
-	rows, err := ld.db.Query(`SELECT DISTINCT COALESCE(NULLIF(album_artist, ''), artist), album FROM tracks WHERE (genre = ? OR genre LIKE ? OR genre LIKE ? OR genre LIKE ?) AND album != '' ORDER BY album`, genre, genre+";%", "%; "+genre, "%; "+genre+";%")
+	rows, err := ld.db.Query(`SELECT DISTINCT COALESCE(NULLIF(album_artist, ''), artist), album FROM tracks WHERE (genre = ? OR genre LIKE ? OR genre LIKE ? OR genre LIKE ?) AND album != '' ORDER BY album`, genre, genre+";%", "%;"+genre, "%;"+genre+";%")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query albums by genre: %w", err)
 	}
@@ -414,7 +414,7 @@ func (ld *LibraryDB) GetAlbumsByGenreSorted(genre, sort string) ([]models.AlbumE
 		FROM tracks
 		WHERE (genre = ? OR genre LIKE ? OR genre LIKE ? OR genre LIKE ?)
 		AND album != '' GROUP BY COALESCE(NULLIF(album_artist, ''), artist), album %s`, orderBy)
-	rows, err := ld.db.Query(query, genre, genre+";%", "%; "+genre, "%; "+genre+";%")
+	rows, err := ld.db.Query(query, genre, genre+";%", "%;"+genre, "%;"+genre+";%")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query albums by genre: %w", err)
 	}
@@ -481,7 +481,7 @@ func (ld *LibraryDB) GetTracksByField(field string, values []string) ([]models.T
 		var orParts []string
 		for _, v := range values {
 			orParts = append(orParts, `(genre = ? OR genre LIKE ? OR genre LIKE ? OR genre LIKE ?)`)
-			args = append(args, v, v+";%", "%; "+v, "%; "+v+";%")
+			args = append(args, v, v+";%", "%;"+v, "%;"+v+";%")
 		}
 		whereClause = strings.Join(orParts, " OR ")
 	default:
@@ -564,10 +564,42 @@ func (ld *LibraryDB) DeleteTrackByPath(path string) error {
 }
 
 func (ld *LibraryDB) DeleteMissingTracks(existingPaths map[string]bool) (int, error) {
-	result, err := ld.db.Exec(`DELETE FROM tracks WHERE path NOT IN (`+
-		buildPathList(len(existingPaths))+`)`, mapToSlice(existingPaths)...)
+	if len(existingPaths) == 0 {
+		return 0, nil
+	}
+
+	_, _ = ld.db.Exec(`DROP TABLE IF EXISTS _tmp_keep`)
+	_, err := ld.db.Exec(`CREATE TEMP TABLE _tmp_keep (path TEXT PRIMARY KEY)`)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to create temp table: %w", err)
+	}
+	defer func() { _, _ = ld.db.Exec(`DROP TABLE IF EXISTS _tmp_keep`) }()
+
+	tx, err := ld.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO _tmp_keep (path) VALUES (?)`)
+	if err != nil {
+		return 0, fmt.Errorf("failed to prepare insert: %w", err)
+	}
+	defer func() { _ = stmt.Close() }()
+
+	for p := range existingPaths {
+		if _, err := stmt.Exec(p); err != nil {
+			return 0, fmt.Errorf("failed to insert path: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit: %w", err)
+	}
+
+	result, err := ld.db.Exec(`DELETE FROM tracks WHERE path NOT IN (SELECT path FROM _tmp_keep)`)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete missing tracks: %w", err)
 	}
 	affected, _ := result.RowsAffected()
 	return int(affected), nil
@@ -689,25 +721,6 @@ func (ld *LibraryDB) SearchLike(query string) ([]models.Track, error) {
 	defer func() { _ = rows.Close() }()
 
 	return scanTracks(rows)
-}
-
-func buildPathList(n int) string {
-	if n == 0 {
-		return "''"
-	}
-	placeholders := "?"
-	for i := 1; i < n; i++ {
-		placeholders += ",?"
-	}
-	return placeholders
-}
-
-func mapToSlice(m map[string]bool) []any {
-	s := make([]any, 0, len(m))
-	for k := range m {
-		s = append(s, k)
-	}
-	return s
 }
 
 func scanTracks(rows *sql.Rows) ([]models.Track, error) {

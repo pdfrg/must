@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -62,13 +63,16 @@ func handleConn(conn net.Conn, program *tea.Program) {
 		return
 	}
 
-	resultCh := make(chan CtlResult)
+	resultCh := make(chan CtlResult, 1)
 	program.Send(CtlMessage{
 		Cmd:      req.Cmd,
 		Args:     req.Args,
 		ResultCh: resultCh,
 	})
 
-	result := <-resultCh
-	_ = json.NewEncoder(conn).Encode(result)
+	select {
+	case result := <-resultCh:
+		_ = json.NewEncoder(conn).Encode(result)
+	case <-time.After(5 * time.Second):
+	}
 }

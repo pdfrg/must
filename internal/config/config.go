@@ -190,8 +190,13 @@ func (c *Config) Save() error {
 	copy(output, header)
 	copy(output[len(header):], data)
 
-	if err := os.WriteFile(c.path, output, 0644); err != nil {
+	tmpPath := c.path + ".tmp"
+	if err := os.WriteFile(tmpPath, output, 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	if err := os.Rename(tmpPath, c.path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("failed to atomically replace config: %w", err)
 	}
 
 	return nil

@@ -52,7 +52,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ctl.CtlMessage:
 		newModel, result, cmd := m.handleCtlCommand(msg.Cmd, msg.Args)
 		if msg.ResultCh != nil {
-			msg.ResultCh <- result
+			select {
+			case msg.ResultCh <- result:
+			default:
+			}
 		}
 		cmds = append(cmds, cmd)
 		return newModel, tea.Batch(cmds...)

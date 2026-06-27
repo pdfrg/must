@@ -106,15 +106,19 @@ func findVorbisSampleRate(f *os.File) int64 {
 		return 0
 	}
 
-	if len(body) < 16 || body[0] != 0x01 {
+	if len(body) < 16 {
 		return 0
 	}
 
-	packetType := body[0]
-	if packetType == 1 && len(body) >= 16 {
-		sr := int64(binary.LittleEndian.Uint32(body[12:16]))
-		return sr
+	// Opus identification header — always 48 kHz
+	if body[0] == 'O' && string(body[:8]) == "OpusHead" {
+		return 48000
 	}
 
-	return 0
+	// Vorbis identification header
+	if body[0] != 0x01 {
+		return 0
+	}
+
+	return int64(binary.LittleEndian.Uint32(body[12:16]))
 }

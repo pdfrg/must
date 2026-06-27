@@ -13,11 +13,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	termimg "github.com/blacktop/go-termimg"
 	"github.com/dhowden/tag"
 	"github.com/pdfrg/must/internal/config"
 )
+
+var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 type Renderer struct {
 	protocol termimg.Protocol
@@ -331,7 +334,7 @@ func CacheArtData(trackPath string, data []byte) error {
 }
 
 func DownloadAndCacheArt(trackPath string, artURL string) error {
-	resp, err := http.Get(artURL)
+	resp, err := httpClient.Get(artURL)
 	if err != nil {
 		return fmt.Errorf("failed to download art: %w", err)
 	}

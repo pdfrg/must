@@ -207,36 +207,21 @@ func (t *TerminalColors) queryPaletteFromTTY() {
 
 // queryPaletteColor sends OSC 4 query for a specific color index and reads the response
 func queryPaletteColor(tty *os.File, index int) string {
-	// Get the underlying file descriptor for termios operations
 	fd := int(tty.Fd())
 
-	// Save terminal state and put in raw mode to disable echo
 	oldState, err := term.MakeRaw(fd)
 	if err != nil {
-		// Fall back to without raw mode if it fails
 		return queryPaletteColorNoRaw(tty, index)
 	}
 	defer func() { _ = term.Restore(fd, oldState) }()
 
-	// Send OSC 4;n;? query - ask terminal for color at index n
 	query := fmt.Sprintf("\x1b]4;%d;?\x1b\\", index)
 	_, err = tty.Write([]byte(query))
 	if err != nil {
 		return ""
 	}
 
-	// Give terminal time to respond
-	time.Sleep(50 * time.Millisecond)
-
-	// Read response
-	buf := make([]byte, 1024)
-	n, err := tty.Read(buf)
-	if err != nil || n == 0 {
-		return ""
-	}
-
-	response := string(buf[:n])
-	return parsePaletteResponse(response)
+	return readPaletteResponse(tty)
 }
 
 // queryPaletteColorNoRaw is a fallback when we can't set raw mode
@@ -247,16 +232,33 @@ func queryPaletteColorNoRaw(tty *os.File, index int) string {
 		return ""
 	}
 
-	time.Sleep(50 * time.Millisecond)
+	return readPaletteResponse(tty)
+}
 
+// readPaletteResponse reads the terminal's OSC 4 response with a timeout.
+func readPaletteResponse(tty *os.File) string {
 	buf := make([]byte, 1024)
-	n, err := tty.Read(buf)
-	if err != nil || n == 0 {
+	resCh := make(chan readResult, 1)
+
+	go func() {
+		n, err := tty.Read(buf)
+		resCh <- readResult{n, err}
+	}()
+
+	select {
+	case r := <-resCh:
+		if r.err != nil || r.n == 0 {
+			return ""
+		}
+		return parsePaletteResponse(string(buf[:r.n]))
+	case <-time.After(200 * time.Millisecond):
 		return ""
 	}
+}
 
-	response := string(buf[:n])
-	return parsePaletteResponse(response)
+type readResult struct {
+	n   int
+	err error
 }
 
 // parsePaletteResponse parses OSC 4 response into hex color

@@ -94,7 +94,7 @@ func (s *Scanner) Scan(musicDirs []string) (*ScanResult, error) {
 		err := filepath.WalkDir(musicDir, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				result.Errors++
-				return nil
+				return filepath.SkipDir
 			}
 
 			s.mu.Lock()
