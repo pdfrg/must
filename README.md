@@ -39,11 +39,17 @@
 
 9. Omarchy theme integration with live reloads.
 
+10. Integrations: last.fm and/or Listenbrainz scrobbling, Lidarr library management.
+
+11. Gapless playback and ReplayGain normalization (track or album mode) via mpv.
+
+Not convinced? See a full [COMPARISON](docs/COMPARISON.md) with popular TUI music players.
+
 ![must visualizer](assets/must_visualizer.png)
 
 ## Features
 
-- **Local Music Library**: Scan and browse your music collection with a 3-column browser (artists, albums, tracks), genre browsing, and field-specific search
+- **Music Library**: Scan and browse your music collection with a 3-column browser (artists, albums, tracks), genre browsing, and field-specific search. Toggle local, Subsonic, or both.
 - **Smart Search**: FTS5-powered full-text search with field queries (`artist:radiohead year:1997`) and year range filtering
 - **MPV Backend**: Full gapless audio playback with seek, repeat (off/all/one), shuffle, progress tracking, and ReplayGain normalization
 - **Lyrics**: Fetch plain and synced lyrics from [LRCLib](https://lrclib.net/)
