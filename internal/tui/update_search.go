@@ -41,8 +41,12 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 		}
 		m.updatePlaylist()
 
+		paths := m.buildMPVPlaylistPaths()
+		playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
+
 		return m, tea.Batch(
-			m.playTrack(m.currentIndex),
+			startPlaybackCmd(m.mpvBackend, paths, playIdx),
+			m.trackChangedCmds(),
 			setStatus(&m, "Playing "+label, false),
 		)
 	}
