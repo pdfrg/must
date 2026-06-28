@@ -25,6 +25,9 @@ type NowPlaying struct {
 	sleepTimerActive bool
 	sleepTimerMins   int
 
+	accentColor string
+	cursorColor string
+
 	progress progress.Model
 }
 
@@ -41,19 +44,15 @@ func NewNowPlaying(styles *config.ThemeStyles, accentColor, cursorColor, progres
 		emptyColor = lipgloss.Color("#1a1a1a")
 	}
 
-	p := progress.New(
-		progress.WithWidth(40),
-		progress.WithColors(lipgloss.Color(cursorColor), lipgloss.Color(accentColor)),
-		progress.WithoutPercentage(),
-		progress.WithFillCharacters('▀', '▀'),
-	)
-	p.EmptyColor = emptyColor
+	p := buildProgress(40, accentColor, cursorColor, emptyColor)
 
 	return &NowPlaying{
 		foregroundStyle: styles.ForegroundStyle,
 		accentStyle:     styles.AccentStyle,
 		mutedStyle:      styles.MutedStyle,
 		cursorStyle:     cursorStyle,
+		accentColor:     accentColor,
+		cursorColor:     cursorColor,
 		progress:        p,
 	}
 }
@@ -86,22 +85,38 @@ func (n *NowPlaying) UpdateStyles(styles *config.ThemeStyles, accentColor, curso
 		n.cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(cursorColor))
 	}
 
+	n.accentColor = accentColor
+	n.cursorColor = cursorColor
+
 	var emptyColor color.Color
 	if bgColor != "" && len(bgColor) == 7 && bgColor[0] == '#' {
 		emptyColor = lipgloss.Color(darkenColor(bgColor, 0.3))
 	}
 
-	n.progress = progress.New(
-		progress.WithWidth(40),
+	n.progress = buildProgress(n.width, n.accentColor, n.cursorColor, emptyColor)
+}
+
+func buildProgress(width int, accentColor, cursorColor string, emptyColor color.Color) progress.Model {
+	progWidth := min(40, width-2)
+	progWidth = max(20, progWidth)
+	p := progress.New(
+		progress.WithWidth(progWidth),
 		progress.WithColors(lipgloss.Color(cursorColor), lipgloss.Color(accentColor)),
 		progress.WithoutPercentage(),
 		progress.WithFillCharacters('▀', '▀'),
 	)
-	n.progress.EmptyColor = emptyColor
+	p.EmptyColor = emptyColor
+	return p
 }
 
 func (n *NowPlaying) UpdateProgress(percent float64) tea.Cmd {
 	return n.progress.SetPercent(percent)
+}
+
+func (n *NowPlaying) SnapProgress(percent float64) {
+	emptyColor := n.progress.EmptyColor
+	n.progress = buildProgress(n.width, n.accentColor, n.cursorColor, emptyColor)
+	_ = n.progress.SetPercent(percent)
 }
 
 func (n *NowPlaying) Update(msg tea.Msg) tea.Cmd {
