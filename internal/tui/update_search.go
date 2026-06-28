@@ -35,6 +35,7 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 		if m.shuffleMode {
 			m.shuffle = true
 			m.shuffleOrder = shuffleIndices(len(m.playlist))
+			m.currentIndex = m.shuffleOrder[0]
 		} else {
 			m.shuffle = false
 			m.shuffleOrder = nil
