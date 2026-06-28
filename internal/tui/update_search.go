@@ -23,6 +23,30 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 
 	m.loadCLIPaths()
 
+	// Handle playQuery: auto-started from "must p <query>" or "must ps <query>"
+	if m.playQuery != "" {
+		tracks, label, startIdx, err := m.resolvePlayQuery(m.playQuery)
+		if err != nil {
+			m.scanMsg = err.Error()
+			return m, nil
+		}
+		m.playlist = tracks
+		m.currentIndex = startIdx
+		if m.shuffleMode {
+			m.shuffle = true
+			m.shuffleOrder = shuffleIndices(len(m.playlist))
+		} else {
+			m.shuffle = false
+			m.shuffleOrder = nil
+		}
+		m.updatePlaylist()
+
+		return m, tea.Batch(
+			m.playTrack(m.currentIndex),
+			setStatus(&m, "Playing "+label, false),
+		)
+	}
+
 	var restoreCmd tea.Cmd
 	if len(m.playlist) == 0 && len(m.paths) == 0 {
 		if !m.noRestore && m.cfg.RestoreOnStart {

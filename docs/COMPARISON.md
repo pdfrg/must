@@ -51,10 +51,12 @@ a Radio Paradise TUI. Both share layouts, keybindings, visualizers, themes, Omar
 integration, and codebase DNA. Together they cover personal music library + Subsonic
 streaming (must) and human-curated internet radio (rptui).
 
-**Future directions:** An IPC shortcut like `must fp radiohead` (find + play in one
-command) could streamline the current `must find → must play <n>` flow. A footer
-visibility toggle would let users hide the keybinding reference once memorized,
-freeing up screen space.
+**CLI-first play:** `must play <query>` (or `must p <query>`) works whether or not
+must is already running. If no instance is running, it auto-starts the TUI, searches
+the library, and begins playback — with smart resolution (artist → all albums in
+order, track → full album from that position). `must ps <query>` enables shuffle.
+This gives must a kew-like "just type what you want" flow while keeping its richer
+TUI and feature set.
 
 **Omarchy integration:** Native — reads `~/.config/omarchy/current/theme/colors.toml`
 and live-reloads when the desktop theme changes. All screenshots use the Omarchy

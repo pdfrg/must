@@ -22,6 +22,9 @@ func (m Model) handleCtlCommand(cmd string, args []string) (Model, ctl.CtlResult
 	switch cmd {
 	case "play":
 		return m.ctlPlay(args)
+	case "playshuffle":
+		m.shuffle = true
+		return m.ctlPlay(args)
 	case "enqueue":
 		return m.ctlEnqueue(args, false)
 	case "enqueue-next":
@@ -1072,7 +1075,7 @@ func (m Model) ctlPlaylists() ([]ctl.SearchResult, ctl.CtlResult) {
 }
 
 // normalizeSubsonicPrefix rewrites the configured server name prefix (first word, case-insensitive)
-// to "subsonic:", so e.g. "navidrome:radiohead" becomes "subsonic:radiohead".
+// or server badge to "subsonic:", so e.g. "navidrome:radiohead" or "n:radiohead" becomes "subsonic:radiohead".
 func normalizeSubsonicPrefix(client *api.SubsonicClient, query string) string {
 	if client == nil {
 		return query
@@ -1081,12 +1084,18 @@ func normalizeSubsonicPrefix(client *api.SubsonicClient, query string) string {
 	if idx := strings.Index(name, " "); idx > 0 {
 		name = name[:idx]
 	}
-	if name == "" || name == "subsonic" {
-		return query
+	if name != "" && name != "subsonic" {
+		prefix := name + ":"
+		if strings.HasPrefix(strings.ToLower(query), prefix) {
+			return "subsonic:" + query[len(prefix):]
+		}
 	}
-	prefix := name + ":"
-	if strings.HasPrefix(strings.ToLower(query), prefix) {
-		return "subsonic:" + query[len(prefix):]
+	badge := strings.ToLower(strings.TrimSpace(client.ServerBadge()))
+	if badge != "" && badge != name {
+		prefix := badge + ":"
+		if strings.HasPrefix(strings.ToLower(query), prefix) {
+			return "subsonic:" + query[len(prefix):]
+		}
 	}
 	return query
 }
@@ -1577,6 +1586,102 @@ func (m *Model) resolveFTSQuery(query string) ([]models.Track, string, error) {
 		label = fmt.Sprintf("'%s'", query)
 	}
 	return tracks, label, nil
+}
+
+func (m *Model) resolvePlayQuery(query string) ([]models.Track, string, int, error) {
+	// Normalize subsonic server name/badge prefix
+	if m.subsonicClient != nil {
+		query = normalizeSubsonicPrefix(m.subsonicClient, query)
+	}
+
+	// Tier 0: explicit prefix via field query or subsonic
+	switch {
+	case strings.HasPrefix(query, "subsonic:"):
+		rest := strings.TrimPrefix(query, "subsonic:")
+		tracks, label, err := m.resolveSubsonicQuery(rest)
+		return tracks, label, 0, err
+	case strings.HasPrefix(query, "artist:"):
+		tracks, label, err := m.resolveFieldQuery(query)
+		return tracks, label, 0, err
+	case strings.HasPrefix(query, "album:"):
+		tracks, label, err := m.resolveFieldQuery(query)
+		return tracks, label, 0, err
+	case strings.HasPrefix(query, "genre:") || strings.HasPrefix(query, "year:"):
+		tracks, label, err := m.resolveFieldQuery(query)
+		return tracks, label, 0, err
+	case strings.HasPrefix(query, "playlist:"):
+		name := strings.TrimPrefix(query, "playlist:")
+		tracks, label, err := m.resolveSavedPlaylist(name)
+		return tracks, label, 0, err
+	}
+
+	if m.libraryDB == nil {
+		return nil, "", 0, fmt.Errorf("library not loaded")
+	}
+
+	// Tier 1: exact artist match
+	if artists, err := m.libraryDB.SearchArtistsLike(query); err == nil {
+		for _, a := range artists {
+			if strings.EqualFold(a, query) {
+				tracks, err := m.libraryDB.GetTracksByArtist(a)
+				if err == nil && len(tracks) > 0 {
+					return tracks, "Artist: " + a, 0, nil
+				}
+			}
+		}
+	}
+
+	// Tier 2: exact album match
+	if albums, err := m.libraryDB.SearchAlbumsLike(query); err == nil {
+		for _, a := range albums {
+			if strings.EqualFold(a.Album, query) {
+				tracks, err := m.libraryDB.GetTracksByArtistAndAlbum(a.Artist, a.Album)
+				if err == nil && len(tracks) > 0 {
+					return tracks, "Album: " + a.Artist + " - " + a.Album, 0, nil
+				}
+			}
+		}
+	}
+
+	// Tier 3: exact track match → play its album from that track
+	if ftsTracks, ftsErr := m.libraryDB.SearchFTS(query); ftsErr == nil && len(ftsTracks) > 0 {
+		if len(ftsTracks) == 1 {
+			track := ftsTracks[0]
+			if track.Artist != "" && track.Album != "" {
+				albumTracks, err := m.libraryDB.GetTracksByArtistAndAlbum(track.Artist, track.Album)
+				if err == nil && len(albumTracks) > 0 {
+					for i, t := range albumTracks {
+						if strings.EqualFold(t.Title, track.Title) {
+							return albumTracks, track.Artist + " - " + track.Album, i, nil
+						}
+					}
+					return albumTracks, track.Artist + " - " + track.Album, 0, nil
+				}
+			}
+		} else {
+			// Multiple FTS results — check if best match has matching title
+			first := ftsTracks[0]
+			queryLower := strings.ToLower(query)
+			titleLower := strings.ToLower(first.Title)
+			if strings.EqualFold(first.Title, query) || strings.Contains(titleLower, queryLower) || strings.Contains(queryLower, titleLower) {
+				if first.Artist != "" && first.Album != "" {
+					albumTracks, err := m.libraryDB.GetTracksByArtistAndAlbum(first.Artist, first.Album)
+					if err == nil && len(albumTracks) > 0 {
+						for i, t := range albumTracks {
+							if strings.EqualFold(t.Title, first.Title) {
+								return albumTracks, first.Artist + " - " + first.Album, i, nil
+							}
+						}
+						return albumTracks, first.Artist + " - " + first.Album, 0, nil
+					}
+				}
+			}
+		}
+	}
+
+	// Tier 4: FTS5 fallback (flat list)
+	tracks, label, err := m.resolveFTSQuery(query)
+	return tracks, label, 0, err
 }
 
 func formatDuration(totalSeconds int) string {
