@@ -424,7 +424,7 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 	m.playing = true
 	m.paused = false
 	m.playbackPos = mpv.PlaybackPosition{}
-	cmds = append(cmds, m.nowPlaying.UpdateProgress(0))
+	m.nowPlaying.SnapProgress(0)
 	m.audioInfo = nil
 
 	m.albumArtStr = ""
