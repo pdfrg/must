@@ -40,6 +40,10 @@
 
 ![find](assets/must_ipc_find.png)
 
+## Header & Footer Toggled Off
+
+![clean](assets/must_header_footer_off.png)
+
 ## Attribution
 
 All screenshots above feature the excellent [Omarchy Vurple Theme](https://github.com/tahfizhabib/omarchy-vurple-theme).
