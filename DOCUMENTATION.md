@@ -15,7 +15,7 @@ PATHS:
 FLAGS:
   -h, --help               Show help message and exit
   -v, --version            Show version and exit
-  --random                 Shuffle playback order
+  --random, --shuffle      Shuffle playback order
   --play                   Auto-play on launch
   --no-restore             Don't restore last session
   --repeat [off|all|one]   Set repeat mode (default: all if flag given without arg)
@@ -35,18 +35,23 @@ must song.flac                Play a single track
 must playlist.m3u             Play a playlist
 must --random ~/Music/        Shuffle play entire library
 must --repeat one track.mp3   Repeat one track
+must p radiohead              Auto-start: search and play (or artist:radiohead)
+must ps depeche mode          Auto-start: search, shuffle, and play
+must --shuffle p beatles      Auto-start: search, shuffle, and play
 must --alarm 7:00am           Launch as an alarm (blocks until 7am, then starts playback)
 ```
 
 ### IPC Control Commands
 
-While must is running, you can control it from another terminal:
+While must is running, you can control it from another terminal. `play` and `playshuffle` also work
+when must is not running — they auto-start the TUI, search, and play:
 
 ```
 must <COMMAND> [ARGS...]
 
 COMMANDS:
   play [arg] / p [arg]        Replace playlist and play (resume if no arg)
+  playshuffle [arg] / ps [arg]  Replace, enable shuffle, play
   enqueue <arg> / e <arg>     Add to end of playlist
   enqueue-next <arg> / en <arg>  Insert after current track
   pause                       Toggle play/pause
@@ -67,7 +72,8 @@ COMMANDS:
                               Prefix: artist:<q>, album:<q>, genre:<q>, year:<y>
                               Subsonic: subsonic:artist:<q>, subsonic:album:<q>,
                                 subsonic:song:<q>, subsonic:genre:<q>, subsonic:year:<y>
-                              (config server_name prefix also works, e.g. navidrome:<q>)
+                              (config server_name or server_badge prefix also works,
+                                e.g. navidrome:<q> or n:<q>)
   library                     Show music directory, library stats, and Subsonic status
   playlists                   List saved and Subsonic playlists
   save <name>                 Save current playlist as .m3u
@@ -77,7 +83,7 @@ ARG resolution for play / enqueue / enqueue-next:
   <n>           Result number from last 'must find'
   /path         File, album directory, or .m3u playlist
   playlist:<n>  Saved playlist from playlists directory
-  subsonic:<q>  Search Subsonic server and play (or server_name:<q>)
+  subsonic:<q>  Search Subsonic server and play (or server_name:<q> / server_badge:<q>)
   artist:<q>    Search and play artist
   album:<q>     Search and play album
   genre:<q>     Search and play genre
@@ -119,6 +125,8 @@ ARG resolution for play / enqueue / enqueue-next:
 | `u` | Update view |
 | `/` | Search library |
 | `l` | Library browser |
+| `H` | Toggle header visibility |
+| `M` | Toggle footer visibility |
 | `?` | Help |
 | `esc` | Back / close modal |
 | `q` / `ctrl+c` | Quit |
@@ -138,6 +146,8 @@ Config file: `~/.config/must/config.toml` (auto-created with defaults on first r
 | `repeat_mode` | `off` | Repeat mode: off, all, one |
 | `shuffle` | `false` | Shuffle playback order |
 | `replaygain_mode` | `off` | ReplayGain volume normalization: off, track, album |
+| `show_header` | `true` | Show header bar on startup (toggle with `H`) |
+| `show_footer` | `true` | Show keybinding footer on startup (toggle with `M`) |
 | `restore_on_start` | `true` | Restore last session on startup |
 | `autoplay` | `false` | Auto-play a random album on launch |
 | `layout` | `large` | UI layout: large, medium, compact, narrow |
@@ -199,7 +209,7 @@ Config file: `~/.config/must/config.toml` (auto-created with defaults on first r
 | `username` | `""` | Subsonic username |
 | `password` | `""` | Subsonic password or hex-encoded token |
 | `server_name` | `"Subsonic"` | Display name for the server; used as a prefix in IPC commands (e.g., `navidrome:radiohead`) |
-| `server_badge` | `"S"` | 1-2 char badge shown next to remote search results and tracks |
+| `server_badge` | `"S"` | 1-2 char badge shown next to remote search results and tracks; also usable as a prefix in play commands (e.g., `n:radiohead`) |
 
 ### Audio Settings
 
