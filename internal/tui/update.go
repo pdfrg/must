@@ -732,7 +732,14 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.ToggleHeader):
 		m.showHeader = !m.showHeader
 		m.header.SetHidden(!m.showHeader)
-		return m, m.renderImagesCmd()
+		// Delay image redraw: let the terminal process the view re-render
+		// (text shift + any protocol-level image repositioning) before
+		// positioning images at the correct row. This prevents a double-shift
+		// with terminals that auto-relocate images on text reflow.
+		return m, func() tea.Msg {
+			time.Sleep(16 * time.Millisecond)
+			return renderAlbumArtMsg{}
+		}
 
 	case key.Matches(msg, m.keyMap.ToggleFooter):
 		m.showFooter = !m.showFooter
