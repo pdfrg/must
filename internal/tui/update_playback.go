@@ -616,6 +616,11 @@ func (m Model) renderImagesCmd() tea.Cmd {
 
 	var raw string
 
+	headerOffset := 0
+	if m.showHeader {
+		headerOffset = 2
+	}
+
 	if m.imageProtocol == termimg.Kitty || m.imageProtocol == termimg.Halfblocks ||
 		m.imageProtocol == termimg.Sixel || m.imageProtocol == termimg.ITerm2 {
 
@@ -624,19 +629,33 @@ func (m Model) renderImagesCmd() tea.Cmd {
 			if narrowLayout {
 				artCol = 2
 			}
-			raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", 3, artCol, m.albumArtStr)
+			artRow := 1 + headerOffset
+			for _, row := range []int{1, 3} {
+				for i := 0; i < m.albumArtHeight && i < 20; i++ {
+					raw += fmt.Sprintf("\x1b[%d;%dH%s", row+i, artCol,
+						strings.Repeat(" ", m.albumArtWidth))
+				}
+			}
+			raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", artRow, artCol, m.albumArtStr)
 		} else if hasLogoArt {
 			artCol := m.width - m.logoArtWidth - 2
 			if narrowLayout {
 				artCol = 2
 			}
-			raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", 3, artCol, m.logoArtStr)
+			artRow := 1 + headerOffset
+			for _, row := range []int{1, 3} {
+				for i := 0; i < m.logoArtHeight && i < 20; i++ {
+					raw += fmt.Sprintf("\x1b[%d;%dH%s", row+i, artCol,
+						strings.Repeat(" ", m.logoArtWidth))
+				}
+			}
+			raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", artRow, artCol, m.logoArtStr)
 		}
 
 		if hasArtistArt {
-			availableSpace := m.height - 20 - 3
+			artistRow := 18 + headerOffset
+			availableSpace := m.height - artistRow - 3
 			if availableSpace >= m.artistArtHeight {
-				const artistRow = 20
 				if m.imageProtocol == termimg.Kitty {
 					raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", artistRow, 2, m.artistArtStr)
 				} else {

@@ -732,7 +732,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keyMap.ToggleHeader):
 		m.showHeader = !m.showHeader
 		m.header.SetHidden(!m.showHeader)
-		return m, nil
+		return m, m.renderImagesCmd()
 
 	case key.Matches(msg, m.keyMap.ToggleFooter):
 		m.showFooter = !m.showFooter
