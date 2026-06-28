@@ -27,13 +27,13 @@
 
 3. Prominent high-res album art _in the terminal_.
 
-4. Easy keybindings, always visible in footer. No memorization needed.
+4. Easy keybindings, always visible in footer (toggle with `M`). No memorization needed.
 
 5. Lyrics and artist info view, with artist thumb, image gallery, discography, and bio.
 
 6. Fuzzy search all or specific tags (artist, album, year, genre).
 
-7. IPC control — control must from the command line while it's running.
+7. IPC control — control must from the command line: `must next`, `must previous`, `must pause`, etc.
 
 8. Download/temp directory browser — trial those potentially janky mp3s you grabbed before promoting them to your library.
 
@@ -42,6 +42,9 @@
 10. Integrations: last.fm and/or Listenbrainz scrobbling, Lidarr library management.
 
 11. Gapless playback and ReplayGain normalization (track or album mode) via mpv.
+
+12. Startup, find and play (with shuffle option) from the command line: `must p ok computer`, `must ps beatles` (shuffled),
+`must ps genre:electronic` or even `must ps year:1980-1989` (play all 80s music shuffled).
 
 Not convinced? See a full [COMPARISON](docs/COMPARISON.md) with popular TUI music players.
 
@@ -63,7 +66,7 @@ Not convinced? See a full [COMPARISON](docs/COMPARISON.md) with popular TUI musi
 - **Session Restore**: Automatically restores last session on startup
 - **Sleep Timer & Alarm Clock**: Fall asleep or wake up to your music
 - **4 Layouts**: `large` (default), `medium`, `compact`, `narrow` (sidebar or mobile format)
-- **IPC Control**: Control a running must instance from the terminal (`must play`, `must next`, `must find radiohead`, etc.)
+- **IPC Control**: Control a running must instance from the terminal (`must next`, `must find radiohead`, etc.). `must play <query>` also auto-starts must if not running — just type `must p radiohead` from anywhere.
 - **Subsonic/Navidrome Integration**: Search and stream from any Subsonic-compatible server (Navidrome, Jellyfin, etc.). Use `subsonic:artist:<q>`, `subsonic:album:<q>`, etc. in IPC searches, or configure a server name alias like `navidrome:<q>`. Search modal supports local-only, subsonic-only, or combined search mode.
 - **Options Modal**: Adjust replaygain, view, and visualizer settings on the fly
 - **Temp Directories Modal**: Easily find and play music not stored in the main library.  Perfect for listening to recent downloads before deciding whether to add to your library.
