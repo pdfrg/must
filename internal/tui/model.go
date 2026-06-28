@@ -48,14 +48,16 @@ const (
 )
 
 type Model struct {
-	cfg        *config.Config
-	theme      *config.ColorTheme
-	styles     *config.ThemeStyles
-	keyMap     KeyMap
-	paths      []string
-	randomMode bool
-	noRestore  bool
-	autoplay   bool
+	cfg         *config.Config
+	theme       *config.ColorTheme
+	styles      *config.ThemeStyles
+	keyMap      KeyMap
+	paths       []string
+	randomMode  bool
+	noRestore   bool
+	autoplay    bool
+	playQuery   string
+	shuffleMode bool
 
 	width  int
 	height int
@@ -151,8 +153,8 @@ type Model struct {
 	quittingActive      bool
 	quittingStartedAt   time.Time
 
-	showHeader     bool
-	showFooter     bool
+	showHeader bool
+	showFooter bool
 
 	header         *widgets.Header
 	nowPlaying     *widgets.NowPlaying
@@ -182,7 +184,7 @@ type Model struct {
 	lastFindResults []ctl.SearchResult
 }
 
-func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool, noRestore bool, autoplay bool) Model {
+func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool, noRestore bool, autoplay bool, playQuery string, shuffleMode bool) Model {
 	styles := config.NewThemeStyles(theme, cfg.TransparentBackground, cfg.DisableTheme, cfg.TerminalPalette)
 
 	m := Model{
@@ -194,6 +196,8 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		randomMode:          randomMode,
 		noRestore:           noRestore,
 		autoplay:            autoplay,
+		playQuery:           playQuery,
+		shuffleMode:         shuffleMode,
 		scanning:            true,
 		playlist:            []models.Track{},
 		currentIndex:        -1,

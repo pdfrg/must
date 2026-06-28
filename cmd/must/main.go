@@ -39,14 +39,15 @@ var controlVerbs = map[string]bool{
 	"rescan": true,
 	"save":   true,
 	"find":   true, "f": true,
-	"library":    true,
-	"list":       true,
-	"move":       true,
-	"playlists":  true,
-	"stop":       true,
-	"current":    true,
-	"replaygain": true,
-	"rg":         true,
+	"library":     true,
+	"list":        true,
+	"move":        true,
+	"playlists":   true,
+	"stop":        true,
+	"current":     true,
+	"replaygain":  true,
+	"rg":          true,
+	"playshuffle": true, "ps": true,
 }
 
 func resolveAlias(verb string) string {
@@ -71,6 +72,8 @@ func resolveAlias(verb string) string {
 		return "find"
 	case "rg":
 		return "replaygain"
+	case "ps":
+		return "playshuffle"
 	default:
 		return verb
 	}
@@ -87,6 +90,8 @@ func main() {
 	repeatMode := ""
 	noRestore := false
 	autoplay := false
+	playQuery := ""
+	shuffleMode := false
 
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
@@ -100,7 +105,7 @@ func main() {
 		case "--lastfm-auth":
 			handleLastFMAuth()
 			return
-		case "--random":
+		case "--random", "--shuffle":
 			randomMode = true
 		case "--play":
 			autoplay = true
@@ -175,18 +180,32 @@ func main() {
 
 			socketPath := config.GetCtlSocketPath()
 			result, err := ctl.SendCommand(socketPath, ctlCmd, ctlArgs)
-			if err != nil {
+			if err == nil {
+				if !result.OK {
+					fmt.Fprintf(os.Stderr, "Error: %s\n", result.Error)
+					os.Exit(1)
+				}
+				if result.Data != "" {
+					fmt.Println(result.Data)
+				}
+				return
+			}
+
+			// play/playshuffle can auto-start if no instance is running
+			if ctlCmd == "play" || ctlCmd == "playshuffle" {
+				if len(ctlArgs) > 0 {
+					playQuery = strings.Join(ctlArgs, " ")
+					shuffleMode = ctlCmd == "playshuffle" || randomMode
+					noRestore = true
+					paths = nil
+				} else {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					os.Exit(1)
+				}
+			} else {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
-			if !result.OK {
-				fmt.Fprintf(os.Stderr, "Error: %s\n", result.Error)
-				os.Exit(1)
-			}
-			if result.Data != "" {
-				fmt.Println(result.Data)
-			}
-			return
 		}
 	}
 
@@ -231,7 +250,7 @@ func main() {
 		handleAlarmMode(alarmTime)
 	}
 
-	m := tui.NewModel(cfg, theme, paths, layoutOverride, sleepTimerDuration, randomMode, noRestore, autoplay)
+	m := tui.NewModel(cfg, theme, paths, layoutOverride, sleepTimerDuration, randomMode, noRestore, autoplay, playQuery, shuffleMode)
 
 	p := tea.NewProgram(m)
 
@@ -436,7 +455,7 @@ PATHS:
 FLAGS:
   -h, --help               Show this help message and exit
   -v, --version            Show version information and exit
-  --random                 Shuffle playback order
+  --random, --shuffle      Shuffle playback order
   --play                   Auto-play on launch
   --no-restore             Don't restore last session
   --repeat [off|all|one]   Set repeat mode (default: all if flag given without arg)
@@ -447,6 +466,7 @@ FLAGS:
 
 CONTROL COMMANDS (when must is already running):
   play [arg] / p [arg]        Replace playlist and play (resume if no arg)
+  playshuffle [arg] / ps [arg]  Replace, enable shuffle, play
   enqueue <arg> / e <arg>     Add to end of playlist
   enqueue-next <arg> / en <arg>  Insert after current track
   pause                       Toggle play/pause
@@ -477,7 +497,7 @@ ARG resolution for play / enqueue / enqueue-next:
   <n>           Result number from last 'must find'
   /path         File, album directory, or .m3u playlist
   playlist:<n>  Saved playlist from playlists directory
-  subsonic:<q>  Search Subsonic server and play (or server_name:<q>)
+  subsonic:<q>  Search Subsonic server and play (or server_name:<q>, or server_badge:<q>)
   artist:<q>    Search and play artist
   album:<q>     Search and play album
   genre:<q>     Search and play genre
@@ -487,9 +507,12 @@ ARG resolution for play / enqueue / enqueue-next:
 EXAMPLES:
   must                          Launch TUI
   must ~/Music/Radiohead/       Play an album directory (new instance)
-  must play artist:radiohead    Search and play artist (existing instance)
-  must find radiohead           Search library
+  must p radiohead              Auto-start: search and play all albums
+  must ps beatles               Auto-start: search, shuffle, play
+  must --random p depeche mode  Auto-start: search, shuffle, play
+  must play artist:radiohead    Search and play artist (via IPC)
   must play 1                   Play first result from last find
+  must find radiohead           Search library
   must enqueue ~/Music/song.mp3 Add a file to playlist
   must next                     Skip to next track
   must status                   Show what's playing
