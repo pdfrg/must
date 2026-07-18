@@ -63,6 +63,10 @@ type audioInfoMsg struct {
 	info *models.AudioInfo
 }
 
+type replayGainMsg struct {
+	data *models.ReplayGainData
+}
+
 type imageLoadedMsg struct {
 	imageData []byte
 	trackPath string

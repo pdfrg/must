@@ -181,6 +181,7 @@ func (m Model) renderNowPlaying() string {
 		RepeatMode:     m.repeatMode,
 		Shuffle:        m.shuffle,
 		ReplayGainMode: m.cfg.ReplayGainMode,
+		ReplayGainData: m.replayGainData,
 		PlaylistPos:    m.currentIndex + 1,
 		PlaylistLength: len(m.playlist),
 		SleepActive:    m.sleepTimerActive,

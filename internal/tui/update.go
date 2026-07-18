@@ -154,6 +154,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.audioInfo = msg.info
 		return m, nil
 
+	case replayGainMsg:
+		if msg.data != nil {
+			m.replayGainData = msg.data
+		}
+		return m, nil
+
 	case imageLoadedMsg:
 		return m.handleImageLoaded(msg)
 
