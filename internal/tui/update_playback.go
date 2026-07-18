@@ -426,6 +426,7 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 	m.playbackPos = mpv.PlaybackPosition{}
 	m.nowPlaying.SnapProgress(0)
 	m.audioInfo = nil
+	m.replayGainData = nil
 
 	m.albumArtStr = ""
 	m.albumArtLoaded = false
@@ -472,6 +473,7 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 	if m.audioInfo == nil {
 		cmds = append(cmds, fetchAudioInfoCmd(m.mpvBackend))
 	}
+	cmds = append(cmds, fetchReplayGainCmd(m.mpvBackend))
 
 	if m.imageRenderer != nil && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
 		t := m.playlist[m.currentIndex]
@@ -505,6 +507,17 @@ func fetchAudioInfoCmd(backend *mpv.MPVBackend) tea.Cmd {
 			return nil
 		}
 		return audioInfoMsg{info: info}
+	}
+}
+
+func fetchReplayGainCmd(backend *mpv.MPVBackend) tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(600 * time.Millisecond)
+		data, err := backend.GetReplayGainData()
+		if err != nil {
+			return nil
+		}
+		return replayGainMsg{data: data}
 	}
 }
 

@@ -138,6 +138,7 @@ type NowPlayingData struct {
 	RepeatMode     string
 	Shuffle        bool
 	ReplayGainMode string
+	ReplayGainData *models.ReplayGainData
 	PlaylistPos    int
 	PlaylistLength int
 	StatusMsg      string
@@ -235,7 +236,11 @@ func (n NowPlaying) View(data NowPlayingData) string {
 		modeParts = append(modeParts, n.foregroundStyle.Render("󰑖 "+data.RepeatMode))
 	}
 	if data.ReplayGainMode != "" && data.ReplayGainMode != "off" {
-		modeParts = append(modeParts, n.foregroundStyle.Render("󰇼 "+data.ReplayGainMode))
+		style := n.mutedStyle
+		if data.ReplayGainData != nil {
+			style = n.foregroundStyle
+		}
+		modeParts = append(modeParts, style.Render("󰇼 "+data.ReplayGainMode))
 	}
 	if data.Shuffle {
 		modeParts = append(modeParts, n.foregroundStyle.Render("󰒟 shuffle"))

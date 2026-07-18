@@ -421,6 +421,43 @@ func (m *MPVBackend) SetReplayGainMode(mode string) error {
 	return err
 }
 
+func (m *MPVBackend) GetReplayGainData() (*models.ReplayGainData, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.process == nil {
+		return nil, fmt.Errorf("MPV not running")
+	}
+
+	resp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "replaygain-data-per-file"}})
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil || resp.Data == nil {
+		return nil, nil
+	}
+
+	dataMap, ok := resp.Data.(map[string]any)
+	if !ok || len(dataMap) == 0 {
+		return nil, nil
+	}
+
+	d := &models.ReplayGainData{}
+	if v, ok := dataMap["track-gain"]; ok {
+		d.TrackGain, _ = v.(float64)
+	}
+	if v, ok := dataMap["track-peak"]; ok {
+		d.TrackPeak, _ = v.(float64)
+	}
+	if v, ok := dataMap["album-gain"]; ok {
+		d.AlbumGain, _ = v.(float64)
+	}
+	if v, ok := dataMap["album-peak"]; ok {
+		d.AlbumPeak, _ = v.(float64)
+	}
+
+	return d, nil
+}
+
 func (m *MPVBackend) GetPlaybackPosition() (PlaybackPosition, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

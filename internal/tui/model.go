@@ -76,8 +76,9 @@ type Model struct {
 	playing bool
 	paused  bool
 
-	playbackPos mpv.PlaybackPosition
-	audioInfo   *models.AudioInfo
+	playbackPos    mpv.PlaybackPosition
+	audioInfo      *models.AudioInfo
+	replayGainData *models.ReplayGainData
 
 	libraryReady bool
 	scanning     bool

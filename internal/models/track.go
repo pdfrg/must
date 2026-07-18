@@ -46,6 +46,13 @@ type AudioInfo struct {
 	BitDepth   int
 }
 
+type ReplayGainData struct {
+	TrackGain float64
+	TrackPeak float64
+	AlbumGain float64
+	AlbumPeak float64
+}
+
 func (t *Track) GetDurationFormatted() string {
 	totalSeconds := int(t.Duration)
 	hours := totalSeconds / 3600
