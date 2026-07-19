@@ -53,6 +53,7 @@ type KeyMap struct {
 	ReversePlaylist key.Binding
 	ToggleHeader    key.Binding
 	ToggleFooter    key.Binding
+	RandomAlbum     key.Binding
 }
 
 var DefaultKeyMap = KeyMap{
@@ -247,6 +248,10 @@ var DefaultKeyMap = KeyMap{
 	ToggleFooter: key.NewBinding(
 		key.WithKeys("M"),
 		key.WithHelp("M", "toggle footer"),
+	),
+	RandomAlbum: key.NewBinding(
+		key.WithKeys("A"),
+		key.WithHelp("A", "random album"),
 	),
 }
 

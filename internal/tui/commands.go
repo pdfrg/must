@@ -720,6 +720,129 @@ func copyToClipboardCmd(track models.Track) tea.Cmd {
 	}
 }
 
+type randomAlbumPlayMsg struct {
+	tracks []models.Track
+	err    error
+}
+
+func (m *Model) randomAlbumCmd(source string) tea.Cmd {
+	return func() tea.Msg {
+		if source != "" {
+			tracks, err := m.randomAlbumFromSource(source)
+			if err == nil && len(tracks) > 0 {
+				return randomAlbumPlayMsg{tracks: tracks}
+			}
+			return randomAlbumPlayMsg{err: fmt.Errorf("no albums available from %s", source)}
+		}
+
+		type sourceEntry struct {
+			name string
+			fn   func() ([]models.Track, error)
+		}
+
+		var sources []sourceEntry
+		if m.libraryDB != nil && m.libraryReady {
+			sources = append(sources, sourceEntry{"local", m.randomLocalAlbumTracks})
+		}
+		if m.subsonicClient != nil {
+			sources = append(sources, sourceEntry{"subsonic", m.randomSubsonicAlbumTracks})
+		}
+		if len(m.cfg.TempDirs) > 0 {
+			sources = append(sources, sourceEntry{"temp", m.randomTempAlbumTracks})
+		}
+
+		if len(sources) == 0 {
+			return randomAlbumPlayMsg{err: fmt.Errorf("no music sources available")}
+		}
+
+		// Try sources in random order until one succeeds
+		startIdx := randInt(len(sources))
+		for i := 0; i < len(sources); i++ {
+			idx := (startIdx + i) % len(sources)
+			tracks, err := sources[idx].fn()
+			if err == nil && len(tracks) > 0 {
+				return randomAlbumPlayMsg{tracks: tracks}
+			}
+		}
+
+		return randomAlbumPlayMsg{err: fmt.Errorf("no albums found in any source")}
+	}
+}
+
+func (m *Model) randomAlbumFromSource(source string) ([]models.Track, error) {
+	switch source {
+	case "local":
+		return m.randomLocalAlbumTracks()
+	case "subsonic":
+		return m.randomSubsonicAlbumTracks()
+	case "temp":
+		return m.randomTempAlbumTracks()
+	default:
+		return nil, fmt.Errorf("unknown source: %s", source)
+	}
+}
+
+func (m *Model) randomLocalAlbumTracks() ([]models.Track, error) {
+	return m.libraryDB.RandomAlbumTracks()
+}
+
+func (m *Model) randomSubsonicAlbumTracks() ([]models.Track, error) {
+	albums, err := m.subsonicClient.GetAlbumList2("random", 0, 0, 1, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(albums) == 0 {
+		return nil, fmt.Errorf("no random subsonic albums returned")
+	}
+	album, err := m.subsonicClient.GetAlbum(albums[0].ID)
+	if err != nil {
+		return nil, err
+	}
+	return m.subsonicClient.ChildrenToTracks(album.Song), nil
+}
+
+func (m *Model) randomTempAlbumTracks() ([]models.Track, error) {
+	var candidates []string
+	for _, dir := range m.cfg.TempDirs {
+		expanded := os.ExpandEnv(dir)
+		if strings.HasPrefix(expanded, "~/") {
+			home, _ := os.UserHomeDir()
+			expanded = filepath.Join(home, expanded[2:])
+		}
+		entries, err := os.ReadDir(expanded)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				subPath := filepath.Join(expanded, e.Name())
+				if countAudioFilesInDir(subPath) > 0 {
+					candidates = append(candidates, subPath)
+				}
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no temp directories with audio found")
+	}
+	dir := candidates[randInt(len(candidates))]
+	return loadDirTracks(dir, m.libraryDB), nil
+}
+
+func countAudioFilesInDir(dir string) int {
+	count := 0
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if isAudioFile(path) {
+			count++
+		}
+		return nil
+	})
+	return count
+}
+
 func loadArtistImageCmd(eventID int64, artistName string, trackPath string, thumbnailURL string) tea.Cmd {
 	return func() tea.Msg {
 		if trackPath != "" {
