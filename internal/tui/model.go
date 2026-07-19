@@ -320,9 +320,6 @@ func (m Model) Init() tea.Cmd {
 	if m.themeWatcher != nil {
 		cmds = append(cmds, watchThemeCmd(m.themeWatcher))
 	}
-	if m.logoArtLoaded {
-		cmds = append(cmds, renderAlbumArtAfterDelay())
-	}
 	if m.sleepTimerActive {
 		cmds = append(cmds, tickSleepTimerCmd())
 	}
