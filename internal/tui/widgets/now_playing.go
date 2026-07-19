@@ -171,7 +171,7 @@ func (n NowPlaying) renderIdleView(data NowPlayingData) string {
 	modeLine := n.mutedStyle.Render("󰓛 stopped")
 	statusLine := buildStatusLine(n, data)
 
-	output := fmt.Sprintf(" %s\n %s\n %s\n\n %s\n %s\n\n %s\n\n %s\n\n %s\n",
+	output := fmt.Sprintf(" %s\n %s\n %s\n\n %s\n %s\n\n %s\n\n %s\n\n %s",
 		title, artist, album, progView, timeStr, modeLine, audioLine, statusLine)
 
 	if n.contentWidth > 0 {
@@ -229,6 +229,9 @@ func (n NowPlaying) View(data NowPlayingData) string {
 	if data.AudioInfo != nil {
 		audioLine = formatAudioLine(data.AudioInfo, n.mutedStyle, n.foregroundStyle)
 	}
+	if audioLine == "" {
+		audioLine = n.mutedStyle.Render("󰎇 —")
+	}
 
 	var modeLine string
 	modeParts := []string{}
@@ -265,11 +268,7 @@ func (n NowPlaying) View(data NowPlayingData) string {
 		statusLine += " " + n.mutedStyle.Render("•") + " " + n.accentStyle.Render(fmt.Sprintf("Sleep in %dm", mins))
 	}
 
-	output := fmt.Sprintf(" %s\n %s\n %s\n\n %s\n %s\n\n %s\n", title, artist, album, progView, timeStr, modeLine)
-	if audioLine != "" {
-		output += fmt.Sprintf("\n %s\n", audioLine)
-	}
-	output += fmt.Sprintf("\n %s\n", statusLine)
+	output := fmt.Sprintf(" %s\n %s\n %s\n\n %s\n %s\n\n %s\n\n %s\n\n %s", title, artist, album, progView, timeStr, modeLine, audioLine, statusLine)
 
 	if n.contentWidth > 0 {
 		lines := strings.Split(output, "\n")
