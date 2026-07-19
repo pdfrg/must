@@ -202,7 +202,10 @@ func (n NowPlaying) View(data NowPlayingData) string {
 	if data.Track.ServerBadge != "" {
 		artistText = "[" + data.Track.ServerBadge + "] " + artistText
 	}
-	albumText := fmt.Sprintf("%s (%d)", data.Track.Album, data.Track.Year)
+	albumText := data.Track.Album
+	if data.Track.Year > 0 {
+		albumText = fmt.Sprintf("%s (%d)", data.Track.Album, data.Track.Year)
+	}
 
 	if n.maxWidth > 0 {
 		titleText = ansi.Truncate(titleText, n.maxWidth, "...")
