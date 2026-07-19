@@ -512,12 +512,15 @@ func fetchAudioInfoCmd(backend *mpv.MPVBackend) tea.Cmd {
 
 func fetchReplayGainCmd(backend *mpv.MPVBackend) tea.Cmd {
 	return func() tea.Msg {
-		time.Sleep(600 * time.Millisecond)
-		data, err := backend.GetReplayGainData()
-		if err != nil {
-			return nil
+		delays := []time.Duration{600, 800, 1000, 1500}
+		for _, d := range delays {
+			time.Sleep(d * time.Millisecond)
+			data, err := backend.GetReplayGainData()
+			if err == nil && data != nil {
+				return replayGainMsg{data: data}
+			}
 		}
-		return replayGainMsg{data: data}
+		return nil
 	}
 }
 

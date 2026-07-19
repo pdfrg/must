@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -428,7 +429,7 @@ func (m *MPVBackend) GetReplayGainData() (*models.ReplayGainData, error) {
 		return nil, fmt.Errorf("MPV not running")
 	}
 
-	resp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "replaygain-data-per-file"}})
+	resp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "metadata"}})
 	if err != nil {
 		return nil, err
 	}
@@ -437,25 +438,49 @@ func (m *MPVBackend) GetReplayGainData() (*models.ReplayGainData, error) {
 	}
 
 	dataMap, ok := resp.Data.(map[string]any)
-	if !ok || len(dataMap) == 0 {
+	if !ok {
 		return nil, nil
 	}
 
 	d := &models.ReplayGainData{}
-	if v, ok := dataMap["track-gain"]; ok {
-		d.TrackGain, _ = v.(float64)
+	found := false
+
+	if v, ok := dataMap["REPLAYGAIN_TRACK_GAIN"]; ok {
+		if s, ok := v.(string); ok {
+			d.TrackGain, _ = parseReplayGainValue(s)
+			found = true
+		}
 	}
-	if v, ok := dataMap["track-peak"]; ok {
-		d.TrackPeak, _ = v.(float64)
+	if v, ok := dataMap["REPLAYGAIN_TRACK_PEAK"]; ok {
+		if s, ok := v.(string); ok {
+			d.TrackPeak, _ = strconv.ParseFloat(s, 64)
+			found = true
+		}
 	}
-	if v, ok := dataMap["album-gain"]; ok {
-		d.AlbumGain, _ = v.(float64)
+	if v, ok := dataMap["REPLAYGAIN_ALBUM_GAIN"]; ok {
+		if s, ok := v.(string); ok {
+			d.AlbumGain, _ = parseReplayGainValue(s)
+			found = true
+		}
 	}
-	if v, ok := dataMap["album-peak"]; ok {
-		d.AlbumPeak, _ = v.(float64)
+	if v, ok := dataMap["REPLAYGAIN_ALBUM_PEAK"]; ok {
+		if s, ok := v.(string); ok {
+			d.AlbumPeak, _ = strconv.ParseFloat(s, 64)
+			found = true
+		}
 	}
 
+	if !found {
+		return nil, nil
+	}
 	return d, nil
+}
+
+func parseReplayGainValue(s string) (float64, error) {
+	s = strings.TrimSpace(s)
+	s = strings.TrimSuffix(s, "dB")
+	s = strings.TrimSpace(s)
+	return strconv.ParseFloat(s, 64)
 }
 
 func (m *MPVBackend) GetPlaybackPosition() (PlaybackPosition, error) {
