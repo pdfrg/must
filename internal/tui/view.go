@@ -109,6 +109,10 @@ func (m Model) View() tea.View {
 
 	nowPlayingView := m.renderNowPlaying()
 	b.WriteString(nowPlayingView)
+
+	nowPlayingLines := lipgloss.Height(nowPlayingView)
+
+	// Add trailing newline if needed
 	if !strings.HasSuffix(nowPlayingView, "\n") {
 		b.WriteString("\n")
 	}
@@ -116,14 +120,10 @@ func (m Model) View() tea.View {
 	// Large/medium: pad below nowplaying so album art (right side) doesn't overflow
 	if layout != "compact" && layout != "narrow" {
 		artHeight := 16
-		hasArt := (m.cfg.ShowAlbumArt && m.albumArtLoaded && layout != "compact") ||
-			(m.logoArtLoaded && m.imageRenderer != nil && m.cfg.ShowAlbumArt && layout != "compact")
-		if hasArt {
-			nowPlayingLines := lipgloss.Height(nowPlayingView)
-			if nowPlayingLines < artHeight {
-				for i := 0; i < artHeight-nowPlayingLines; i++ {
-					b.WriteString("\n")
-				}
+		canShowArt := m.imageRenderer != nil && m.cfg.ShowAlbumArt
+		if canShowArt && nowPlayingLines < artHeight {
+			for i := 0; i < artHeight-nowPlayingLines; i++ {
+				b.WriteString("\n")
 			}
 		}
 	}
@@ -225,10 +225,8 @@ func (m Model) renderNowPlaying() string {
 		m.nowPlaying.SetWidth(m.width - 4)
 		m.nowPlaying.SetMaxWidth(0)
 
-		hasAlbumArt := m.cfg.ShowAlbumArt && m.albumArtLoaded && layout != "compact"
-		hasLogo := !hasAlbumArt && m.logoImage != nil && m.imageRenderer != nil && layout != "compact"
-
-		if hasAlbumArt || hasLogo {
+		canShowArt := m.imageRenderer != nil && m.cfg.ShowAlbumArt
+		if canShowArt {
 			artHeight := 16
 			artWidth := int(float64(artHeight) * m.cellRatio)
 			if artWidth < 10 {

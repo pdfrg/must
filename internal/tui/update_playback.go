@@ -602,7 +602,7 @@ func (m Model) handleImageLoaded(msg imageLoadedMsg) (tea.Model, tea.Cmd) {
 		cmd = sendNotificationCmd(m.cfg, m.playlist[m.currentIndex], true)
 	}
 
-	return m, tea.Batch(renderAlbumArtAfterDelay(), cmd)
+	return m, tea.Batch(m.renderImagesCmd(), renderAlbumArtAfterDelay(), cmd)
 }
 
 func (m Model) renderImagesCmd() tea.Cmd {
@@ -646,26 +646,26 @@ func (m Model) renderImagesCmd() tea.Cmd {
 				artCol = 2
 			}
 			artRow := 1 + headerOffset
-			for _, row := range []int{1, 3} {
-				for i := 0; i < m.albumArtHeight && i < 20; i++ {
-					raw += fmt.Sprintf("\x1b[%d;%dH%s", row+i, artCol,
-						strings.Repeat(" ", m.albumArtWidth))
-				}
+			raw += "\x1b[s"
+			for i := 0; i < m.albumArtHeight && i < 20; i++ {
+				raw += fmt.Sprintf("\x1b[%d;%dH%s", artRow+i, artCol,
+					strings.Repeat(" ", m.albumArtWidth))
 			}
-			raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", artRow, artCol, m.albumArtStr)
+			raw += fmt.Sprintf("\x1b[%d;%dH%s", artRow, artCol, m.albumArtStr)
+			raw += "\x1b[u"
 		} else if hasLogoArt {
 			artCol := m.width - m.logoArtWidth - 2
 			if narrowLayout {
 				artCol = 2
 			}
 			artRow := 1 + headerOffset
-			for _, row := range []int{1, 3} {
-				for i := 0; i < m.logoArtHeight && i < 20; i++ {
-					raw += fmt.Sprintf("\x1b[%d;%dH%s", row+i, artCol,
-						strings.Repeat(" ", m.logoArtWidth))
-				}
+			raw += "\x1b[s"
+			for i := 0; i < m.logoArtHeight && i < 20; i++ {
+				raw += fmt.Sprintf("\x1b[%d;%dH%s", artRow+i, artCol,
+					strings.Repeat(" ", m.logoArtWidth))
 			}
-			raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", artRow, artCol, m.logoArtStr)
+			raw += fmt.Sprintf("\x1b[%d;%dH%s", artRow, artCol, m.logoArtStr)
+			raw += "\x1b[u"
 		}
 
 		if hasArtistArt {
