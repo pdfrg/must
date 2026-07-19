@@ -302,7 +302,7 @@ func (l *Library) loadSubsonicAlbumsForArtist(artistID string) {
 			entries[i] = models.AlbumEntry{Name: a.Name, Year: a.Year}
 			ids[i] = a.ID
 		}
-		sortAlbumEntries(entries, l.albumSort)
+		sortSubsonicAlbums(entries, ids, l.albumSort)
 		l.allAlbums = entries
 		l.albums = entries
 		l.subsonicAlbumIDs = ids
@@ -392,7 +392,7 @@ func (l *Library) loadSubsonicAlbumsForGenre(genreName string) {
 			entries[i] = models.AlbumEntry{Name: a.Artist + " - " + a.Name, Year: a.Year}
 			ids[i] = a.ID
 		}
-		sortAlbumEntries(entries, l.albumSort)
+		sortSubsonicAlbums(entries, ids, l.albumSort)
 		l.allAlbums = entries
 		l.albums = entries
 		l.subsonicAlbumIDs = ids
@@ -1393,32 +1393,48 @@ func (l Library) renderTrackColumn(width, height int) string {
 	return b.String()
 }
 
-func sortAlbumEntries(entries []models.AlbumEntry, sortMode string) {
-	sort.SliceStable(entries, func(i, j int) bool {
+func sortSubsonicAlbums(entries []models.AlbumEntry, ids []string, sortMode string) {
+	if len(entries) == 0 {
+		return
+	}
+	perm := make([]int, len(entries))
+	for i := range perm {
+		perm[i] = i
+	}
+	sort.SliceStable(perm, func(i, j int) bool {
+		a, b := entries[perm[i]], entries[perm[j]]
 		switch sortMode {
 		case config.SortYearDesc:
-			if entries[i].Year != entries[j].Year {
-				if entries[i].Year == 0 {
+			if a.Year != b.Year {
+				if a.Year == 0 {
 					return false
 				}
-				if entries[j].Year == 0 {
+				if b.Year == 0 {
 					return true
 				}
-				return entries[i].Year > entries[j].Year
+				return a.Year > b.Year
 			}
 		case config.SortYearAsc:
-			if entries[i].Year != entries[j].Year {
-				if entries[i].Year == 0 {
+			if a.Year != b.Year {
+				if a.Year == 0 {
 					return false
 				}
-				if entries[j].Year == 0 {
+				if b.Year == 0 {
 					return true
 				}
-				return entries[i].Year < entries[j].Year
+				return a.Year < b.Year
 			}
 		}
-		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
+		return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 	})
+	newEntries := make([]models.AlbumEntry, len(entries))
+	newIDs := make([]string, len(ids))
+	for i, p := range perm {
+		newEntries[i] = entries[p]
+		newIDs[i] = ids[p]
+	}
+	copy(entries, newEntries)
+	copy(ids, newIDs)
 }
 
 func ensureVisible(cursor, offset *int, total, visibleHeight int) {
