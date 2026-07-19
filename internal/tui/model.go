@@ -58,6 +58,7 @@ type Model struct {
 	autoplay    bool
 	playQuery   string
 	shuffleMode bool
+	randomAlbum bool
 
 	width  int
 	height int
@@ -185,7 +186,7 @@ type Model struct {
 	lastFindResults []ctl.SearchResult
 }
 
-func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool, noRestore bool, autoplay bool, playQuery string, shuffleMode bool) Model {
+func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layoutOverride string, sleepTimer time.Duration, randomMode bool, noRestore bool, autoplay bool, playQuery string, shuffleMode bool, randomAlbum bool) Model {
 	styles := config.NewThemeStyles(theme, cfg.TransparentBackground, cfg.DisableTheme, cfg.TerminalPalette)
 
 	m := Model{
@@ -199,6 +200,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		autoplay:            autoplay,
 		playQuery:           playQuery,
 		shuffleMode:         shuffleMode,
+		randomAlbum:         randomAlbum,
 		scanning:            true,
 		playlist:            []models.Track{},
 		currentIndex:        -1,
@@ -383,6 +385,7 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "c", Desc: "copy song info"},
 		{Key: "z", Desc: "sleep timer"},
 		{Key: "T", Desc: "temp directories"},
+		{Key: "A", Desc: "play random album"},
 		{Key: "o", Desc: "options"},
 		{Key: "?", Desc: "help"},
 		{Key: "H", Desc: "toggle header"},

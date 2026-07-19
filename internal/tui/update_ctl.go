@@ -25,6 +25,8 @@ func (m Model) handleCtlCommand(cmd string, args []string) (Model, ctl.CtlResult
 	case "playshuffle":
 		m.shuffle = true
 		return m.ctlPlay(args)
+	case "random":
+		return m.ctlPlayRandom(args)
 	case "enqueue":
 		return m.ctlEnqueue(args, false)
 	case "enqueue-next":
@@ -131,6 +133,18 @@ func (m Model) ctlPlay(args []string) (Model, ctl.CtlResult, tea.Cmd) {
 		startPlaybackCmd(m.mpvBackend, paths, playIdx),
 		m.trackChangedCmds(),
 	)
+}
+
+func (m Model) ctlPlayRandom(args []string) (Model, ctl.CtlResult, tea.Cmd) {
+	source := ""
+	if len(args) > 0 {
+		source = args[0]
+	}
+	resultText := "Playing random album"
+	if source != "" {
+		resultText = fmt.Sprintf("Playing random %s album", source)
+	}
+	return m, ctl.CtlResult{OK: true, Data: resultText}, m.randomAlbumCmd(source)
 }
 
 func (m Model) ctlEnqueue(args []string, insertNext bool) (Model, ctl.CtlResult, tea.Cmd) {

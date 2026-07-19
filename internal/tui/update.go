@@ -71,6 +71,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scanCompleteMsg:
 		return m.handleScanComplete(msg)
 
+	case randomAlbumPlayMsg:
+		if msg.err != nil {
+			return m, setStatus(&m, msg.err.Error(), true)
+		}
+		m.playlist = msg.tracks
+		m.currentIndex = 0
+		m.shuffleOrder = nil
+		if m.shuffle {
+			m.shuffleOrder = shuffleIndices(len(m.playlist))
+		}
+		m.updatePlaylist()
+		m.playlistWidget.SetCursor(0)
+		paths := m.buildMPVPlaylistPaths()
+		albumName := "Unknown"
+		if len(msg.tracks) > 0 {
+			albumName = msg.tracks[0].Album
+		}
+		return m, tea.Batch(
+			startPlaybackCmd(m.mpvBackend, paths, 0),
+			m.trackChangedCmds(),
+			setStatus(&m, "Playing: "+albumName, false),
+		)
+
 	case trackChangedMsg:
 		return m.handleTrackChanged(msg)
 
@@ -734,6 +757,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keyMap.TempDirs):
 		return m.openTempDirs()
+
+	case key.Matches(msg, m.keyMap.RandomAlbum):
+		return m, m.randomAlbumCmd("")
 
 	case key.Matches(msg, m.keyMap.ToggleHeader):
 		m.showHeader = !m.showHeader

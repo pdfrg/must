@@ -48,6 +48,7 @@ var controlVerbs = map[string]bool{
 	"replaygain":  true,
 	"rg":          true,
 	"playshuffle": true, "ps": true,
+	"random": true, "ra": true,
 }
 
 func resolveAlias(verb string) string {
@@ -74,6 +75,8 @@ func resolveAlias(verb string) string {
 		return "replaygain"
 	case "ps":
 		return "playshuffle"
+	case "ra":
+		return "random"
 	default:
 		return verb
 	}
@@ -92,6 +95,7 @@ func main() {
 	autoplay := false
 	playQuery := ""
 	shuffleMode := false
+	playRandom := false
 
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
@@ -191,7 +195,7 @@ func main() {
 				return
 			}
 
-			// play/playshuffle can auto-start if no instance is running
+			// play/playshuffle/random can auto-start if no instance is running
 			if ctlCmd == "play" || ctlCmd == "playshuffle" {
 				if len(ctlArgs) > 0 {
 					playQuery = strings.Join(ctlArgs, " ")
@@ -202,6 +206,10 @@ func main() {
 					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 					os.Exit(1)
 				}
+			} else if ctlCmd == "random" {
+				playRandom = true
+				noRestore = true
+				paths = nil
 			} else {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
@@ -250,7 +258,7 @@ func main() {
 		handleAlarmMode(alarmTime)
 	}
 
-	m := tui.NewModel(cfg, theme, paths, layoutOverride, sleepTimerDuration, randomMode, noRestore, autoplay, playQuery, shuffleMode)
+	m := tui.NewModel(cfg, theme, paths, layoutOverride, sleepTimerDuration, randomMode, noRestore, autoplay, playQuery, shuffleMode, playRandom)
 
 	p := tea.NewProgram(m)
 
@@ -467,6 +475,7 @@ FLAGS:
 CONTROL COMMANDS (when must is already running):
   play [arg] / p [arg]        Replace playlist and play (resume if no arg)
   playshuffle [arg] / ps [arg]  Replace, enable shuffle, play
+  random [local|subsonic|temp] / ra  Play a random album
   enqueue <arg> / e <arg>     Add to end of playlist
   enqueue-next <arg> / en <arg>  Insert after current track
   pause                       Toggle play/pause

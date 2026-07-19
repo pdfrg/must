@@ -52,6 +52,11 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 		)
 	}
 
+	if m.randomAlbum {
+		m.randomAlbum = false
+		return m, m.randomAlbumCmd("")
+	}
+
 	var restoreCmd tea.Cmd
 	if len(m.playlist) == 0 && len(m.paths) == 0 {
 		if !m.noRestore && m.cfg.RestoreOnStart {

@@ -422,6 +422,15 @@ func (ld *LibraryDB) GetAlbumsByGenreSorted(genre, sort string) ([]models.AlbumE
 	return scanAlbumEntries(rows)
 }
 
+func (ld *LibraryDB) RandomAlbumTracks() ([]models.Track, error) {
+	row := ld.db.QueryRow(`SELECT album FROM tracks WHERE album != '' ORDER BY RANDOM() LIMIT 1`)
+	var album string
+	if err := row.Scan(&album); err != nil {
+		return nil, fmt.Errorf("failed to get random album: %w", err)
+	}
+	return ld.GetTracksByField("album", []string{album})
+}
+
 func (ld *LibraryDB) GetAllAlbumsSorted(sort string) ([]models.AlbumEntry, error) {
 	orderBy := albumOrderClause(sort)
 	query := fmt.Sprintf(`SELECT album, COALESCE(MAX(NULLIF(year, 0)), 0) AS album_year
