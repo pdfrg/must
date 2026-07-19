@@ -954,8 +954,13 @@ func (m Model) ctlFind(args []string) ([]ctl.SearchResult, *ctl.CtlResult) {
 			results = append(results, ctl.SearchResult{
 				Type: ctl.ResultTrack, TrackID: t.ID, Title: t.Title,
 				ArtistName: t.Artist, AlbumName: t.Album, Year: t.Year,
-				Display: fmt.Sprintf("Track: \"%s\" - %s - %s (%d)",
-					t.Title, t.Artist, t.Album, t.Year),
+				Display: func() string {
+					s := fmt.Sprintf("Track: \"%s\" - %s - %s", t.Title, t.Artist, t.Album)
+					if t.Year > 0 {
+						s = fmt.Sprintf("%s (%d)", s, t.Year)
+					}
+					return s
+				}(),
 			})
 		}
 	}
