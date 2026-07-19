@@ -54,7 +54,7 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 
 	if m.randomAlbum {
 		m.randomAlbum = false
-		return m, m.randomAlbumCmd("")
+		return m, m.randomAlbumCmd(m.randomAlbumSource)
 	}
 
 	var restoreCmd tea.Cmd
