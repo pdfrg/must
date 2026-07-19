@@ -96,6 +96,7 @@ func main() {
 	playQuery := ""
 	shuffleMode := false
 	playRandom := false
+	randomAlbumSource := ""
 
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
@@ -210,6 +211,9 @@ func main() {
 				playRandom = true
 				noRestore = true
 				paths = nil
+				if len(ctlArgs) > 0 {
+					randomAlbumSource = ctlArgs[0]
+				}
 			} else {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
@@ -258,7 +262,7 @@ func main() {
 		handleAlarmMode(alarmTime)
 	}
 
-	m := tui.NewModel(cfg, theme, paths, layoutOverride, sleepTimerDuration, randomMode, noRestore, autoplay, playQuery, shuffleMode, playRandom)
+	m := tui.NewModel(cfg, theme, paths, layoutOverride, sleepTimerDuration, randomMode, noRestore, autoplay, playQuery, shuffleMode, playRandom, randomAlbumSource)
 
 	p := tea.NewProgram(m)
 
