@@ -285,6 +285,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.searchModal.AddSubsonicResults(msg.artists, msg.albums, msg.tracks)
+			if len(msg.playlists) > 0 {
+				m.searchModal.AddSubsonicPlaylists(msg.playlists)
+			}
+		}
+		return m, nil
+
+	case subsonicPlaylistsMsg:
+		if msg.err != nil {
+			logf("Subsonic playlists error: %v", msg.err)
+			return m, nil
+		}
+		if m.libraryModal != nil {
+			m.libraryModal.SetSubsonicPlaylists(msg.playlists)
 		}
 		return m, nil
 
@@ -314,7 +327,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.libraryModal != nil {
-			m.libraryModal.SetSubsonicTracks(msg.tracks)
+			if m.libraryModal.InPlaylistMode() {
+				m.libraryModal.SetSubsonicPlaylistTracks(msg.tracks)
+			} else {
+				m.libraryModal.SetSubsonicTracks(msg.tracks)
+			}
 		}
 		// If search modal is active, this is a search resolve — enqueue/play/enqueue-next
 		if m.activeModal == ModalSearch && m.searchModal != nil && len(msg.tracks) > 0 {
@@ -884,6 +901,10 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					m.libraryModal.PendingFetchGenreName = ""
 					extra = append(extra, subsonicGenreAlbumsCmd(m.subsonicClient, name))
 				}
+				if id := m.libraryModal.PendingFetchPlaylistID; id != "" {
+					m.libraryModal.PendingFetchPlaylistID = ""
+					extra = append(extra, subsonicPlaylistTracksCmd(m.subsonicClient, id))
+				}
 			}
 			if len(extra) > 0 {
 				return m, tea.Batch(append([]tea.Cmd{cmd}, extra...)...)
@@ -903,6 +924,10 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				if id := m.searchModal.PendingSubsonicAlbumID; id != "" {
 					m.searchModal.PendingSubsonicAlbumID = ""
 					extra = append(extra, subsonicAlbumTracksCmd(m.subsonicClient, id))
+				}
+				if id := m.searchModal.PendingSubsonicPlaylistID; id != "" {
+					m.searchModal.PendingSubsonicPlaylistID = ""
+					extra = append(extra, subsonicPlaylistTracksCmd(m.subsonicClient, id))
 				}
 			}
 			if name := m.searchModal.ResolveArtistName; name != "" {
@@ -1332,6 +1357,7 @@ func (m Model) openLibrary() (tea.Model, tea.Cmd) {
 	if m.subsonicClient != nil {
 		cmds = append(cmds, subsonicArtistsCmd(m.subsonicClient))
 		cmds = append(cmds, subsonicGenresCmd(m.subsonicClient))
+		cmds = append(cmds, subsonicPlaylistsCmd(m.subsonicClient))
 	}
 
 	return m, tea.Batch(cmds...)

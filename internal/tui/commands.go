@@ -312,15 +312,36 @@ func subsonicSearchCmd(client *api.SubsonicClient, query string) tea.Cmd {
 				tracks: tracks, artists: result.Artist, albums: result.Album, query: query,
 			}
 
+		case "playlist":
+			playlists, err := client.GetPlaylists()
+			if err != nil {
+				return subsonicSearchResultsMsg{err: err, query: query}
+			}
+			var matched []api.PlaylistInfo
+			for _, p := range playlists {
+				if strings.Contains(strings.ToLower(p.Name), strings.ToLower(fieldVal)) {
+					matched = append(matched, p)
+				}
+			}
+			return subsonicSearchResultsMsg{playlists: matched, query: query}
+
 		default:
 			result, err := client.Search3(query, 5, 10, 50)
 			if err != nil {
 				return subsonicSearchResultsMsg{err: err, query: query}
 			}
 			tracks := client.ChildrenToTracks(result.Song)
-			return subsonicSearchResultsMsg{
+			msg := subsonicSearchResultsMsg{
 				tracks: tracks, artists: result.Artist, albums: result.Album, query: query,
 			}
+			if playlists, perr := client.GetPlaylists(); perr == nil {
+				for _, p := range playlists {
+					if strings.Contains(strings.ToLower(p.Name), strings.ToLower(query)) {
+						msg.playlists = append(msg.playlists, p)
+					}
+				}
+			}
+			return msg
 		}
 	}
 }
@@ -339,6 +360,32 @@ func subsonicArtistsCmd(client *api.SubsonicClient) tea.Cmd {
 			flat = append(flat, idx.Artist...)
 		}
 		return subsonicArtistsMsg{artists: flat}
+	}
+}
+
+func subsonicPlaylistsCmd(client *api.SubsonicClient) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return subsonicPlaylistsMsg{err: fmt.Errorf("subsonic not configured")}
+		}
+		playlists, err := client.GetPlaylists()
+		if err != nil {
+			return subsonicPlaylistsMsg{err: err}
+		}
+		return subsonicPlaylistsMsg{playlists: playlists}
+	}
+}
+
+func subsonicPlaylistTracksCmd(client *api.SubsonicClient, playlistID string) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return subsonicAlbumTracksMsg{err: fmt.Errorf("subsonic not configured")}
+		}
+		pl, err := client.GetPlaylist(playlistID)
+		if err != nil {
+			return subsonicAlbumTracksMsg{err: err}
+		}
+		return subsonicAlbumTracksMsg{tracks: client.ChildrenToTracks(pl.Entry)}
 	}
 }
 

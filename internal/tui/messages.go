@@ -12,11 +12,17 @@ import (
 )
 
 type subsonicSearchResultsMsg struct {
-	tracks  []models.Track
-	artists []api.ArtistID3
-	albums  []api.AlbumID3
-	query   string
-	err     error
+	tracks    []models.Track
+	artists   []api.ArtistID3
+	albums    []api.AlbumID3
+	playlists []api.PlaylistInfo
+	query     string
+	err       error
+}
+
+type subsonicPlaylistsMsg struct {
+	playlists []api.PlaylistInfo
+	err       error
 }
 
 type subsonicArtistsMsg struct {

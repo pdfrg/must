@@ -123,8 +123,8 @@ ARG resolution for play / enqueue / enqueue-next:
 | `F` | Fullscreen visualizer |
 | `v` / `tab` | Cycle views (now-playing, playlist, lyrics, visualizer, etc.) |
 | `u` | Update view |
-| `/` | Search library |
-| `l` | Library browser |
+| `/` | Search library (artists, albums, tracks, playlists) |
+| `l` | Library browser (artists, genres, playlists) |
 | `H` | Toggle header visibility |
 | `M` | Toggle footer visibility |
 | `?` | Help |
@@ -321,7 +321,8 @@ When configured, Subsonic search is available through IPC commands and the searc
 
 - **IPC `find`**: Use `subsonic:artist:<q>`, `subsonic:album:<q>`, `subsonic:song:<q>` (alias `track`/`title`), `subsonic:genre:<q>`, or `subsonic:year:<y>` for field-specific remote search. Plain `subsonic:<q>` does a combined artist/album/song search.
 - **Server name alias**: The config `server_name` value can be used as a prefix instead of `subsonic`. Example: with `server_name = "Navidrome"`, use `navidrome:radiohead` — it normalizes to `subsonic:radiohead`.
-- **Search modal**: Three source modes cycled via `Ctrl+t`: Local only (`Ctrl+l`), Subsonic only (`Ctrl+s`), or Both combined.
+- **Search modal**: Three source modes cycled via `Ctrl+t`: Local only (`Ctrl+l`), Subsonic only (`Ctrl+s`), or Both combined. Searches artists, albums, tracks, and playlists — use `playlist:<q>` for a playlist-targeted search, or plain text to match playlist names alongside other results.
+- **Playlists in the TUI**: Local `.m3u`/`.m3u8` playlists from the playlists directory and Subsonic playlists can be browsed (library browser `l` → press `g` to cycle artists → genres → playlists) or searched (`/`). Press `enter` to play, `e` to enqueue, `E` to enqueue next.
 - **Result display**: Remote results are tagged with the configured `server_badge` (e.g., `[S] Artist: Radiohead (9 albums)`). Use result numbers from `must find` to play remote tracks.
 - **Streaming**: Playing a Subsonic result streams the audio from the remote server via MPV.
 

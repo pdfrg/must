@@ -1127,7 +1127,7 @@ func parseQueryPrefix(query string) (field, value string) {
 	field = strings.ToLower(strings.TrimSpace(query[:idx]))
 	value = strings.TrimSpace(query[idx+1:])
 	switch field {
-	case "artist", "album", "genre", "year", "title", "song", "track", "subsonic":
+	case "artist", "album", "genre", "year", "title", "song", "track", "playlist", "subsonic":
 		return field, value
 	default:
 		return "", query
