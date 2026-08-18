@@ -2,6 +2,9 @@ package modals
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/db"
 	"github.com/pdfrg/must/internal/models"
+	"github.com/pdfrg/must/internal/playlist"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -51,18 +55,20 @@ const (
 	resultTrack resultKind = iota
 	resultArtist
 	resultAlbum
+	resultPlaylist
 )
 
 type searchEntry struct {
-	Kind        resultKind
-	Track       models.Track
-	ArtistName  string
-	AlbumName   string
-	AlbumArtist string
-	SubsonicID  string
-	IsSubsonic  bool
-	AlbumCount  int
-	TrackCount  int
+	Kind         resultKind
+	Track        models.Track
+	ArtistName   string
+	AlbumName    string
+	AlbumArtist  string
+	PlaylistName string
+	SubsonicID   string
+	IsSubsonic   bool
+	AlbumCount   int
+	TrackCount   int
 }
 
 type Search struct {
@@ -79,13 +85,14 @@ type Search struct {
 	source        SearchSource
 	subsonicBadge string
 
-	PendingSubsonicArtistID string
-	PendingSubsonicAlbumID  string
-	ResolveArtistName       string
-	ResolveAlbumArtist      string
-	ResolveAlbumName        string
-	ResolveEnqueueNext      bool
-	ResolveEnqueue          bool
+	PendingSubsonicArtistID   string
+	PendingSubsonicAlbumID    string
+	PendingSubsonicPlaylistID string
+	ResolveArtistName         string
+	ResolveAlbumArtist        string
+	ResolveAlbumName          string
+	ResolveEnqueueNext        bool
+	ResolveEnqueue            bool
 }
 
 func NewSearch(styles *config.ThemeStyles, libraryDB *db.LibraryDB) *Search {
@@ -163,6 +170,20 @@ func (s *Search) AddSubsonicResults(artists []api.ArtistID3, albums []api.AlbumI
 	s.scrollOffset = 0
 }
 
+func (s *Search) AddSubsonicPlaylists(playlists []api.PlaylistInfo) {
+	var entries []searchEntry
+	for _, p := range playlists {
+		entries = append(entries, searchEntry{
+			Kind: resultPlaylist, PlaylistName: p.Name,
+			IsSubsonic: true, SubsonicID: p.ID, TrackCount: p.SongCount,
+		})
+	}
+
+	s.entries = append(s.entries, entries...)
+	s.cursor = 0
+	s.scrollOffset = 0
+}
+
 func (s *Search) SetSize(width, height int) {
 	s.width = width
 	s.height = height
@@ -184,6 +205,7 @@ func (s *Search) Reset() {
 	s.scrollOffset = 0
 	s.PendingSubsonicArtistID = ""
 	s.PendingSubsonicAlbumID = ""
+	s.PendingSubsonicPlaylistID = ""
 	s.ResolveArtistName = ""
 	s.ResolveAlbumArtist = ""
 	s.ResolveAlbumName = ""
@@ -278,6 +300,7 @@ func (s *Search) Update(msg tea.Msg) tea.Cmd {
 func (s *Search) clearPending() {
 	s.PendingSubsonicArtistID = ""
 	s.PendingSubsonicAlbumID = ""
+	s.PendingSubsonicPlaylistID = ""
 	s.ResolveArtistName = ""
 	s.ResolveAlbumArtist = ""
 	s.ResolveAlbumName = ""
@@ -309,6 +332,18 @@ func (s *Search) handleEnterEntry(e searchEntry) tea.Cmd {
 		s.ResolveAlbumArtist = e.AlbumArtist
 		s.ResolveAlbumName = e.AlbumName
 		return nil
+	case resultPlaylist:
+		if e.IsSubsonic {
+			s.PendingSubsonicPlaylistID = e.SubsonicID
+			return nil
+		}
+		return func() tea.Msg {
+			tracks, err := s.localPlaylistTracks(e.PlaylistName)
+			if err != nil || len(tracks) == 0 {
+				return SearchModalMsg{Closed: true}
+			}
+			return SearchModalMsg{PlayTracks: tracks, PlayIndex: 0}
+		}
 	}
 	return nil
 }
@@ -342,6 +377,19 @@ func (s *Search) handleEnqueueEntry(e searchEntry) tea.Cmd {
 		}
 		return func() tea.Msg {
 			tracks, err := s.db.GetTracksByArtistAndAlbum(e.AlbumArtist, e.AlbumName)
+			if err != nil || len(tracks) == 0 {
+				return SearchModalMsg{Closed: true}
+			}
+			return SearchModalMsg{Enqueue: tracks}
+		}
+	case resultPlaylist:
+		if e.IsSubsonic {
+			s.PendingSubsonicPlaylistID = e.SubsonicID
+			s.ResolveEnqueue = true
+			return nil
+		}
+		return func() tea.Msg {
+			tracks, err := s.localPlaylistTracks(e.PlaylistName)
 			if err != nil || len(tracks) == 0 {
 				return SearchModalMsg{Closed: true}
 			}
@@ -382,6 +430,19 @@ func (s *Search) handleEnqueueNext() tea.Cmd {
 		s.ResolveAlbumName = e.AlbumName
 		s.ResolveEnqueueNext = true
 		return nil
+	case resultPlaylist:
+		if e.IsSubsonic {
+			s.PendingSubsonicPlaylistID = e.SubsonicID
+			s.ResolveEnqueueNext = true
+			return nil
+		}
+		return func() tea.Msg {
+			tracks, err := s.localPlaylistTracks(e.PlaylistName)
+			if err != nil || len(tracks) == 0 {
+				return SearchModalMsg{Closed: true}
+			}
+			return SearchModalMsg{EnqueueNext: tracks}
+		}
 	}
 	return nil
 }
@@ -449,6 +510,62 @@ func parseQuery(input string) parsedQuery {
 	return pq
 }
 
+func (s *Search) localPlaylistTracks(name string) ([]models.Track, error) {
+	path := config.GetPlaylistSavePath(name)
+	pl, err := playlist.Load(path)
+	if err != nil {
+		return nil, err
+	}
+	var tracks []models.Track
+	for _, p := range pl.Tracks {
+		if s.db != nil {
+			if t, err := s.db.GetTrackByPath(p); err == nil && t != nil {
+				tracks = append(tracks, *t)
+				continue
+			}
+		}
+		tracks = append(tracks, models.Track{Path: p, Title: filepath.Base(p)})
+	}
+	return tracks, nil
+}
+
+func localPlaylistEntries(query string) []searchEntry {
+	dir := config.GetPlaylistSaveDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		lower := strings.ToLower(e.Name())
+		if !strings.HasSuffix(lower, ".m3u") && !strings.HasSuffix(lower, ".m3u8") {
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".m3u")
+		name = strings.TrimSuffix(name, ".m3u8")
+		if query != "" && !strings.Contains(strings.ToLower(name), strings.ToLower(query)) {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var result []searchEntry
+	for _, n := range names {
+		count := 0
+		if pl, err := playlist.Load(config.GetPlaylistSavePath(n)); err == nil {
+			count = len(pl.Tracks)
+		}
+		result = append(result, searchEntry{
+			Kind: resultPlaylist, PlaylistName: n, TrackCount: count,
+		})
+	}
+	return result
+}
+
 func trackCountByArtist(db *db.LibraryDB, artist string) (int, error) {
 	tracks, err := db.GetTracksByArtist(artist)
 	if err != nil {
@@ -488,6 +605,9 @@ func (s *Search) localSearch(query string) []searchEntry {
 	if pq.hasPlain && len(pq.fields) == 0 {
 		q := pq.plainText
 		seenAlbum := make(map[string]bool)
+
+		// Playlist matches
+		fieldEntries = append(fieldEntries, localPlaylistEntries(q)...)
 
 		// Artist matches + their albums
 		if artists, err := s.db.SearchArtistsLike(q); err == nil {
@@ -591,6 +711,9 @@ func (s *Search) searchLocalFields(pq parsedQuery) ([]models.Track, []searchEntr
 		case "genre":
 			tracks := s.fuzzyExpandField("genre", value)
 			allTracks = append(allTracks, tracks...)
+
+		case "playlist":
+			entryResults = append(entryResults, localPlaylistEntries(value)...)
 		}
 	}
 
@@ -748,6 +871,10 @@ func (s Search) View() string {
 				label := fmt.Sprintf("Album: %s — %s", e.AlbumArtist, e.AlbumName)
 				label = ansi.Truncate(label, s.width-10, "...")
 				line = badge + label
+			case resultPlaylist:
+				label := fmt.Sprintf("Playlist: %s (%d tracks)", e.PlaylistName, e.TrackCount)
+				label = ansi.Truncate(label, s.width-10, "...")
+				line = badge + label
 			case resultTrack:
 				dur := e.Track.GetDurationFormatted()
 				label := fmt.Sprintf("%s - %s - %s", e.Track.Artist, e.Track.Album, e.Track.Title)
@@ -826,5 +953,5 @@ func renderSearchHelp(styles *config.ThemeStyles, numResults int, source string)
 }
 
 func renderSearchHint(styles *config.ThemeStyles) string {
-	return styles.MutedStyle.Render("Type to search (supports artist:, album:, title:/song:/track:, genre:, year:1997)  ^t source")
+	return styles.MutedStyle.Render("Type to search (supports artist:, album:, title:/song:/track:, genre:, year:1997, playlist:)  ^t source")
 }
