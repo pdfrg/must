@@ -37,4 +37,4 @@ release:
   github:
     owner: pdfrg
     name: must
-  draft: true
+  draft: false
