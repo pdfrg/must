@@ -52,23 +52,27 @@ var albumSortModeNames = []string{"Alphabetical", "Year (newest)", "Year (oldest
 
 func themeOptions() []string {
 	names := config.ThemeNames()
-	opts := make([]string, 0, len(names)+1)
+	opts := make([]string, 0, len(names)+2)
+	opts = append(opts, "omarchy")
 	opts = append(opts, "default")
 	opts = append(opts, names...)
 	return opts
 }
 
 func themeIndexFromConfig(themeName string) int {
-	if themeName == "" {
-		return 0
-	}
 	opts := themeOptions()
-	for i, t := range opts {
-		if t == themeName {
-			return i
+	if themeName != "" {
+		for i, t := range opts {
+			if t == themeName {
+				return i
+			}
 		}
 	}
-	return 0
+	// Empty theme name: omarchy if a system theme exists, else default
+	if config.OmarchyThemePath() != "" {
+		return 0 // "omarchy"
+	}
+	return 1 // "default"
 }
 
 type Options struct {
@@ -436,7 +440,7 @@ func (o *Options) applyChanges() tea.Cmd {
 	if themeChanged {
 		themeOpts := themeOptions()
 		v := themeOpts[o.themeIdx]
-		if v == "default" {
+		if v == "default" || v == "omarchy" {
 			v = ""
 		}
 		msg.Theme = &v
