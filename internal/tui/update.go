@@ -570,9 +570,14 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.themeWatcher.Close()
 		}
 		if m.scrobbleEligible && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-			cmds = append(cmds, scrobbleTrackCmd(m.cfg, m.subsonicClient, m.playlist[m.currentIndex], m.songStartTime))
+			scrobble := scrobbleTrackCmd(m.cfg, m.subsonicClient, m.playlist[m.currentIndex], m.songStartTime)
+			cmds = append(cmds, func() tea.Msg {
+				scrobble()
+				return tea.Quit()
+			})
+		} else {
+			cmds = append(cmds, tea.Quit)
 		}
-		cmds = append(cmds, tea.Quit)
 		return m, tea.Batch(cmds...)
 
 	case key.Matches(msg, m.keyMap.PlayPause):
@@ -808,12 +813,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 						_ = m.mpvBackend.PlaylistPlayIndex(mpvIdx)
 					}
 				}
-				if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-					track := m.playlist[m.currentIndex]
-					m.prevTrack = &track
-					m.prevSongStartTime = m.songStartTime
-					m.prevScrobbleEligible = m.scrobbleEligible
-				}
+				m.stashCurrentForScrobble()
 				m.currentIndex = cursor
 				if !m.mpvBackend.IsRunning() {
 					paths := m.buildMPVPlaylistPaths()
