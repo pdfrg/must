@@ -81,12 +81,7 @@ func (m Model) handleProgressTick(msg progressTickMsg) (tea.Model, tea.Cmd) {
 		playlistIdx := m.mpvIndexToPlaylistIndex(mpvPos)
 		if playlistIdx != m.currentIndex && playlistIdx >= 0 && playlistIdx < len(m.playlist) {
 			logf("MPV position changed: mpv=%d playlist=%d", mpvPos, playlistIdx)
-			if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-				track := m.playlist[m.currentIndex]
-				m.prevTrack = &track
-				m.prevSongStartTime = m.songStartTime
-				m.prevScrobbleEligible = m.scrobbleEligible
-			}
+			m.stashCurrentForScrobble()
 			m.currentIndex = playlistIdx
 			m.updatePlaylist()
 			cmds = append(cmds, m.trackChangedCmds())
@@ -139,6 +134,8 @@ func (m Model) handleProgressTick(msg progressTickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handlePlaybackEnded() (tea.Model, tea.Cmd) {
+	m.stashCurrentForScrobble()
+
 	switch m.repeatMode {
 	case "one":
 		if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
@@ -164,6 +161,9 @@ func (m Model) handlePlaybackEnded() (tea.Model, tea.Cmd) {
 
 	m.playing = false
 	m.paused = false
+	if cmd := m.pendingScrobbleCmd(); cmd != nil {
+		return m, cmd
+	}
 	return m, nil
 }
 
@@ -404,6 +404,31 @@ func startPlaybackCmd(backend *mpv.MPVBackend, paths []string, startIndex int) t
 		_ = backend.PlaylistPlayIndex(startIndex)
 		return nil
 	}
+}
+
+// stashCurrentForScrobble saves the currently playing track's scrobble state
+// so the pending scrobble survives a track transition or playback stop.
+func (m *Model) stashCurrentForScrobble() {
+	if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
+		track := m.playlist[m.currentIndex]
+		m.prevTrack = &track
+		m.prevSongStartTime = m.songStartTime
+		m.prevScrobbleEligible = m.scrobbleEligible
+	}
+}
+
+// pendingScrobbleCmd returns a cmd that scrobbles the stashed previous track
+// if it is eligible, then clears the stash. Unlike trackChangedCmds, it does
+// not reset any playback or UI state.
+func (m *Model) pendingScrobbleCmd() tea.Cmd {
+	var cmd tea.Cmd
+	if m.prevScrobbleEligible && m.prevTrack != nil {
+		cmd = scrobbleTrackCmd(m.cfg, m.subsonicClient, *m.prevTrack, m.prevSongStartTime)
+	}
+	m.prevTrack = nil
+	m.prevScrobbleEligible = false
+	m.prevSongStartTime = time.Time{}
+	return cmd
 }
 
 func (m *Model) trackChangedCmds() tea.Cmd {
