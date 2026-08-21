@@ -1,3 +1,5 @@
+version: 2
+
 project_name: must
 
 before:
@@ -28,10 +30,12 @@ archives:
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else }}{{ .Arch }}{{ end }}
-    format: tar.gz
+    formats:
+      - tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 release:
   github:
