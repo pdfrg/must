@@ -62,7 +62,7 @@ COMMANDS:
   remove <pos> / rm <pos>     Remove track at playlist position
   go [pos]                    Jump to playlist position (or show current)
   move <from> <to>            Move track in playlist
-  shuffle                     Toggle shuffle
+  shuffle [on|off]              Set shuffle mode (or toggle when no arg)
   repeat [all|one|off]        Set repeat mode (or show current)
   replaygain [off|track|album] / rg  Set ReplayGain normalization (or show current)
   status / s                  Show full playback state
