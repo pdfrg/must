@@ -1512,14 +1512,27 @@ func (m *Model) resolveFieldQuery(arg string) ([]models.Track, string, error) {
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to search genres: %v", err)
 		}
+		match := ""
 		for _, g := range genres {
-			if strings.Contains(strings.ToLower(g), strings.ToLower(value)) {
-				tracks, err := m.libraryDB.GetTracksByField("genre", []string{g})
-				if err != nil {
-					return nil, "", fmt.Errorf("failed to get tracks: %v", err)
-				}
-				return tracks, fmt.Sprintf("genre: %s", g), nil
+			if strings.EqualFold(g, value) {
+				match = g
+				break
 			}
+		}
+		if match == "" {
+			for _, g := range genres {
+				if strings.Contains(strings.ToLower(g), strings.ToLower(value)) {
+					match = g
+					break
+				}
+			}
+		}
+		if match != "" {
+			tracks, err := m.libraryDB.GetTracksByField("genre", []string{match})
+			if err != nil {
+				return nil, "", fmt.Errorf("failed to get tracks: %v", err)
+			}
+			return tracks, fmt.Sprintf("genre: %s", match), nil
 		}
 		return nil, "", fmt.Errorf("no genres matching '%s'", value)
 
