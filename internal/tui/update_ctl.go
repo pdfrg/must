@@ -42,7 +42,7 @@ func (m Model) handleCtlCommand(cmd string, args []string) (Model, ctl.CtlResult
 	case "stop":
 		return m.ctlStop()
 	case "shuffle":
-		return m.ctlShuffle()
+		return m.ctlShuffle(args)
 	case "repeat":
 		return m.ctlRepeat(args)
 	case "replaygain":
@@ -271,7 +271,27 @@ func (m Model) ctlStop() (Model, ctl.CtlResult, tea.Cmd) {
 	return m, ctl.CtlResult{OK: true, Data: "Stopped"}, nil
 }
 
-func (m Model) ctlShuffle() (Model, ctl.CtlResult, tea.Cmd) {
+func (m Model) ctlShuffle(args []string) (Model, ctl.CtlResult, tea.Cmd) {
+	if len(args) > 0 {
+		switch strings.ToLower(args[0]) {
+		case "on":
+			if !m.shuffle {
+				newModel, cmd := m.toggleShuffle()
+				m2 := newModel.(Model)
+				return m2, ctl.CtlResult{OK: true, Data: "Shuffle on"}, cmd
+			}
+			return m, ctl.CtlResult{OK: true, Data: "Shuffle on"}, nil
+		case "off":
+			if m.shuffle {
+				newModel, cmd := m.toggleShuffle()
+				m2 := newModel.(Model)
+				return m2, ctl.CtlResult{OK: true, Data: "Shuffle off"}, cmd
+			}
+			return m, ctl.CtlResult{OK: true, Data: "Shuffle off"}, nil
+		default:
+			return m, ctl.CtlResult{OK: false, Error: "usage: shuffle [on|off]"}, nil
+		}
+	}
 	newModel, cmd := m.toggleShuffle()
 	m2 := newModel.(Model)
 	state := "off"
