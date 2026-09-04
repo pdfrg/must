@@ -161,6 +161,12 @@ func (r *Renderer) getLocalArt(dir string) (image.Image, error) {
 			continue
 		}
 		lower := strings.ToLower(entry.Name())
+		// Skip Kodi-style extras that are not album covers
+		// (discart.jpg sorts before folder.jpg alphabetically and would win
+		// the generic fallback below).
+		if isNonCoverImage(lower) {
+			continue
+		}
 		if strings.HasSuffix(lower, ".jpg") || strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".png") {
 			path := filepath.Join(dir, entry.Name())
 			f, err := os.Open(path)
@@ -176,6 +182,15 @@ func (r *Renderer) getLocalArt(dir string) (image.Image, error) {
 	}
 
 	return nil, fmt.Errorf("no local art in %s", dir)
+}
+
+func isNonCoverImage(lower string) bool {
+	for _, skip := range []string{"discart", "cdart", "fanart", "back", "booklet", "banner", "logo", "artist", "spine", "inside", "medium", "label"} {
+		if strings.Contains(lower, skip) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Renderer) RenderImage(img image.Image, width, height int) (string, error) {
