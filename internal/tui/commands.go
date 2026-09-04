@@ -465,47 +465,66 @@ func subsonicGenreAlbumsCmd(client *api.SubsonicClient, genreName string) tea.Cm
 
 func loadSubsonicAlbumArtCmd(renderer *imgpkg.Renderer, client *api.SubsonicClient, track models.Track) tea.Cmd {
 	return func() tea.Msg {
-		if track.CoverArtID == "" {
+		// Prefer album-level art: per-song (disc-level, dc-*) artwork rows
+		// can go stale server-side while the album row stays correct.
+		// getCoverArt resolves a raw album ID to the album image.
+		ids := []string{}
+		if track.AlbumID != "" {
+			ids = append(ids, track.AlbumID)
+		}
+		if track.CoverArtID != "" && track.CoverArtID != track.AlbumID {
+			ids = append(ids, track.CoverArtID)
+		}
+		if len(ids) == 0 {
 			return imageLoadedMsg{err: fmt.Errorf("no cover art ID"), trackPath: track.Path}
 		}
-		// Try local cache first
-		cacheKey := "subsonic_" + track.CoverArtID
-		cachedPath := filepath.Join(config.GetArtCacheDir(), cacheKey+".jpg")
-		if img, err := imgpkg.LoadImageFromPath(cachedPath); err == nil {
-			var buf bytes.Buffer
-			if encErr := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); encErr == nil {
-				return imageLoadedMsg{imageData: buf.Bytes(), trackPath: track.Path}
+		for _, id := range ids {
+			if msg := trySubsonicArt(client, id, track.Path); msg != nil {
+				return *msg
 			}
 		}
-		// Download from Subsonic server
-		artURL := client.CoverArtURL(track.CoverArtID)
-		resp, err := http.Get(artURL)
-		if err != nil {
-			return imageLoadedMsg{err: fmt.Errorf("failed to fetch subsonic art: %w", err), trackPath: track.Path}
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			return imageLoadedMsg{err: fmt.Errorf("subsonic art HTTP %d", resp.StatusCode), trackPath: track.Path}
-		}
-		data, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return imageLoadedMsg{err: fmt.Errorf("failed to read subsonic art: %v", err), trackPath: track.Path}
-		}
-		// Cache it
-		if err := os.MkdirAll(filepath.Dir(cachedPath), 0755); err == nil {
-			_ = os.WriteFile(cachedPath, data, 0644)
-		}
-		// Encode and return for rendering
-		img, _, err := image.Decode(bytes.NewReader(data))
-		if err != nil {
-			return imageLoadedMsg{err: err, trackPath: track.Path}
-		}
-		var buf bytes.Buffer
-		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
-			return imageLoadedMsg{err: err, trackPath: track.Path}
-		}
-		return imageLoadedMsg{imageData: buf.Bytes(), trackPath: track.Path}
+		return imageLoadedMsg{err: fmt.Errorf("no usable subsonic art"), trackPath: track.Path}
 	}
+}
+
+func trySubsonicArt(client *api.SubsonicClient, artID, trackPath string) *imageLoadedMsg {
+	// Try local cache first
+	cacheKey := "subsonic_" + artID
+	cachedPath := filepath.Join(config.GetArtCacheDir(), cacheKey+".jpg")
+	if img, err := imgpkg.LoadImageFromPath(cachedPath); err == nil {
+		var buf bytes.Buffer
+		if encErr := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); encErr == nil {
+			return &imageLoadedMsg{imageData: buf.Bytes(), trackPath: trackPath}
+		}
+	}
+	// Download from Subsonic server
+	artURL := client.CoverArtURL(artID)
+	resp, err := http.Get(artURL)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil
+	}
+	// Encode and return for rendering
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil
+	}
+	// Cache it
+	if err := os.MkdirAll(filepath.Dir(cachedPath), 0755); err == nil {
+		_ = os.WriteFile(cachedPath, data, 0644)
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
+		return nil
+	}
+	return &imageLoadedMsg{imageData: buf.Bytes(), trackPath: trackPath}
 }
 
 func shuffleIndices(n int) []int {

@@ -32,6 +32,7 @@ type Track struct {
 	Source      TrackSource
 	RemoteID    string
 	CoverArtID  string
+	AlbumID     string
 	ServerName  string
 	ServerBadge string
 	ContentType string

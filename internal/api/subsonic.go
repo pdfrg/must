@@ -361,6 +361,7 @@ func (c *SubsonicClient) ChildToTrack(s Child) models.Track {
 		DiscNum:     s.DiscNumber,
 		Duration:    float64(s.Duration),
 		CoverArtID:  s.CoverArt,
+		AlbumID:     s.AlbumID,
 		ServerName:  c.serverName,
 		ServerBadge: c.serverBadge,
 		ContentType: s.ContentType,
@@ -453,6 +454,7 @@ type Child struct {
 	Track        int    `json:"track,omitempty"`
 	Year         int    `json:"year,omitempty"`
 	CoverArt     string `json:"coverArt,omitempty"`
+	AlbumID      string `json:"albumId,omitempty"`
 	Size         int64  `json:"size,omitempty"`
 	ContentType  string `json:"contentType,omitempty"`
 	Suffix       string `json:"suffix,omitempty"`
