@@ -556,7 +556,7 @@ func (ld *LibraryDB) SearchWithYearRange(ftsQuery string, yearMin, yearMax int) 
 		JOIN tracks_fts fts ON t.id = fts.rowid
 		WHERE %s
 		ORDER BY bm25(tracks_fts, 10, 20, 5, 1)
-		LIMIT 100`, whereStr)
+		LIMIT 500`, whereStr)
 
 	rows, err := ld.db.Query(query, args...)
 	if err != nil {
