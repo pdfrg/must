@@ -71,7 +71,8 @@ COMMANDS:
   find <query> / f <query>    Search library, returns numbered results
                               Prefix: artist:<q>, album:<q>, genre:<q>, year:<y>
                               Subsonic: subsonic:artist:<q>, subsonic:album:<q>,
-                                subsonic:song:<q>, subsonic:genre:<q>, subsonic:year:<y>
+                                subsonic:song:<q>, subsonic:genre:<q>, subsonic:year:<y>,
+                                subsonic:songid:<id>, subsonic:albumid:<id>
                               (config server_name or server_badge prefix also works,
                                 e.g. navidrome:<q> or n:<q>)
   library                     Show music directory, library stats, and Subsonic status
@@ -319,7 +320,7 @@ CREATE VIRTUAL TABLE tracks_fts USING fts5(
 
 When configured, Subsonic search is available through IPC commands and the search modal:
 
-- **IPC `find`**: Use `subsonic:artist:<q>`, `subsonic:album:<q>`, `subsonic:song:<q>` (alias `track`/`title`), `subsonic:genre:<q>`, or `subsonic:year:<y>` for field-specific remote search. Plain `subsonic:<q>` does a combined artist/album/song search.
+- **IPC `find`/`play`**: Use `subsonic:artist:<q>`, `subsonic:album:<q>`, `subsonic:song:<q>` (alias `track`/`title`), `subsonic:genre:<q>`, or `subsonic:year:<y>` for field-specific remote search. Plain `subsonic:<q>` does a combined artist/album/song search. For exact, ambiguity-free playback use `subsonic:songid:<id>` (single track via `getSong`) or `subsonic:albumid:<id>` (full album via `getAlbum`).
 - **Server name alias**: The config `server_name` value can be used as a prefix instead of `subsonic`. Example: with `server_name = "Navidrome"`, use `navidrome:radiohead` — it normalizes to `subsonic:radiohead`.
 - **Search modal**: Three source modes cycled via `Ctrl+t`: Local only (`Ctrl+l`), Subsonic only (`Ctrl+s`), or Both combined. Searches artists, albums, tracks, and playlists — use `playlist:<q>` for a playlist-targeted search, or plain text to match playlist names alongside other results.
 - **Playlists in the TUI**: Local `.m3u`/`.m3u8` playlists from the playlists directory and Subsonic playlists can be browsed (library browser `l` → press `g` to cycle artists → genres → playlists) or searched (`/`). Press `enter` to play, `e` to enqueue, `E` to enqueue next.
