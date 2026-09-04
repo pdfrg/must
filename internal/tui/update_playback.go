@@ -564,6 +564,12 @@ func (m Model) handleImageLoaded(msg imageLoadedMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Drop late arrivals for a previous track: a slow load for track N must
+	// not paint over track N+1 after the user skipped ahead.
+	if msg.trackPath != "" && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) && m.playlist[m.currentIndex].Path != msg.trackPath {
+		return m, nil
+	}
+
 	img, _, err := image.Decode(bytes.NewReader(msg.imageData))
 	if err != nil {
 		if m.cfg.NotificationsEnabled && !m.notifSentForSong && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) && m.playlist[m.currentIndex].Path == msg.trackPath {
