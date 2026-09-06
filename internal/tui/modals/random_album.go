@@ -117,10 +117,10 @@ func (r *RandomAlbum) View() string {
 		}
 
 		style := r.styles.MutedStyle
-		prefix := "( ) "
+		prefix := "○ "
 		if i == r.cursor {
 			style = r.styles.AccentStyle.Bold(true)
-			prefix = "(•) "
+			prefix = "● "
 		}
 
 		b.WriteString(style.Render(prefix + label))
