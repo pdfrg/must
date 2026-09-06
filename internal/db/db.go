@@ -620,6 +620,12 @@ func (ld *LibraryDB) TrackCount() (int, error) {
 	return count, err
 }
 
+func (ld *LibraryDB) AlbumCount() (int, error) {
+	var count int
+	err := ld.db.QueryRow(`SELECT COUNT(DISTINCT album) FROM tracks WHERE album != ''`).Scan(&count)
+	return count, err
+}
+
 func (ld *LibraryDB) ResetZeroDurationModTimes() (int, error) {
 	result, err := ld.db.Exec(`UPDATE tracks SET file_mod_time = 0 WHERE duration = 0`)
 	if err != nil {

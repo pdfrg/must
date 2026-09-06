@@ -846,6 +846,27 @@ func (m *Model) randomAlbumCmd(source string) tea.Cmd {
 	}
 }
 
+type subsonicAlbumCountMsg struct {
+	count int
+	err   error
+}
+
+func subsonicAlbumCountCmd(client *api.SubsonicClient) tea.Cmd {
+	return func() tea.Msg {
+		artists, err := client.GetArtists()
+		if err != nil {
+			return subsonicAlbumCountMsg{err: err}
+		}
+		total := 0
+		for _, idx := range artists.Index {
+			for _, a := range idx.Artist {
+				total += a.AlbumCount
+			}
+		}
+		return subsonicAlbumCountMsg{count: total}
+	}
+}
+
 func (m *Model) randomAlbumFromSource(source string) ([]models.Track, error) {
 	switch source {
 	case "local":
