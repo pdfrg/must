@@ -97,6 +97,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case trackChangedMsg:
 		return m.handleTrackChanged(msg)
 
+	case streamTracksEnrichedMsg:
+		return m.handleStreamTracksEnriched(msg)
+
 	case modals.LibraryModalMsg:
 		return m.handleLibraryModalMsg(msg)
 

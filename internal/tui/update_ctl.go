@@ -1548,6 +1548,78 @@ func urlBasename(raw string) string {
 	return raw
 }
 
+// enrichStreamTracksCmd fetches subsonic metadata in the background for
+// bare stream-URL entries in the current playlist. The cold CLI-paths
+// launch (loadCLIPaths) has no resolver pass, so URL entries arrive with
+// only an EXTINF/basename title; this brings them up to the same full
+// metadata the ctl/playQuery paths resolve synchronously. Playback is
+// untouched (mpv already has the URL) — only display-side fields swap in.
+func (m Model) enrichStreamTracksCmd() tea.Cmd {
+	if m.subsonicClient == nil {
+		return nil
+	}
+	type item struct {
+		idx  int
+		path string
+	}
+	var items []item
+	for i, t := range m.playlist {
+		if t.Source == models.SourceSubsonic {
+			continue
+		}
+		if !playlist.IsURL(t.Path) || subsonicIDFromURL(t.Path) == "" {
+			continue
+		}
+		items = append(items, item{i, t.Path})
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	client := m.subsonicClient
+	return func() tea.Msg {
+		out := make(map[int]models.Track)
+		for _, it := range items {
+			song, err := client.GetSong(subsonicIDFromURL(it.path))
+			if err != nil || song == nil {
+				continue
+			}
+			tracks := client.ChildrenToTracks([]api.Child{*song})
+			if len(tracks) > 0 {
+				out[it.idx] = tracks[0]
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return streamTracksEnrichedMsg{tracks: out}
+	}
+}
+
+func (m Model) handleStreamTracksEnriched(msg streamTracksEnrichedMsg) (tea.Model, tea.Cmd) {
+	currentEnriched := false
+	for idx, tr := range msg.tracks {
+		if idx < 0 || idx >= len(m.playlist) {
+			continue
+		}
+		// Playlist changed underneath us, or entry already enriched:
+		// never clobber.
+		if m.playlist[idx].Path != tr.Path || m.playlist[idx].Source == models.SourceSubsonic {
+			continue
+		}
+		m.playlist[idx] = tr
+		if idx == m.currentIndex {
+			currentEnriched = true
+		}
+	}
+	m.updatePlaylist()
+	if currentEnriched {
+		// Refresh art/lyrics/audio-info for the now-identified track.
+		// mpv keeps playing the same URL; only display-side state resets.
+		return m, m.trackChangedCmds()
+	}
+	return m, nil
+}
+
 func (m *Model) resolveSavedPlaylist(name string) ([]models.Track, string, error) {
 	path := config.GetPlaylistSavePath(name)
 	if _, err := os.Stat(path); err != nil {
