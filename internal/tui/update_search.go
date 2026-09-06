@@ -45,11 +45,17 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 		paths := m.buildMPVPlaylistPaths()
 		playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
 
-		return m, tea.Batch(
+		cmds := []tea.Cmd{
 			startPlaybackCmd(m.mpvBackend, paths, playIdx),
 			m.trackChangedCmds(),
 			setStatus(&m, "Playing "+label, false),
-		)
+		}
+		// Retry in the background any stream entries whose synchronous
+		// metadata lookup failed (e.g. server briefly unreachable).
+		if ec := m.enrichStreamTracksCmd(); ec != nil {
+			cmds = append(cmds, ec)
+		}
+		return m, tea.Batch(cmds...)
 	}
 
 	if m.randomAlbum {
@@ -101,6 +107,11 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 	}
 	if len(m.playlist) > 0 && len(m.paths) > 0 {
 		cmds = append(cmds, m.playTrack(0))
+		// CLI-paths launch skips the resolvers, so stream-URL entries
+		// arrive bare — enrich them once we're up.
+		if ec := m.enrichStreamTracksCmd(); ec != nil {
+			cmds = append(cmds, ec)
+		}
 	}
 	cmds = append(cmds, setStatus(&m, m.scanMsg, false))
 	return m, tea.Batch(cmds...)

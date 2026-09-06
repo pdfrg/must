@@ -130,6 +130,13 @@ type restorePlaybackMsg struct {
 	position float64
 }
 
+// streamTracksEnrichedMsg carries subsonic metadata fetched in the
+// background for bare stream-URL playlist entries (cold launch via
+// CLI paths), keyed by playlist index.
+type streamTracksEnrichedMsg struct {
+	tracks map[int]models.Track
+}
+
 func tickVisCmd() tea.Cmd {
 	return tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
 		return visTickMsg(t)
