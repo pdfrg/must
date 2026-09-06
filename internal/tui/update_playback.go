@@ -399,6 +399,7 @@ func (m *Model) mpvIndexToPlaylistIndex(mpvIdx int) int {
 func startPlaybackCmd(backend *mpv.MPVBackend, paths []string, startIndex int) tea.Cmd {
 	return func() tea.Msg {
 		if err := backend.Start(paths); err != nil {
+			logf("MPV Start failed (%d paths, index %d): %v", len(paths), startIndex, err)
 			return statusClearMsg{}
 		}
 		_ = backend.PlaylistPlayIndex(startIndex)

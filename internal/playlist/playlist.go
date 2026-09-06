@@ -14,6 +14,9 @@ type Playlist struct {
 	Name     string
 	FilePath string
 	Tracks   []string
+	// Titles holds per-entry #EXTINF labels, parallel to Tracks.
+	// Empty string means the entry had no EXTINF line.
+	Titles []string
 }
 
 type SaveOptions struct {
@@ -36,17 +39,35 @@ func Load(path string) (*Playlist, error) {
 
 	dir := filepath.Dir(path)
 	scanner := bufio.NewScanner(f)
+	var pendingTitle string
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#EXTINF:") {
+			if idx := strings.Index(line, ","); idx >= 0 {
+				pendingTitle = strings.TrimSpace(line[idx+1:])
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		if filepath.IsAbs(line) {
-			p.Tracks = append(p.Tracks, line)
+		// Stream URLs must pass through untouched: joining them
+		// with the playlist dir would produce a bogus local path.
+		var entry string
+		if IsURL(line) {
+			entry = line
+		} else if filepath.IsAbs(line) {
+			entry = line
 		} else {
-			p.Tracks = append(p.Tracks, filepath.Join(dir, line))
+			entry = filepath.Join(dir, line)
 		}
+		p.Tracks = append(p.Tracks, entry)
+		p.Titles = append(p.Titles, pendingTitle)
+		pendingTitle = ""
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -130,4 +151,11 @@ func Save(path string, paths []string, opts *SaveOptions) error {
 
 func SaveLegacy(path string, paths []string) error {
 	return Save(path, paths, nil)
+}
+
+// IsURL reports whether an m3u entry is a remote stream URL rather than
+// a local file path.
+func IsURL(entry string) bool {
+	lower := strings.ToLower(entry)
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
 }
