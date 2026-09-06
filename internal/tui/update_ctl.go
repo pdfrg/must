@@ -1791,6 +1791,17 @@ func (m *Model) resolveSubsonicQuery(arg string) ([]models.Track, string, error)
 		tracks := m.subsonicClient.ChildrenToTracks(album.Song)
 		return tracks, fmt.Sprintf("subsonic album: %s - %s", album.Artist, album.Name), nil
 
+	case "playlist":
+		if value == "" {
+			return nil, "", fmt.Errorf("subsonic playlist requires an id")
+		}
+		pl, err := m.subsonicClient.GetPlaylist(value)
+		if err != nil || len(pl.Entry) == 0 {
+			return nil, "", fmt.Errorf("no subsonic playlist matching '%s'", value)
+		}
+		tracks := m.subsonicClient.ChildrenToTracks(pl.Entry)
+		return tracks, fmt.Sprintf("subsonic playlist: %s", pl.Name), nil
+
 	case "genre":
 		songs, err := m.subsonicClient.GetSongsByGenre(value, 500)
 		if err != nil {

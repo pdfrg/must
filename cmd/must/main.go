@@ -500,7 +500,8 @@ CONTROL COMMANDS (when must is already running):
                               Prefix: artist:<q>, album:<q>, genre:<q>, year:<y>
                               Subsonic: subsonic:artist:<q>, subsonic:album:<q>,
                                 subsonic:song:<q>, subsonic:genre:<q>, subsonic:year:<y>,
-                                subsonic:songid:<id>, subsonic:albumid:<id>
+                                subsonic:songid:<id>, subsonic:albumid:<id>,
+                                subsonic:playlist:<id>
                               (config server_name prefix also works, e.g. navidrome:<q>)
   library                     Show music directory, library stats, and Subsonic status
   playlists                   List saved and Subsonic playlists
