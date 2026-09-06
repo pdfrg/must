@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -117,11 +118,17 @@ func (m Model) ctlPlay(args []string) (Model, ctl.CtlResult, tea.Cmd) {
 	m.shuffleOrder = nil
 	if m.shuffle {
 		m.shuffleOrder = shuffleIndices(len(m.playlist))
+		if len(m.shuffleOrder) > 0 {
+			// Start on the first entry of the shuffled order (which is
+			// what buildMPVPlaylistPaths hands to mpv at index 0),
+			// not on playlist track 0 mid-shuffle-order.
+			m.currentIndex = m.shuffleOrder[0]
+		}
 	}
 	m.updatePlaylist()
 
 	paths := m.buildMPVPlaylistPaths()
-	playIdx := m.playlistIndexToMPVIndex(0)
+	playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
 	var resultText string
 	if len(tracks) == 1 {
 		resultText = fmt.Sprintf("Playing %s", label)
@@ -1410,22 +1417,18 @@ func (m *Model) resolveResultIndex(n int) ([]models.Track, string, error) {
 		return []models.Track{r.SubsonicTrack.Track}, r.Display, nil
 
 	case ctl.ResultPlaylist:
-		if m.libraryDB == nil {
-			return nil, "", fmt.Errorf("library not loaded")
-		}
 		path := config.GetPlaylistSavePath(r.PlaylistName)
 		pl, err := playlist.Load(path)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to load playlist: %v", err)
 		}
-		var tracks []models.Track
-		for _, p := range pl.Tracks {
-			t, err := m.libraryDB.GetTrackByPath(p)
-			if err != nil || t == nil {
-				tracks = append(tracks, models.Track{Path: p, Title: filepath.Base(p)})
-				continue
+		tracks := make([]models.Track, 0, len(pl.Tracks))
+		for i, p := range pl.Tracks {
+			var extinf string
+			if i < len(pl.Titles) {
+				extinf = pl.Titles[i]
 			}
-			tracks = append(tracks, *t)
+			tracks = append(tracks, m.playlistEntryToTrack(p, extinf))
 		}
 		return tracks, r.Display, nil
 
@@ -1465,13 +1468,13 @@ func (m *Model) resolvePathOrPlaylist(arg string) ([]models.Track, string, error
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to load playlist: %v", err)
 		}
-		var tracks []models.Track
-		for _, tp := range pl.Tracks {
-			if t := findTrackByPath(tp, m.libraryDB); t != nil {
-				tracks = append(tracks, *t)
-			} else {
-				tracks = append(tracks, models.Track{Path: tp, Title: filepath.Base(tp)})
+		tracks := make([]models.Track, 0, len(pl.Tracks))
+		for i, tp := range pl.Tracks {
+			var extinf string
+			if i < len(pl.Titles) {
+				extinf = pl.Titles[i]
 			}
+			tracks = append(tracks, m.playlistEntryToTrack(tp, extinf))
 		}
 		return tracks, filepath.Base(arg), nil
 	}
@@ -1487,6 +1490,62 @@ func (m *Model) resolvePathOrPlaylist(arg string) ([]models.Track, string, error
 	}
 
 	return nil, "", fmt.Errorf("unsupported file: %s", arg)
+}
+
+// playlistEntryToTrack resolves a single m3u entry to a Track.
+// Remote stream URLs pass through as playable mpv paths; when the entry
+// carries a subsonic song id and a subsonic client is configured, full
+// track metadata is fetched so display/scrobble/cover-art work.
+// Local paths resolve via the library DB with a file-tag fallback.
+func (m *Model) playlistEntryToTrack(entry, extinfTitle string) models.Track {
+	if playlist.IsURL(entry) {
+		if m.subsonicClient != nil {
+			if id := subsonicIDFromURL(entry); id != "" {
+				if song, err := m.subsonicClient.GetSong(id); err == nil && song != nil {
+					tracks := m.subsonicClient.ChildrenToTracks([]api.Child{*song})
+					if len(tracks) > 0 {
+						return tracks[0]
+					}
+				}
+			}
+		}
+		title := extinfTitle
+		if title == "" {
+			title = urlBasename(entry)
+		}
+		return models.Track{Path: entry, Title: title}
+	}
+	if t := findTrackByPath(entry, m.libraryDB); t != nil {
+		return *t
+	}
+	return readTrackFromFile(entry)
+}
+
+// subsonicIDFromURL extracts the ?id= query param from a subsonic
+// stream URL, or "" if the entry is not an identifiable subsonic URL.
+func subsonicIDFromURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Query().Get("id")
+}
+
+// urlBasename returns a display title for a stream URL: the last path
+// segment without query string or fragment.
+func urlBasename(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.Path != "" {
+		if base := filepath.Base(u.Path); base != "" && base != "/" && base != "." {
+			return base
+		}
+	}
+	if i := strings.IndexAny(raw, "?#"); i >= 0 {
+		raw = raw[:i]
+	}
+	if base := filepath.Base(raw); base != "" {
+		return base
+	}
+	return raw
 }
 
 func (m *Model) resolveSavedPlaylist(name string) ([]models.Track, string, error) {
@@ -1764,6 +1823,23 @@ func (m *Model) resolvePlayQuery(query string) ([]models.Track, string, int, err
 		return tracks, label, 0, err
 	}
 
+	// File-path tier: cold `must playshuffle /path/to/list.m3u` folds the
+	// path into playQuery, which otherwise only serves library queries.
+	// Delegate to the same resolver ctl uses so both paths behave alike.
+	if looksLikePlaylistPath(query) {
+		if tracks, label, err := m.resolvePathOrPlaylist(query); err == nil && len(tracks) > 0 {
+			return tracks, label, 0, nil
+		}
+		// An explicit .m3u path that failed to load is actionable —
+		// report it instead of falling through to a confusing FTS miss.
+		lower := strings.ToLower(query)
+		if strings.HasSuffix(lower, ".m3u") || strings.HasSuffix(lower, ".m3u8") {
+			if _, _, err := m.resolvePathOrPlaylist(query); err != nil {
+				return nil, "", 0, err
+			}
+		}
+	}
+
 	if m.libraryDB == nil {
 		return nil, "", 0, fmt.Errorf("library not loaded")
 	}
@@ -1831,6 +1907,23 @@ func (m *Model) resolvePlayQuery(query string) ([]models.Track, string, int, err
 	// Tier 4: FTS5 fallback (flat list)
 	tracks, label, err := m.resolveFTSQuery(query)
 	return tracks, label, 0, err
+}
+
+// looksLikePlaylistPath reports whether a playQuery string looks like a
+// file path (absolute, home-relative, dot-relative, or an .m3u path)
+// rather than a library search query.
+func looksLikePlaylistPath(query string) bool {
+	if query == "" {
+		return false
+	}
+	if strings.HasPrefix(query, "/") || strings.HasPrefix(query, "~") || strings.HasPrefix(query, ".") {
+		return true
+	}
+	lower := strings.ToLower(query)
+	if strings.HasSuffix(lower, ".m3u") || strings.HasSuffix(lower, ".m3u8") {
+		return true
+	}
+	return false
 }
 
 func formatDuration(totalSeconds int) string {

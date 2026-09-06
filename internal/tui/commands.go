@@ -122,7 +122,18 @@ func loadPathsIntoPlaylist(paths []string, libraryDB *db.LibraryDB) []models.Tra
 			if err != nil {
 				continue
 			}
-			for _, trackPath := range pl.Tracks {
+			for i, trackPath := range pl.Tracks {
+				if playlist.IsURL(trackPath) {
+					title := ""
+					if i < len(pl.Titles) {
+						title = pl.Titles[i]
+					}
+					if title == "" {
+						title = urlBasename(trackPath)
+					}
+					tracks = append(tracks, models.Track{Path: trackPath, Title: title})
+					continue
+				}
 				if t := findTrackByPath(trackPath, libraryDB); t != nil {
 					tracks = append(tracks, *t)
 				} else {
