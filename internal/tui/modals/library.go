@@ -875,7 +875,12 @@ func (l *Library) handleEnter() tea.Cmd {
 			}
 		} else if l.browseMode == BrowsePlaylists {
 			if len(l.playlists) > 0 && l.playlistCursor < len(l.playlists) && len(l.albumTracks) > 0 {
-				l.focusPane = FocusTracks
+				return func() tea.Msg {
+					return LibraryModalMsg{
+						PlayTracks: l.albumTracks,
+						PlayIndex:  0,
+					}
+				}
 			}
 		} else {
 			if len(l.artists) > 0 && l.artistCursor < len(l.artists) && len(l.albums) > 0 {
