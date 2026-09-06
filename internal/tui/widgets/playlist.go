@@ -154,8 +154,8 @@ func (p Playlist) View() string {
 	albumW := flexible - songW - artistW
 
 	var b strings.Builder
-	b.WriteString(headerStyle.Render(fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s",
-		playingW, "", posW, "#", songW, "Song", artistW, "Artist", trkW, trkHeader, albumW, "Album", yearWidth, "Year", durWidth, "Time")))
+	b.WriteString(headerStyle.Render(cellRow([]string{"", "#", "Song", "Artist", trkHeader, "Album", "Year", "Time"},
+		[]int{playingW, posW, songW, artistW, trkW, albumW, yearWidth, durWidth})))
 	b.WriteString("\n")
 
 	vh := p.visibleHeight()
@@ -193,8 +193,8 @@ func (p Playlist) View() string {
 		artist := ansi.Truncate(t.Artist, artistW-1, "…")
 		album := ansi.Truncate(t.Album, albumW-1, "…")
 
-		row := fmt.Sprintf("%-*s %-*s %-*s %-*s %-*s %-*s %-*s %-*s",
-			playingW, playIcon, posW, pos, songW, song, artistW, artist, trkW, num, albumW, album, yearWidth, year, durWidth, dur)
+		row := cellRow([]string{playIcon, pos, song, artist, num, album, year, dur},
+			[]int{playingW, posW, songW, artistW, trkW, albumW, yearWidth, durWidth})
 
 		switch {
 		case isCursor && isPlaying:
@@ -213,6 +213,22 @@ func (p Playlist) View() string {
 	}
 
 	return b.String()
+}
+
+func cellRow(cells []string, widths []int) string {
+	padded := make([]string, len(cells))
+	for i, c := range cells {
+		padded[i] = padCell(c, widths[i])
+	}
+	return strings.Join(padded, " ")
+}
+
+func padCell(s string, w int) string {
+	sw := ansi.StringWidth(s)
+	if sw < w {
+		return s + strings.Repeat(" ", w-sw)
+	}
+	return s
 }
 
 func (p Playlist) albumIsMultiDisc() map[string]bool {
