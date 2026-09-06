@@ -1578,9 +1578,12 @@ func (m Model) enrichStreamTracksCmd() tea.Cmd {
 	client := m.subsonicClient
 	return func() tea.Msg {
 		out := make(map[int]models.Track)
+		failed := 0
 		for _, it := range items {
 			song, err := client.GetSong(subsonicIDFromURL(it.path))
 			if err != nil || song == nil {
+				failed++
+				logf("Stream enrich: GetSong failed for %s: %v", it.path, err)
 				continue
 			}
 			tracks := client.ChildrenToTracks([]api.Child{*song})
@@ -1588,6 +1591,7 @@ func (m Model) enrichStreamTracksCmd() tea.Cmd {
 				out[it.idx] = tracks[0]
 			}
 		}
+		logf("Stream enrich: %d/%d entries resolved (%d failed)", len(out), len(items), failed)
 		if len(out) == 0 {
 			return nil
 		}
@@ -1597,20 +1601,36 @@ func (m Model) enrichStreamTracksCmd() tea.Cmd {
 
 func (m Model) handleStreamTracksEnriched(msg streamTracksEnrichedMsg) (tea.Model, tea.Cmd) {
 	currentEnriched := false
+	applied, skipped := 0, 0
 	for idx, tr := range msg.tracks {
 		if idx < 0 || idx >= len(m.playlist) {
+			skipped++
 			continue
 		}
-		// Playlist changed underneath us, or entry already enriched:
+		cur := m.playlist[idx]
+		// Entry already enriched, or playlist changed underneath us:
 		// never clobber.
-		if m.playlist[idx].Path != tr.Path || m.playlist[idx].Source == models.SourceSubsonic {
+		if cur.Source == models.SourceSubsonic {
+			skipped++
+			continue
+		}
+		// NOTE: compare song identity, not URL strings. The enriched
+		// track carries a freshly minted stream URL (stream.view
+		// endpoint, must's salts) while the playlist entry holds the
+		// original URL (e.g. amla's stream endpoint, cliamp's salts),
+		// so exact-Path equality never holds here.
+		if cur.Path != tr.Path && subsonicIDFromURL(cur.Path) != tr.RemoteID {
+			logf("Stream enrich: skipping index %d (playlist changed: %q)", idx, cur.Path)
+			skipped++
 			continue
 		}
 		m.playlist[idx] = tr
+		applied++
 		if idx == m.currentIndex {
 			currentEnriched = true
 		}
 	}
+	logf("Stream enrich: applied %d, skipped %d", applied, skipped)
 	m.updatePlaylist()
 	if currentEnriched {
 		// Refresh art/lyrics/audio-info for the now-identified track.
