@@ -14,6 +14,7 @@ import (
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/ctl"
 	"github.com/pdfrg/must/internal/db"
+	"github.com/pdfrg/must/internal/fold"
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/mpv"
 	"github.com/pdfrg/must/internal/playlist"
@@ -678,7 +679,7 @@ func (m Model) ctlFind(args []string) ([]ctl.SearchResult, *ctl.CtlResult) {
 		genres, err := m.libraryDB.GetGenres()
 		if err == nil {
 			for _, g := range genres {
-				if strings.Contains(strings.ToLower(g), strings.ToLower(fieldVal)) {
+				if fold.Contains(g, fieldVal) {
 					count := trackCountByGenre(m.libraryDB, g)
 					results = append(results, ctl.SearchResult{
 						Type: ctl.ResultGenre, GenreName: g, TrackCount: count,
@@ -1685,14 +1686,14 @@ func (m *Model) resolveFieldQuery(arg string) ([]models.Track, string, error) {
 		}
 		match := ""
 		for _, g := range genres {
-			if strings.EqualFold(g, value) {
+			if fold.Equal(g, value) {
 				match = g
 				break
 			}
 		}
 		if match == "" {
 			for _, g := range genres {
-				if strings.Contains(strings.ToLower(g), strings.ToLower(value)) {
+				if fold.Contains(g, value) {
 					match = g
 					break
 				}
@@ -1950,7 +1951,7 @@ func (m *Model) resolvePlayQuery(query string) ([]models.Track, string, int, err
 	// Tier 1: exact artist match
 	if artists, err := m.libraryDB.SearchArtistsLike(query); err == nil {
 		for _, a := range artists {
-			if strings.EqualFold(a, query) {
+			if fold.Equal(a, query) {
 				tracks, err := m.libraryDB.GetTracksByArtist(a)
 				if err == nil && len(tracks) > 0 {
 					return tracks, "Artist: " + a, 0, nil
@@ -1962,7 +1963,7 @@ func (m *Model) resolvePlayQuery(query string) ([]models.Track, string, int, err
 	// Tier 2: exact album match
 	if albums, err := m.libraryDB.SearchAlbumsLike(query); err == nil {
 		for _, a := range albums {
-			if strings.EqualFold(a.Album, query) {
+			if fold.Equal(a.Album, query) {
 				tracks, err := m.libraryDB.GetTracksByArtistAndAlbum(a.Artist, a.Album)
 				if err == nil && len(tracks) > 0 {
 					return tracks, "Album: " + a.Artist + " - " + a.Album, 0, nil
@@ -1989,9 +1990,7 @@ func (m *Model) resolvePlayQuery(query string) ([]models.Track, string, int, err
 		} else {
 			// Multiple FTS results — check if best match has matching title
 			first := ftsTracks[0]
-			queryLower := strings.ToLower(query)
-			titleLower := strings.ToLower(first.Title)
-			if strings.EqualFold(first.Title, query) || strings.Contains(titleLower, queryLower) || strings.Contains(queryLower, titleLower) {
+			if fold.Equal(first.Title, query) || fold.Contains(first.Title, query) || fold.Contains(query, first.Title) {
 				if first.Artist != "" && first.Album != "" {
 					albumTracks, err := m.libraryDB.GetTracksByArtistAndAlbum(first.Artist, first.Album)
 					if err == nil && len(albumTracks) > 0 {
