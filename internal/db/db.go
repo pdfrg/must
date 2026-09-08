@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/pdfrg/must/internal/config"
+	"github.com/pdfrg/must/internal/fold"
 	"github.com/pdfrg/must/internal/genre"
 	"github.com/pdfrg/must/internal/models"
 
@@ -90,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path);
 		genre,
 		content='tracks',
 		content_rowid='id',
-		tokenize='porter unicode61',
+		tokenize='porter unicode61 remove_diacritics 1',
 		prefix='2 3'
 	);
 
@@ -657,12 +658,14 @@ func (ld *LibraryDB) GetTrackByID(id int64) (*models.Track, error) {
 }
 
 func (ld *LibraryDB) SearchArtistsLike(query string) ([]string, error) {
-	pattern := "%" + query + "%"
+	// Diacritic-insensitive: SQLite LIKE is byte comparison, so fetch the
+	// (small) distinct-artist vocabulary and fold-filter in Go.
+	needle := fold.String(query)
 	rows, err := ld.db.Query(`
 		SELECT DISTINCT COALESCE(NULLIF(album_artist, ''), artist)
 		FROM tracks
-		WHERE COALESCE(NULLIF(album_artist, ''), artist) LIKE ?
-		ORDER BY 1 LIMIT 50`, pattern)
+		WHERE COALESCE(NULLIF(album_artist, ''), artist) != ''
+		ORDER BY 1`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search artists: %w", err)
 	}
@@ -675,9 +678,13 @@ func (ld *LibraryDB) SearchArtistsLike(query string) ([]string, error) {
 		if err := rows.Scan(&a); err != nil {
 			return nil, err
 		}
-		if !seen[a] {
-			seen[a] = true
-			artists = append(artists, a)
+		if seen[a] || !strings.Contains(fold.String(a), needle) {
+			continue
+		}
+		seen[a] = true
+		artists = append(artists, a)
+		if len(artists) >= 50 {
+			break
 		}
 	}
 	return artists, rows.Err()
@@ -688,12 +695,14 @@ type AlbumSearchResult struct {
 }
 
 func (ld *LibraryDB) SearchAlbumsLike(query string) ([]AlbumSearchResult, error) {
-	pattern := "%" + query + "%"
+	// Diacritic-insensitive: fetch the distinct album vocabulary and
+	// fold-filter in Go (see SearchArtistsLike).
+	needle := fold.String(query)
 	rows, err := ld.db.Query(`
 		SELECT DISTINCT album, COALESCE(NULLIF(album_artist, ''), artist)
 		FROM tracks
-		WHERE album LIKE ? AND album != ''
-		ORDER BY album LIMIT 50`, pattern)
+		WHERE album != ''
+		ORDER BY album`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search albums: %w", err)
 	}
@@ -707,9 +716,13 @@ func (ld *LibraryDB) SearchAlbumsLike(query string) ([]AlbumSearchResult, error)
 			return nil, err
 		}
 		key := ar + "|" + a
-		if !seen[key] {
-			seen[key] = true
-			albums = append(albums, AlbumSearchResult{Album: a, Artist: ar})
+		if seen[key] || !strings.Contains(fold.String(a), needle) {
+			continue
+		}
+		seen[key] = true
+		albums = append(albums, AlbumSearchResult{Album: a, Artist: ar})
+		if len(albums) >= 50 {
+			break
 		}
 	}
 	return albums, rows.Err()
