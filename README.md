@@ -124,13 +124,64 @@ MP3, FLAC, OGG, Opus, M4A, AAC, WMA, WAV
 
 See [DOCUMENTATION.md](DOCUMENTATION.md) for cli usage, IPC control commands, keybindings, configuration reference, album art/artist image priority, XDG paths, search architecture, and database schema.
 
+## Omarchy Integration
+
+must follows your Omarchy theme automatically (live-reload, no setup) and pairs
+well with [amla](https://github.com/pdfrg/amla), a searchable music launcher
+popup (`SUPER + M`) that searches your must library — local files, temp/download
+albums, Subsonic/Navidrome, genres, years/decades, playlists — and dispatches
+play / enqueue / play-next / shuffle straight to the running must instance:
+
+```sh
+omarchy plugin add https://github.com/pdfrg/amla
+```
+
+### Keybind (Omarchy 4 lua configs)
+
+Omarchy ships `SUPER + SHIFT + M` bound to Spotify/Music. To give that key to
+must instead, add to `~/.config/hypr/bindings.lua`:
+
+```lua
+-- Must (large) — stderr captured so panic traces survive terminal closure
+hl.unbind("SUPER + SHIFT + M")
+o.bind("SUPER + SHIFT + M", "Must", "xdg-terminal-exec --app-id=must.large -e sh -c 'must --layout large 2>>\"${XDG_STATE_HOME:-$HOME/.local/state}/must/stderr.log\"'")
+```
+
+Prefer to keep Spotify on `SUPER + SHIFT + M`? Bind must to `SUPER + SHIFT + U`
+instead (unbound by default):
+
+```lua
+o.bind("SUPER + SHIFT + U", "Must", "xdg-terminal-exec --app-id=must.large -e sh -c 'must --layout large 2>>\"${XDG_STATE_HOME:-$HOME/.local/state}/must/stderr.log\"'")
+```
+
+### Floating window (Omarchy 4 lua configs)
+
+Add to `~/.config/hypr/hyprland.lua` so must opens as a centered floating window
+(the `--app-id` in the keybind must match the first argument here):
+
+```lua
+o.window("must.large", { size = { 1024, 838 }, float = true, center = true })
+```
+
+### Launcher entry (Omarchy app menu)
+
+A `must.desktop` is shipped in `assets/` (uses `xdg-terminal-exec` with the same
+`must.large` app-id, so the float/size rule above applies). Install it with:
+
+```sh
+cp assets/must.desktop ~/.local/share/applications/
+```
+
+This puts Must in the Omarchy launcher alongside your other TUI apps — same
+pattern as rptui's `assets/rptui.desktop`.
+
 ## Attribution
 
 Audio visualizations: [cliamp](https://github.com/bjarneo/cliamp). Awesome music player with retro Winamp style in the terminal.
 
 ## See Also
 
-**If you like must, please check out [rptui](https://github.com/pdfrg/rptui), a Radio Paradise TUI.**
+**If you like must, please check out [rptui](https://github.com/pdfrg/rptui), a Radio Paradise TUI, and [amla](https://github.com/pdfrg/amla), a searchable Omarchy music launcher that dispatches to must.**
 
 ## License
 

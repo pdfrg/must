@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Must
+Comment=Local music library TUI
+Exec=xdg-terminal-exec --app-id=must.large -e must --layout large
+Icon=must
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=music;library;must;
+StartupWMClass=must.large
