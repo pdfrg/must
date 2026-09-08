@@ -327,6 +327,21 @@ When configured, Subsonic search is available through IPC commands and the searc
 - **Result display**: Remote results are tagged with the configured `server_badge` (e.g., `[S] Artist: Radiohead (9 albums)`). Use result numbers from `must find` to play remote tracks.
 - **Streaming**: Playing a Subsonic result streams the audio from the remote server via MPV.
 
+## Omarchy & amla
+
+must reads `~/.config/omarchy/current/theme/colors.toml` and live-reloads on
+theme switches — no configuration needed. For keybinds, floating-window rules,
+launcher entry, and the [amla](https://github.com/pdfrg/amla) music launcher
+popup (`SUPER + M` searching your must catalog and dispatching play / enqueue /
+play-next / shuffle to the running instance), see the
+[Omarchy Integration section in README.md](README.md#omarchy-integration).
+
+amla dispatches via the IPC commands above (`play`, `playshuffle`, `enqueue`,
+`enqueue-next`) with field-scoped resolvers (`artist:`, `album:`, `genre:`,
+`year:`, `subsonic:…`, `subsonic:songid:`/`subsonic:albumid:`). No must-side
+setup beyond a running instance and, for remote catalog, the `[subsonic]`
+config.
+
 ### Audio Info Properties
 
 Queried from MPV at playback time (shown in now-playing view):
