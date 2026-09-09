@@ -170,9 +170,12 @@ func (p Playlist) View() string {
 		isCursor := idx == p.cursor
 
 		var playIcon string
-		if isPlaying {
+		switch {
+		case isPlaying:
 			playIcon = "▶"
-		} else {
+		case isCursor:
+			playIcon = "▸"
+		default:
 			playIcon = " "
 		}
 
