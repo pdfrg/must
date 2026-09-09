@@ -186,6 +186,9 @@ func (m Model) renderNowPlaying() string {
 		PlaylistLength: len(m.playlist),
 		SleepActive:    m.sleepTimerActive,
 		SleepMins:      int(time.Until(m.sleepTimerExpiresAt).Minutes()) + 1,
+		RevealPos:      m.titleRevealPos,
+		RevealActive:   m.titleRevealActive,
+		RevealAll:      m.titleAnimAll(),
 	}
 	if m.savingPlaylist {
 		modeStr := "[absolute]"

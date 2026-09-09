@@ -50,6 +50,8 @@ type Config struct {
 	ForceProtocol         string                `toml:"force_protocol" comment:"force a specific image protocol instead of auto-detecting\noptions: kitty, sixel, halfblocks, iterm2, or empty for auto-detect (default: '')"`
 	ShowHeader            bool                  `toml:"show_header" comment:"show header bar with title (default: true)"`
 	ShowFooter            bool                  `toml:"show_footer" comment:"show footer bar with keybindings (default: true)"`
+	TitleAnimation        string                `toml:"title_animation" comment:"typewriter reveal for now-playing metadata\noff: instant (default)\nmachine: fixed cadence, one char per tick\nhuman: bursty human-like typing with pauses"`
+	TitleAnimationScope   string                `toml:"title_animation_scope" comment:"which rows the reveal covers\nsong: title only (default)\nall: title, then artist, then album (default: song)"`
 	Audio                 AudioConfig           `toml:"audio" comment:"audio output settings"`
 }
 
@@ -130,6 +132,8 @@ func DefaultConfig() *Config {
 		DisableTheme:          false,
 		ShowHeader:            true,
 		ShowFooter:            true,
+		TitleAnimation:        "off",
+		TitleAnimationScope:   "song",
 		TerminalPalette: TerminalPaletteConfig{
 			Cursor: 2,
 			Accent: 4,
@@ -277,6 +281,13 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Subsonic.ServerBadge == "" {
 		c.Subsonic.ServerBadge = "S"
+	}
+
+	if c.TitleAnimation != "machine" && c.TitleAnimation != "human" {
+		c.TitleAnimation = "off"
+	}
+	if c.TitleAnimationScope != "all" {
+		c.TitleAnimationScope = "song"
 	}
 	if len(c.Subsonic.ServerBadge) > 2 {
 		c.Subsonic.ServerBadge = c.Subsonic.ServerBadge[:2]

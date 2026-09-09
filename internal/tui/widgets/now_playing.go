@@ -145,6 +145,9 @@ type NowPlayingData struct {
 	StatusIsErr    bool
 	SleepActive    bool
 	SleepMins      int
+	RevealPos      int
+	RevealActive   bool
+	RevealAll      bool
 }
 
 func buildStatusLine(n NowPlaying, data NowPlayingData) string {
@@ -205,6 +208,32 @@ func (n NowPlaying) View(data NowPlayingData) string {
 	albumText := data.Track.Album
 	if data.Track.Year > 0 {
 		albumText = fmt.Sprintf("%s (%d)", data.Track.Album, data.Track.Year)
+	}
+
+	// Typewriter reveal: consume the global revealed budget row by row
+	// (title, then artist, then album when RevealAll). Rows not yet reached
+	// render blank; the active row gets a block cursor like kew.
+	if data.RevealActive {
+		cursor := n.cursorStyle.Render("█")
+		if data.RevealAll {
+			rows := []string{titleText, artistText, albumText}
+			pos := data.RevealPos
+			for i, r := range rows {
+				n := runeCount(r)
+				if pos >= n {
+					pos -= n
+					continue
+				}
+				rows[i] = sliceRunes(r, pos) + cursor
+				for j := i + 1; j < len(rows); j++ {
+					rows[j] = ""
+				}
+				break
+			}
+			titleText, artistText, albumText = rows[0], rows[1], rows[2]
+		} else {
+			titleText = sliceRunes(titleText, data.RevealPos) + cursor
+		}
 	}
 
 	if n.maxWidth > 0 {
@@ -289,6 +318,28 @@ func (n NowPlaying) View(data NowPlayingData) string {
 	}
 
 	return output
+}
+
+func runeCount(s string) int {
+	n := 0
+	for range s {
+		n++
+	}
+	return n
+}
+
+func sliceRunes(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	i := 0
+	for idx := range s {
+		if i == n {
+			return s[:idx]
+		}
+		i++
+	}
+	return s
 }
 
 func formatAudioLine(info *models.AudioInfo, mutedStyle, fgStyle lipgloss.Style) string {

@@ -51,6 +51,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case progressTickMsg:
 		return m.handleProgressTick(msg)
 
+	case titleRevealTickMsg:
+		return m.handleTitleRevealTick(msg)
+
 	case ctl.CtlMessage:
 		newModel, result, cmd := m.handleCtlCommand(msg.Cmd, msg.Args)
 		if msg.ResultCh != nil {
@@ -1982,6 +1985,9 @@ func (m Model) togglePause() (tea.Model, tea.Cmd) {
 		return m, setStatus(&m, fmt.Sprintf("Pause error: %v", err), true)
 	}
 	m.paused = !m.paused
+	if m.paused {
+		m.snapTitleReveal()
+	}
 	return m, nil
 }
 

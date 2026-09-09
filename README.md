@@ -72,6 +72,7 @@ Not convinced? See a full [COMPARISON](docs/COMPARISON.md) with popular TUI musi
 - **Temp Directories Modal**: Easily find and play music not stored in the main library.  Perfect for listening to recent downloads before deciding whether to add to your library.
 - **Media Keys Support**: Use your keyboard's media keys to control playback (e.g. Fn+F4 to play/pause).  Requires `mpv-mpris`.
 - **Desktop Notifications**: On song changes, with optional album art.  Requires `libnotify`.
+- **Title Animation**: Optional typewriter reveal for now-playing metadata on track change (`title_animation = "off" | "machine" | "human"`, scope `song` or `all`). Off by default.
 
 ## Installation
 
@@ -178,6 +179,8 @@ pattern as rptui's `assets/rptui.desktop`.
 ## Attribution
 
 Audio visualizations: [cliamp](https://github.com/bjarneo/cliamp). Awesome music player with retro Winamp style in the terminal.
+
+Title animation inspired by [kew](https://github.com/ravachol/kew). Awesome minimal music player with a nice typewriter effect for the track title.
 
 ## See Also
 

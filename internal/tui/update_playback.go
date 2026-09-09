@@ -76,6 +76,11 @@ func (m Model) handleProgressTick(msg progressTickMsg) (tea.Model, tea.Cmd) {
 
 	m.paused = m.mpvBackend.QueryPauseState()
 
+	// Never leave a partial reveal on pause: snap to full text.
+	if m.paused && m.titleRevealActive {
+		m.snapTitleReveal()
+	}
+
 	mpvPos, mpvErr := m.mpvBackend.GetPlaylistPosition()
 	if mpvErr == nil && mpvPos >= 0 && !m.restoringPlayback {
 		playlistIdx := m.mpvIndexToPlaylistIndex(mpvPos)
@@ -486,6 +491,10 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 
 	m.songStartTime = time.Now()
 	m.scrobbleEligible = false
+
+	if cmd := m.startTitleReveal(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 
 	if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
 		t := m.playlist[m.currentIndex]

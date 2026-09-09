@@ -184,6 +184,11 @@ type Model struct {
 	scrobbleStates  map[string]int
 	scrobbleFlashAt time.Time
 
+	titleRevealPos    int
+	titleRevealLens   []int
+	titleRevealSeq    int
+	titleRevealActive bool
+
 	isDark bool
 
 	lastFindResults []ctl.SearchResult

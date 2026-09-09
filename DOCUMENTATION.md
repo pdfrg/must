@@ -166,6 +166,8 @@ Config file: `~/.config/must/config.toml` (auto-created with defaults on first r
 | `colors_file` | `""` | Path to custom colors.toml, takes priority over theme setting |
 | `theme` | `""` | Built-in theme: catppuccin-mocha, gruvbox-dark, dark-red, osaka-jade, synth, basic |
 | `force_protocol` | `""` | Force image protocol: kitty, sixel, halfblocks, iterm2 |
+| `title_animation` | `off` | Typewriter reveal for now-playing metadata: off (instant), machine (fixed cadence, one char per tick), human (bursty human-like typing with pauses) |
+| `title_animation_scope` | `song` | Which rows the reveal covers: song (title only), all (title, then artist, then album) |
 
 ### Terminal Palette (when disable_theme is true)
 
