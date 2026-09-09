@@ -181,7 +181,13 @@ Audio visualizations: [cliamp](https://github.com/bjarneo/cliamp). Awesome music
 
 ## See Also
 
-**If you like must, please check out [rptui](https://github.com/pdfrg/rptui), a Radio Paradise TUI, and [amla](https://github.com/pdfrg/amla), a searchable Omarchy music launcher that dispatches to must.**
+**If you like must, please check out...**
+
+[rptui](https://github.com/pdfrg/rptui) a Radio Paradise TUI
+
+[amla](https://github.com/pdfrg/amla) a searchable Omarchy music launcher plugin that dispatches to must (or cliamp, or mpd)
+
+![must+amla](assets/amla-must.jpg)
 
 ## License
 
