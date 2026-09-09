@@ -13,7 +13,13 @@ const (
 	SortAlpha    = "alpha"
 	SortYearDesc = "year_desc"
 	SortYearAsc  = "year_asc"
+
+	ProgressAll       = "all"
+	ProgressSimple    = "simple"
+	ProgressRemaining = "remaining"
 )
+
+var DefaultPlaylistColumns = []string{"position", "title", "artist", "track", "album", "year", "duration"}
 
 type Config struct {
 	path                  string
@@ -23,6 +29,9 @@ type Config struct {
 	RepeatMode            string                `toml:"repeat_mode" comment:"repeat mode: off, all, one (default: off)"`
 	Shuffle               bool                  `toml:"shuffle" comment:"shuffle playback order (default: false)"`
 	AlbumSort             string                `toml:"album_sort" comment:"album sort order in library browser\nalpha: alphabetical (default)\nyear_desc: by year, newest first\nyear_asc: by year, oldest first"`
+	ShowEncodingDetails   bool                  `toml:"show_encoding_details" comment:"show codec, bitrate, sample rate, and bit depth below progress (default: true)"`
+	ProgressDisplay       string                `toml:"progress_display" comment:"progress timer detail: all, simple, or remaining (default: all)"`
+	PlaylistColumns       []string              `toml:"playlist_columns" comment:"ordered playlist columns\navailable: position, title, artist, track, album, year, duration"`
 	ReplayGainMode        string                `toml:"replaygain_mode" comment:"replaygain volume normalization\noff, track, album (default: off)"`
 	RestoreOnStart        bool                  `toml:"restore_on_start" comment:"restore last session's playlist and position on startup (default: true)"`
 	Autoplay              bool                  `toml:"autoplay" comment:"auto-play a random album when launched with no paths (default: false)"`
@@ -100,18 +109,21 @@ type VisualizerConfig struct {
 func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
 	return &Config{
-		MusicDir:         filepath.Join(homeDir, "Music"),
-		MusicDirs:        []string{filepath.Join(homeDir, "Music")},
-		PlaylistPathMode: "relative",
-		RepeatMode:       "off",
-		Shuffle:          false,
-		AlbumSort:        SortAlpha,
-		ReplayGainMode:   "off",
-		RestoreOnStart:   true,
-		Autoplay:         false,
-		ShowAlbumArt:     true,
-		AlbumArtPath:     filepath.Join(os.TempDir(), "cover.jpg"),
-		CopyAlbumArt:     false,
+		MusicDir:            filepath.Join(homeDir, "Music"),
+		MusicDirs:           []string{filepath.Join(homeDir, "Music")},
+		PlaylistPathMode:    "relative",
+		RepeatMode:          "off",
+		Shuffle:             false,
+		AlbumSort:           SortAlpha,
+		ShowEncodingDetails: true,
+		ProgressDisplay:     ProgressAll,
+		PlaylistColumns:     append([]string(nil), DefaultPlaylistColumns...),
+		ReplayGainMode:      "off",
+		RestoreOnStart:      true,
+		Autoplay:            false,
+		ShowAlbumArt:        true,
+		AlbumArtPath:        filepath.Join(os.TempDir(), "cover.jpg"),
+		CopyAlbumArt:        false,
 		Visualizer: VisualizerConfig{
 			Mode:         "Segmented",
 			ShowInfo:     "fade",
@@ -231,6 +243,13 @@ func (c *Config) applyDefaults() {
 	if c.AlbumSort != SortAlpha && c.AlbumSort != SortYearDesc && c.AlbumSort != SortYearAsc {
 		c.AlbumSort = defaults.AlbumSort
 	}
+	if c.ProgressDisplay != ProgressAll && c.ProgressDisplay != ProgressSimple && c.ProgressDisplay != ProgressRemaining {
+		c.ProgressDisplay = defaults.ProgressDisplay
+	}
+	c.PlaylistColumns = normalizePlaylistColumns(c.PlaylistColumns)
+	if len(c.PlaylistColumns) == 0 {
+		c.PlaylistColumns = append([]string(nil), defaults.PlaylistColumns...)
+	}
 	if c.AlbumArtPath == "" {
 		c.AlbumArtPath = defaults.AlbumArtPath
 	}
@@ -281,6 +300,27 @@ func (c *Config) applyDefaults() {
 	if len(c.Subsonic.ServerBadge) > 2 {
 		c.Subsonic.ServerBadge = c.Subsonic.ServerBadge[:2]
 	}
+}
+
+func normalizePlaylistColumns(columns []string) []string {
+	valid := map[string]bool{
+		"position": true,
+		"title":    true,
+		"artist":   true,
+		"track":    true,
+		"album":    true,
+		"year":     true,
+		"duration": true,
+	}
+	seen := make(map[string]bool)
+	result := make([]string, 0, len(columns))
+	for _, column := range columns {
+		if valid[column] && !seen[column] {
+			result = append(result, column)
+			seen[column] = true
+		}
+	}
+	return result
 }
 
 func GetScrobbleCacheDir() string {

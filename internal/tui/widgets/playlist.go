@@ -19,6 +19,7 @@ type Playlist struct {
 	currentIdx int
 	cursor     int
 	scrollOff  int
+	columns    []string
 }
 
 func NewPlaylist(styles *config.ThemeStyles) *Playlist {
@@ -26,6 +27,30 @@ func NewPlaylist(styles *config.ThemeStyles) *Playlist {
 		styles:     styles,
 		currentIdx: -1,
 		cursor:     0,
+		columns:    append([]string(nil), config.DefaultPlaylistColumns...),
+	}
+}
+
+func (p *Playlist) SetColumns(columns []string) {
+	valid := map[string]bool{
+		"position": true,
+		"title":    true,
+		"artist":   true,
+		"track":    true,
+		"album":    true,
+		"year":     true,
+		"duration": true,
+	}
+	seen := make(map[string]bool)
+	p.columns = p.columns[:0]
+	for _, column := range columns {
+		if valid[column] && !seen[column] {
+			p.columns = append(p.columns, column)
+			seen[column] = true
+		}
+	}
+	if len(p.columns) == 0 {
+		p.columns = append([]string(nil), config.DefaultPlaylistColumns...)
 	}
 }
 
@@ -114,48 +139,17 @@ func (p Playlist) View() string {
 	headerBg := lightenColor(p.styles.Background, 0.30)
 	headerStyle := p.styles.MutedStyle.Background(lipgloss.Color(headerBg))
 
-	const (
-		posW      = 4
-		playingW  = 2
-		durWidth  = 8
-		yearWidth = 5
-	)
-
 	albumMultiDisc := p.albumIsMultiDisc()
-
-	trkW := 4
-	for _, t := range p.tracks {
-		multi := albumMultiDisc[albumKey(t)]
-		if multi && t.DiscNum > 0 {
-			n := t.TrackNum
-			if n == 0 {
-				n = 99
-			}
-			w := len(fmt.Sprintf("%d/%d", t.DiscNum, n))
-			if w > trkW {
-				trkW = w
-			}
-		} else if t.TrackNum > 0 {
-			w := len(fmt.Sprintf("%d", t.TrackNum))
-			if w > trkW {
-				trkW = w
-			}
-		}
+	columns := p.layoutColumns(albumMultiDisc)
+	widths := []int{2}
+	headings := []string{""}
+	for _, column := range columns {
+		widths = append(widths, column.width)
+		headings = append(headings, column.heading)
 	}
-	trkHeader := "Trk#"
-
-	fixed := posW + playingW + trkW + durWidth + yearWidth + 8
-	flexible := p.width - fixed
-	if flexible < 30 {
-		flexible = 30
-	}
-	songW := flexible * 30 / 100
-	artistW := flexible * 25 / 100
-	albumW := flexible - songW - artistW
 
 	var b strings.Builder
-	b.WriteString(headerStyle.Render(cellRow([]string{"", "#", "Song", "Artist", trkHeader, "Album", "Year", "Time"},
-		[]int{playingW, posW, songW, artistW, trkW, albumW, yearWidth, durWidth})))
+	b.WriteString(headerStyle.Render(cellRow(headings, widths)))
 	b.WriteString("\n")
 
 	vh := p.visibleHeight()
@@ -176,25 +170,11 @@ func (p Playlist) View() string {
 			playIcon = " "
 		}
 
-		songLabel := t.Title
-		if t.ServerBadge != "" {
-			songLabel = "[" + t.ServerBadge + "] " + t.Title
+		cells := []string{playIcon}
+		for _, column := range columns {
+			cells = append(cells, playlistCell(column.id, t, idx, albumMultiDisc[albumKey(t)], column.width))
 		}
-
-		pos := fmt.Sprintf("%d", idx+1)
-		num := formatTrackNum(t, idx, albumMultiDisc[albumKey(t)])
-		dur := formatPlaylistDuration(t.Duration)
-		year := ""
-		if t.Year != 0 {
-			year = fmt.Sprintf("%d", t.Year)
-		}
-
-		song := ansi.Truncate(songLabel, songW-1, "…")
-		artist := ansi.Truncate(t.Artist, artistW-1, "…")
-		album := ansi.Truncate(t.Album, albumW-1, "…")
-
-		row := cellRow([]string{playIcon, pos, song, artist, num, album, year, dur},
-			[]int{playingW, posW, songW, artistW, trkW, albumW, yearWidth, durWidth})
+		row := cellRow(cells, widths)
 
 		switch {
 		case isCursor && isPlaying:
@@ -213,6 +193,113 @@ func (p Playlist) View() string {
 	}
 
 	return b.String()
+}
+
+type playlistColumn struct {
+	id         string
+	heading    string
+	width      int
+	flexWeight int
+}
+
+func (p Playlist) layoutColumns(albumMultiDisc map[string]bool) []playlistColumn {
+	trackWidth := 4
+	for _, t := range p.tracks {
+		multi := albumMultiDisc[albumKey(t)]
+		if multi && t.DiscNum > 0 {
+			n := t.TrackNum
+			if n == 0 {
+				n = 99
+			}
+			trackWidth = max(trackWidth, len(fmt.Sprintf("%d/%d", t.DiscNum, n)))
+		} else if t.TrackNum > 0 {
+			trackWidth = max(trackWidth, len(fmt.Sprintf("%d", t.TrackNum)))
+		}
+	}
+
+	definitions := map[string]playlistColumn{
+		"position": {id: "position", heading: "#", width: 4},
+		"title":    {id: "title", heading: "Song", flexWeight: 30},
+		"artist":   {id: "artist", heading: "Artist", flexWeight: 25},
+		"track":    {id: "track", heading: "Trk#", width: trackWidth},
+		"album":    {id: "album", heading: "Album", flexWeight: 45},
+		"year":     {id: "year", heading: "Year", width: 5},
+		"duration": {id: "duration", heading: "Time", width: 8},
+	}
+
+	columns := make([]playlistColumn, 0, len(p.columns))
+	fixedWidth := 2 + len(p.columns) // selector plus one space between every cell
+	flexCount := 0
+	totalWeight := 0
+	for _, id := range p.columns {
+		column, ok := definitions[id]
+		if !ok {
+			continue
+		}
+		columns = append(columns, column)
+		if column.flexWeight > 0 {
+			flexCount++
+			totalWeight += column.flexWeight
+		} else {
+			fixedWidth += column.width
+		}
+	}
+
+	if flexCount == 0 {
+		return columns
+	}
+	flexibleWidth := max(p.width-fixedWidth, flexCount*8)
+	remainingExtra := flexibleWidth - flexCount*8
+	remainingWidth := flexibleWidth
+	remainingFlex := flexCount
+	remainingWeight := totalWeight
+	for i := range columns {
+		if columns[i].flexWeight == 0 {
+			continue
+		}
+		width := 8
+		remainingFlex--
+		if remainingFlex == 0 {
+			width = remainingWidth
+		} else if remainingWeight > 0 {
+			share := remainingExtra * columns[i].flexWeight / remainingWeight
+			width += share
+			remainingExtra -= share
+			remainingWeight -= columns[i].flexWeight
+		}
+		columns[i].width = width
+		remainingWidth -= width
+	}
+	return columns
+}
+
+func playlistCell(id string, track models.Track, idx int, multiDisc bool, width int) string {
+	var value string
+	switch id {
+	case "position":
+		value = fmt.Sprintf("%d", idx+1)
+	case "title":
+		value = track.Title
+		if track.ServerBadge != "" {
+			value = "[" + track.ServerBadge + "] " + value
+		}
+	case "artist":
+		value = track.Artist
+	case "track":
+		value = formatTrackNum(track, idx, multiDisc)
+	case "album":
+		value = track.Album
+	case "year":
+		if track.Year != 0 {
+			value = fmt.Sprintf("%d", track.Year)
+		}
+	case "duration":
+		value = formatPlaylistDuration(track.Duration)
+	}
+	if id == "title" || id == "artist" || id == "album" {
+		return ansi.Truncate(value, max(width-1, 1), "…")
+	}
+	return value
 }
 
 func cellRow(cells []string, widths []int) string {

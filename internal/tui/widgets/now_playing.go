@@ -28,32 +28,47 @@ type NowPlaying struct {
 	accentColor string
 	cursorColor string
 
+	showEncodingDetails bool
+	progressDisplay     string
+
 	progress progress.Model
 }
 
-func NewNowPlaying(styles *config.ThemeStyles, accentColor, cursorColor, progressBgColor string) *NowPlaying {
+func NewNowPlaying(styles *config.ThemeStyles, accentColor, cursorColor, progressTrackColor string) *NowPlaying {
 	cursorStyle := styles.ForegroundStyle
 	if cursorColor != "" {
 		cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(cursorColor))
 	}
 
 	var emptyColor color.Color
-	if progressBgColor != "" && len(progressBgColor) == 7 && progressBgColor[0] == '#' {
-		emptyColor = lipgloss.Color(darkenColor(progressBgColor, 0.3))
+	if progressTrackColor != "" && len(progressTrackColor) == 7 && progressTrackColor[0] == '#' {
+		emptyColor = lipgloss.Color(progressTrackColor)
 	} else {
-		emptyColor = lipgloss.Color("#1a1a1a")
+		emptyColor = lipgloss.Color("#6c7086")
 	}
 
-	p := buildProgress(40, accentColor, cursorColor, emptyColor)
+	p := buildProgress(40, accentColor, emptyColor)
 
 	return &NowPlaying{
-		foregroundStyle: styles.ForegroundStyle,
-		accentStyle:     styles.AccentStyle,
-		mutedStyle:      styles.MutedStyle,
-		cursorStyle:     cursorStyle,
-		accentColor:     accentColor,
-		cursorColor:     cursorColor,
-		progress:        p,
+		foregroundStyle:     styles.ForegroundStyle,
+		accentStyle:         styles.AccentStyle,
+		mutedStyle:          styles.MutedStyle,
+		cursorStyle:         cursorStyle,
+		accentColor:         accentColor,
+		cursorColor:         cursorColor,
+		showEncodingDetails: true,
+		progressDisplay:     config.ProgressAll,
+		progress:            p,
+	}
+}
+
+func (n *NowPlaying) SetDisplayOptions(showEncodingDetails bool, progressDisplay string) {
+	n.showEncodingDetails = showEncodingDetails
+	switch progressDisplay {
+	case config.ProgressSimple, config.ProgressRemaining:
+		n.progressDisplay = progressDisplay
+	default:
+		n.progressDisplay = config.ProgressAll
 	}
 }
 
@@ -76,7 +91,7 @@ func (n *NowPlaying) SetContentWidth(width int) {
 	n.contentWidth = width
 }
 
-func (n *NowPlaying) UpdateStyles(styles *config.ThemeStyles, accentColor, cursorColor, bgColor string) {
+func (n *NowPlaying) UpdateStyles(styles *config.ThemeStyles, accentColor, cursorColor, progressTrackColor string) {
 	n.foregroundStyle = styles.ForegroundStyle
 	n.accentStyle = styles.AccentStyle
 	n.mutedStyle = styles.MutedStyle
@@ -89,21 +104,23 @@ func (n *NowPlaying) UpdateStyles(styles *config.ThemeStyles, accentColor, curso
 	n.cursorColor = cursorColor
 
 	var emptyColor color.Color
-	if bgColor != "" && len(bgColor) == 7 && bgColor[0] == '#' {
-		emptyColor = lipgloss.Color(darkenColor(bgColor, 0.3))
+	if progressTrackColor != "" && len(progressTrackColor) == 7 && progressTrackColor[0] == '#' {
+		emptyColor = lipgloss.Color(progressTrackColor)
+	} else {
+		emptyColor = lipgloss.Color("#6c7086")
 	}
 
-	n.progress = buildProgress(n.width, n.accentColor, n.cursorColor, emptyColor)
+	n.progress = buildProgress(n.width, n.accentColor, emptyColor)
 }
 
-func buildProgress(width int, accentColor, cursorColor string, emptyColor color.Color) progress.Model {
+func buildProgress(width int, accentColor string, emptyColor color.Color) progress.Model {
 	progWidth := min(40, width-2)
 	progWidth = max(20, progWidth)
 	p := progress.New(
 		progress.WithWidth(progWidth),
-		progress.WithColors(lipgloss.Color(cursorColor), lipgloss.Color(accentColor)),
+		progress.WithColors(lipgloss.Color(accentColor)),
 		progress.WithoutPercentage(),
-		progress.WithFillCharacters('▀', '▀'),
+		progress.WithFillCharacters('━', '━'),
 	)
 	p.EmptyColor = emptyColor
 	return p
@@ -115,7 +132,7 @@ func (n *NowPlaying) UpdateProgress(percent float64) tea.Cmd {
 
 func (n *NowPlaying) SnapProgress(percent float64) {
 	emptyColor := n.progress.EmptyColor
-	n.progress = buildProgress(n.width, n.accentColor, n.cursorColor, emptyColor)
+	n.progress = buildProgress(n.width, n.accentColor, emptyColor)
 	_ = n.progress.SetPercent(percent)
 }
 
@@ -147,17 +164,71 @@ type NowPlayingData struct {
 	SleepMins      int
 }
 
-func buildStatusLine(n NowPlaying, data NowPlayingData) string {
-	if data.StatusMsg != "" {
-		if data.StatusIsErr {
-			return n.accentStyle.Render(data.StatusMsg)
+func (n NowPlaying) formatProgressTime(data NowPlayingData) string {
+	duration := 0.0
+	if data.Track != nil {
+		duration = data.Track.Duration
+	}
+	if duration <= 0 {
+		if n.progressDisplay == config.ProgressRemaining {
+			return "- --:--"
 		}
-		return n.foregroundStyle.Render(data.StatusMsg)
+		return "00:00 / --:--"
 	}
+
+	elapsed := max(data.TimePos, 0)
+	remaining := max(duration-elapsed, 0)
+	switch n.progressDisplay {
+	case config.ProgressSimple:
+		return fmt.Sprintf("%s / %s", formatDuration(elapsed), formatDuration(duration))
+	case config.ProgressRemaining:
+		return "-" + formatDuration(remaining)
+	default:
+		percent := min(elapsed/duration*100, 100)
+		return fmt.Sprintf("%s / %s (%.0f%%)", formatDuration(elapsed), formatDuration(duration), percent)
+	}
+}
+
+func (n NowPlaying) progressDetailsLine(data NowPlayingData) string {
+	left := n.mutedStyle.Render(n.formatProgressTime(data))
+	right := ""
 	if data.PlaylistLength > 0 {
-		return n.foregroundStyle.Render(fmt.Sprintf("track %d of %d", data.PlaylistPos, data.PlaylistLength))
+		right = n.foregroundStyle.Render(fmt.Sprintf("track %d of %d", data.PlaylistPos, data.PlaylistLength))
 	}
-	return n.mutedStyle.Render("must")
+
+	// Match the label row to the timeline rather than the wider now-playing
+	// pane, so the track count sits directly beneath the bar's right edge.
+	innerWidth := max(n.progress.Width(), 1)
+	leftWidth := lipgloss.Width(left)
+	rightWidth := lipgloss.Width(right)
+	if right == "" {
+		return " " + left
+	}
+	if leftWidth+rightWidth+1 > innerWidth {
+		left = ansi.Truncate(left, max(innerWidth-rightWidth-1, 1), "…")
+		leftWidth = lipgloss.Width(left)
+	}
+	gap := max(innerWidth-leftWidth-rightWidth, 1)
+	return " " + left + strings.Repeat(" ", gap) + right
+}
+
+func (n NowPlaying) noticeLine(data NowPlayingData) string {
+	var parts []string
+	if data.StatusMsg != "" {
+		style := n.foregroundStyle
+		if data.StatusIsErr {
+			style = n.accentStyle
+		}
+		parts = append(parts, style.Render(data.StatusMsg))
+	}
+	if n.sleepTimerActive || data.SleepActive {
+		mins := data.SleepMins
+		if n.sleepTimerActive {
+			mins = n.sleepTimerMins
+		}
+		parts = append(parts, n.accentStyle.Render(fmt.Sprintf("Sleep in %dm", mins)))
+	}
+	return strings.Join(parts, n.mutedStyle.Render(" • "))
 }
 
 func (n NowPlaying) renderIdleView(data NowPlayingData) string {
@@ -166,13 +237,22 @@ func (n NowPlaying) renderIdleView(data NowPlayingData) string {
 	album := n.mutedStyle.Render("—")
 
 	progView := n.progress.View()
-	timeStr := n.mutedStyle.Render("00:00 / 00:00 (0%)")
+	timeStr := n.progressDetailsLine(data)
 	audioLine := n.mutedStyle.Render("󰎇 —")
 	modeLine := n.mutedStyle.Render("󰓛 stopped")
-	statusLine := buildStatusLine(n, data)
+	statusLine := n.noticeLine(data)
+	if statusLine == "" {
+		statusLine = n.mutedStyle.Render("must")
+	}
 
-	output := fmt.Sprintf(" %s\n %s\n %s\n\n %s\n %s\n\n %s\n\n %s\n\n %s",
-		title, artist, album, progView, timeStr, modeLine, audioLine, statusLine)
+	lines := []string{" " + title, " " + artist, " " + album, "", " " + progView, timeStr, "", " " + modeLine}
+	if n.showEncodingDetails {
+		lines = append(lines, "", " "+audioLine)
+	}
+	if statusLine != "" {
+		lines = append(lines, "", " "+statusLine)
+	}
+	output := strings.Join(lines, "\n")
 
 	if n.contentWidth > 0 {
 		lines := strings.Split(output, "\n")
@@ -219,14 +299,7 @@ func (n NowPlaying) View(data NowPlayingData) string {
 
 	progView := n.progress.View()
 
-	percentPos := 0.0
-	if data.Track.Duration > 0 {
-		percentPos = data.TimePos / data.Track.Duration * 100
-	}
-	timeStr := n.mutedStyle.Render(fmt.Sprintf("%s / %s (%.0f%%)",
-		formatDuration(data.TimePos),
-		formatDuration(data.Track.Duration),
-		percentPos))
+	timeStr := n.progressDetailsLine(data)
 
 	var audioLine string
 	if data.AudioInfo != nil {
@@ -261,17 +334,15 @@ func (n NowPlaying) View(data NowPlayingData) string {
 	}
 	modeLine = strings.Join(modeParts, "  ")
 
-	statusLine := buildStatusLine(n, data)
-
-	if n.sleepTimerActive || data.SleepActive {
-		mins := data.SleepMins
-		if n.sleepTimerActive {
-			mins = n.sleepTimerMins
-		}
-		statusLine += " " + n.mutedStyle.Render("•") + " " + n.accentStyle.Render(fmt.Sprintf("Sleep in %dm", mins))
+	statusLine := n.noticeLine(data)
+	lines := []string{" " + title, " " + artist, " " + album, "", " " + progView, timeStr, "", " " + modeLine}
+	if n.showEncodingDetails {
+		lines = append(lines, "", " "+audioLine)
 	}
-
-	output := fmt.Sprintf(" %s\n %s\n %s\n\n %s\n %s\n\n %s\n\n %s\n\n %s", title, artist, album, progView, timeStr, modeLine, audioLine, statusLine)
+	if statusLine != "" {
+		lines = append(lines, "", " "+statusLine)
+	}
+	output := strings.Join(lines, "\n")
 
 	if n.contentWidth > 0 {
 		lines := strings.Split(output, "\n")

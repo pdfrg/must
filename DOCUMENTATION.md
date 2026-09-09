@@ -147,8 +147,11 @@ Config file: `~/.config/must/config.toml` (auto-created with defaults on first r
 | `repeat_mode` | `off` | Repeat mode: off, all, one |
 | `shuffle` | `false` | Shuffle playback order |
 | `replaygain_mode` | `off` | ReplayGain volume normalization: off, track, album |
+| `show_encoding_details` | `true` | Show codec, bitrate, sample rate, and bit depth below the progress bar |
+| `progress_display` | `all` | Progress timer detail: `all` (elapsed / total + percent), `simple` (elapsed / total), or `remaining` |
+| `playlist_columns` | `["position", "title", "artist", "track", "album", "year", "duration"]` | Ordered playlist columns; remove or reorder entries to customize the table |
 | `show_header` | `true` | Show header bar on startup (toggle with `H`) |
-| `show_footer` | `true` | Show keybinding footer on startup (toggle with `M`) |
+| `show_footer` | `true` | Show keybinding/help hints on startup (toggle with `M`; full help remains available with `?`) |
 | `restore_on_start` | `true` | Restore last session on startup |
 | `autoplay` | `false` | Auto-play a random album on launch |
 | `layout` | `large` | UI layout: large, medium, compact, narrow |
@@ -353,4 +356,3 @@ Queried from MPV at playback time (shown in now-playing view):
 | Sample Rate | 44100 Hz |
 | Channels | 2 |
 | Bit Depth | 16 (lossless only) |
-

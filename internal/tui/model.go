@@ -225,8 +225,10 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 	}
 
 	m.header = widgets.NewHeader(styles.Header, "must - MUSic TUI")
-	m.nowPlaying = widgets.NewNowPlaying(styles, styles.Accent, styles.Cursor, styles.Background)
+	m.nowPlaying = widgets.NewNowPlaying(styles, styles.Accent, styles.Cursor, styles.Muted)
+	m.nowPlaying.SetDisplayOptions(cfg.ShowEncodingDetails, cfg.ProgressDisplay)
 	m.playlistWidget = widgets.NewPlaylist(styles)
+	m.playlistWidget.SetColumns(cfg.PlaylistColumns)
 	m.footer = widgets.NewFooter(styles.AccentStyle, styles.MutedStyle, styles.ForegroundStyle)
 
 	m.header.SetHidden(!m.showHeader)

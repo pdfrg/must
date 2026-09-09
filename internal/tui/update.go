@@ -473,7 +473,7 @@ func (m Model) handleThemeChanged(msg themeChangedMsg) (tea.Model, tea.Cmd) {
 	m.styles = config.NewThemeStyles(newTheme, m.cfg.TransparentBackground, m.cfg.DisableTheme, m.cfg.TerminalPalette)
 
 	m.header.UpdateStyles(m.styles.Header)
-	m.nowPlaying.UpdateStyles(m.styles, m.styles.Accent, m.styles.Cursor, m.styles.Background)
+	m.nowPlaying.UpdateStyles(m.styles, m.styles.Accent, m.styles.Cursor, m.styles.Muted)
 	m.playlistWidget.UpdateStyles(m.styles)
 	m.footer.UpdateStyles(m.styles.AccentStyle, m.styles.MutedStyle)
 
@@ -1836,7 +1836,7 @@ func (m Model) handleOptionsModalMsg(msg modals.OptionsMsg) (tea.Model, tea.Cmd)
 			m.theme = newTheme
 			m.styles = config.NewThemeStyles(newTheme, m.cfg.TransparentBackground, m.cfg.DisableTheme, m.cfg.TerminalPalette)
 			m.header.UpdateStyles(m.styles.Header)
-			m.nowPlaying.UpdateStyles(m.styles, m.styles.Accent, m.styles.Cursor, m.styles.Background)
+			m.nowPlaying.UpdateStyles(m.styles, m.styles.Accent, m.styles.Cursor, m.styles.Muted)
 			m.playlistWidget.UpdateStyles(m.styles)
 			m.footer.UpdateStyles(m.styles.AccentStyle, m.styles.MutedStyle)
 		}
