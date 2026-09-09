@@ -127,6 +127,7 @@ func (m Model) ctlPlay(args []string) (Model, ctl.CtlResult, tea.Cmd) {
 		}
 	}
 	m.updatePlaylist()
+	m.playlistWidget.SetCursor(m.currentIndex)
 
 	paths := m.buildMPVPlaylistPaths()
 	playIdx := m.playlistIndexToMPVIndex(m.currentIndex)

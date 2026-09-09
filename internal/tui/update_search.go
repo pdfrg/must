@@ -41,6 +41,7 @@ func (m Model) handleScanComplete(msg scanCompleteMsg) (tea.Model, tea.Cmd) {
 			m.shuffleOrder = nil
 		}
 		m.updatePlaylist()
+		m.playlistWidget.SetCursor(m.currentIndex)
 
 		paths := m.buildMPVPlaylistPaths()
 		playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
@@ -255,6 +256,7 @@ func (m Model) handleRandomPlay() (tea.Model, tea.Cmd) {
 	}
 
 	m.updatePlaylist()
+	m.playlistWidget.SetCursor(0)
 	return m, m.playTrack(0)
 }
 
@@ -289,5 +291,6 @@ func (m Model) handleAutoplay() (tea.Model, tea.Cmd) {
 	}
 
 	m.updatePlaylist()
+	m.playlistWidget.SetCursor(0)
 	return m, m.playTrack(0)
 }

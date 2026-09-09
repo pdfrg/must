@@ -373,6 +373,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.shuffleOrder = shuffleIndices(len(m.playlist))
 			}
 			m.updatePlaylist()
+			m.playlistWidget.SetCursor(0)
 			m.activeModal = ModalNone
 			paths := m.buildMPVPlaylistPaths()
 			return m, tea.Batch(
@@ -1018,6 +1019,7 @@ func (m Model) handleLibraryModalMsg(msg modals.LibraryModalMsg) (tea.Model, tea
 			m.shuffleOrder = shuffleIndices(len(m.playlist))
 		}
 		m.updatePlaylist()
+		m.playlistWidget.SetCursor(msg.PlayIndex)
 		m.activeModal = ModalNone
 		paths := m.buildMPVPlaylistPaths()
 		playIdx := m.playlistIndexToMPVIndex(msg.PlayIndex)
@@ -1400,6 +1402,7 @@ func (m Model) resolveSearchArtist(name string, enqueueNext bool) (Model, tea.Cm
 		m.shuffleOrder = shuffleIndices(len(m.playlist))
 	}
 	m.updatePlaylist()
+	m.playlistWidget.SetCursor(0)
 	m.activeModal = ModalNone
 	paths := m.buildMPVPlaylistPaths()
 	return m, tea.Batch(
@@ -1425,6 +1428,7 @@ func (m Model) resolveSearchAlbum(artist, album string, enqueueNext bool) (Model
 		m.shuffleOrder = shuffleIndices(len(m.playlist))
 	}
 	m.updatePlaylist()
+	m.playlistWidget.SetCursor(0)
 	m.activeModal = ModalNone
 	paths := m.buildMPVPlaylistPaths()
 	return m, tea.Batch(
