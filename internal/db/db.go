@@ -79,6 +79,11 @@ func (ld *LibraryDB) initSchema() error {
 		file_mod_time INTEGER NOT NULL DEFAULT 0
 	);
 
+	CREATE TABLE IF NOT EXISTS library_meta (
+		key TEXT PRIMARY KEY,
+		value INTEGER NOT NULL
+	);
+
 CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
 CREATE INDEX IF NOT EXISTS idx_tracks_album_artist ON tracks(album_artist);
 CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
@@ -634,6 +639,31 @@ func (ld *LibraryDB) ResetZeroDurationModTimes() (int, error) {
 	}
 	affected, _ := result.RowsAffected()
 	return int(affected), nil
+}
+
+func (ld *LibraryDB) MetadataScanVersion() (int, error) {
+	var version int
+	err := ld.db.QueryRow(`SELECT value FROM library_meta WHERE key = 'metadata_scan_version'`).Scan(&version)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return version, err
+}
+
+func (ld *LibraryDB) ResetTrackModTimes() (int, error) {
+	result, err := ld.db.Exec(`UPDATE tracks SET file_mod_time = 0`)
+	if err != nil {
+		return 0, err
+	}
+	affected, _ := result.RowsAffected()
+	return int(affected), nil
+}
+
+func (ld *LibraryDB) SetMetadataScanVersion(version int) error {
+	_, err := ld.db.Exec(`
+		INSERT INTO library_meta(key, value) VALUES ('metadata_scan_version', ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, version)
+	return err
 }
 
 func (ld *LibraryDB) GetTrackByID(id int64) (*models.Track, error) {

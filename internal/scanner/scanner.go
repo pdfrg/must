@@ -9,17 +9,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dhowden/tag"
 	"github.com/pdfrg/must/internal/db"
 	"github.com/pdfrg/must/internal/duration"
 	"github.com/pdfrg/must/internal/genre"
 	imgpkg "github.com/pdfrg/must/internal/image"
 	"github.com/pdfrg/must/internal/models"
+	"github.com/tommyo123/mtag"
 )
 
 const (
-	audioExts = ".mp3.flac.ogg.opus.m4a.aac.wma.wav"
-	batchSize = 500
+	audioExts           = ".mp3.flac.ogg.opus.m4a.aac.wma.wav"
+	batchSize           = 500
+	metadataScanVersion = 1
 )
 
 var logger *log.Logger
@@ -56,6 +57,26 @@ func (s *Scanner) Stop() {
 func (s *Scanner) Scan(musicDirs []string) (*ScanResult, error) {
 	start := time.Now()
 	result := &ScanResult{}
+	needsMetadataUpgrade := false
+
+	version, versionErr := s.db.MetadataScanVersion()
+	if versionErr != nil {
+		if logger != nil {
+			logger.Printf("Warning: failed to read metadata scan version: %v", versionErr)
+		}
+	} else if version < metadataScanVersion {
+		resetCount, resetErr := s.db.ResetTrackModTimes()
+		if resetErr != nil {
+			if logger != nil {
+				logger.Printf("Warning: failed to schedule metadata re-scan: %v", resetErr)
+			}
+		} else {
+			needsMetadataUpgrade = true
+			if logger != nil && resetCount > 0 {
+				logger.Printf("Re-scanning metadata for %d tracks after scanner upgrade", resetCount)
+			}
+		}
+	}
 
 	resetCount, resetErr := s.db.ResetZeroDurationModTimes()
 	if resetErr != nil && logger != nil {
@@ -166,6 +187,11 @@ func (s *Scanner) Scan(musicDirs []string) (*ScanResult, error) {
 		logger.Printf("Error removing missing tracks: %v", err)
 	}
 	result.RemovedFiles = removed
+	if needsMetadataUpgrade && result.Errors == 0 {
+		if err := s.db.SetMetadataScanVersion(metadataScanVersion); err != nil && logger != nil {
+			logger.Printf("Warning: failed to save metadata scan version: %v", err)
+		}
+	}
 
 	result.Duration = time.Since(start)
 	return result, nil
@@ -177,30 +203,23 @@ func (s *Scanner) readTrack(path string, modTime int64) (*models.Track, error) {
 		FileModTime: modTime,
 	}
 
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open: %w", err)
-	}
-	defer func() { _ = f.Close() }()
-
-	tags, err := tag.ReadFrom(f)
+	tags, err := mtag.Open(path, mtag.WithReadOnly())
 	if err != nil {
 		track.Title = filepath.Base(path)
 	} else {
+		defer func() { _ = tags.Close() }()
 		track.Title = tags.Title()
 		track.Artist = tags.Artist()
 		track.Album = tags.Album()
 		track.AlbumArtist = tags.AlbumArtist()
 		track.Year = tags.Year()
 		track.Genre = genre.Normalize(tags.Genre())
-		trackNum, totalTracks := tags.Track()
-		discNum, totalDiscs := tags.Disc()
-		track.TrackNum = trackNum
-		track.DiscNum = discNum
-		_, _ = totalTracks, totalDiscs
-		track.HasCoverArt = tags.Picture() != nil
+		track.TrackNum = tags.Track()
+		track.DiscNum = tags.Disc()
+		pictures := tags.Images()
+		track.HasCoverArt = len(pictures) > 0
 		if track.HasCoverArt {
-			if err := imgpkg.CacheArtData(path, tags.Picture().Data); err != nil && logger != nil {
+			if err := imgpkg.CacheArtData(path, pictures[0].Data); err != nil && logger != nil {
 				logger.Printf("Warning: could not cache art for %s: %v", path, err)
 			}
 		}
