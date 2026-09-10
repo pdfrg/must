@@ -52,8 +52,8 @@ type Config struct {
 	ForceProtocol         string                `toml:"force_protocol" comment:"force a specific image protocol instead of auto-detecting\noptions: kitty, sixel, halfblocks, iterm2, or empty for auto-detect (default: '')"`
 	ShowHeader            bool                  `toml:"show_header" comment:"show header bar with title (default: true)"`
 	ShowFooter            bool                  `toml:"show_footer" comment:"show footer bar with keybindings (default: true)"`
-	TitleAnimation        string                `toml:"title_animation" comment:"typewriter reveal for now-playing metadata\noff: instant (default)\nmachine: fixed cadence, one char per tick\nhuman: bursty human-like typing with pauses"`
-	TitleAnimationScope   string                `toml:"title_animation_scope" comment:"which rows the reveal covers\nsong: title only (default)\nall: title, then artist, then album (default: song)"`
+	TitleAnimation        string                `toml:"title_animation" comment:"typewriter reveal for now-playing metadata\noff: instant (default)\nmachine: print characters one at a time at a constant rate\nhuman: bursty human-like typing with pauses"`
+	TitleAnimationScope   string                `toml:"title_animation_scope" comment:"which rows the reveal covers\nsong: apply effect to just the song title (default)\nall: apply effect to song, artist, and album"`
 	Audio                 AudioConfig           `toml:"audio" comment:"audio output settings"`
 }
 
