@@ -336,7 +336,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.libraryModal != nil {
-			m.libraryModal.SetSubsonicAlbums(msg.albums)
+			m.libraryModal.SetSubsonicAlbums(msg.artistID, msg.albums)
 		}
 		return m, nil
 
@@ -349,7 +349,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.libraryModal.InPlaylistMode() {
 				m.libraryModal.SetSubsonicPlaylistTracks(msg.tracks)
 			} else {
-				m.libraryModal.SetSubsonicTracks(msg.tracks)
+				m.libraryModal.SetSubsonicTracks(msg.albumID, msg.tracks)
 			}
 		}
 		// If search modal is active, this is a search resolve — enqueue/play/enqueue-next

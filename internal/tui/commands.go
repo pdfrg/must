@@ -430,7 +430,7 @@ func subsonicArtistAlbumsCmd(client *api.SubsonicClient, artistID string) tea.Cm
 		if err != nil {
 			return subsonicArtistAlbumsMsg{err: err}
 		}
-		return subsonicArtistAlbumsMsg{albums: artist.Album}
+		return subsonicArtistAlbumsMsg{artistID: artistID, albums: artist.Album}
 	}
 }
 
@@ -444,7 +444,7 @@ func subsonicAlbumTracksCmd(client *api.SubsonicClient, albumID string) tea.Cmd 
 			return subsonicAlbumTracksMsg{err: err}
 		}
 		tracks := client.ChildrenToTracks(album.Song)
-		return subsonicAlbumTracksMsg{tracks: tracks}
+		return subsonicAlbumTracksMsg{albumID: albumID, tracks: tracks}
 	}
 }
 

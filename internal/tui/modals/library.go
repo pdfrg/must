@@ -95,6 +95,8 @@ type Library struct {
 	playlistScrollOffset int
 
 	filterText      string
+	filtering       bool
+	baseTracks      []models.Track
 	filteredArtists []artistDisplay
 	filteredAlbums  []models.AlbumEntry
 	filteredGenres  []genreDisplay
@@ -293,10 +295,11 @@ func (l *Library) SetArtists(artists []string) {
 func (l *Library) SetSubsonicArtists(artists []api.ArtistID3) {
 	l.PendingFetchArtistID = ""
 	l.subsonicArtistEntries = artists
+	// rebuildDisplay -> applySourceFilter already loads albums+tracks for
+	// the current selection (or triggers the Subsonic fetch), so don't
+	// wipe the panes here: that blanked local selections whenever the
+	// background artists response arrived mid-scroll.
 	l.rebuildDisplay()
-	l.albums = nil
-	l.allAlbums = nil
-	l.albumTracks = nil
 	// Load albums for the currently selected artist if it's Subsonic
 	if len(l.artists) > 0 && l.artistCursor < len(l.artists) {
 		if l.artists[l.artistCursor].IsSubsonic {
@@ -305,22 +308,30 @@ func (l *Library) SetSubsonicArtists(artists []api.ArtistID3) {
 	}
 }
 
-func (l *Library) SetSubsonicAlbums(albums []api.AlbumID3) {
+func (l *Library) SetSubsonicAlbums(artistID string, albums []api.AlbumID3) {
 	l.PendingFetchAlbumID = ""
+	l.subsonicAlbumsByArtist[artistID] = albums
+	// Only touch the visible panes if the response is still for the
+	// currently selected artist; otherwise just keep it cached for when
+	// the user navigates back (scrolling fires one fetch per artist and
+	// responses can arrive out of order).
 	if len(l.artists) == 0 || l.artistCursor >= len(l.artists) {
 		return
 	}
 	entry := l.artists[l.artistCursor]
-	if !entry.IsSubsonic {
+	if !entry.IsSubsonic || entry.SubsonicID != artistID {
 		return
 	}
-	l.subsonicAlbumsByArtist[entry.SubsonicID] = albums
 	l.loadSubsonicAlbumsForArtist(entry.SubsonicID)
 }
 
-func (l *Library) SetSubsonicTracks(tracks []models.Track) {
-	if l.albumCursor < len(l.subsonicAlbumIDs) {
-		l.subsonicTracksByAlbum[l.subsonicAlbumIDs[l.albumCursor]] = tracks
+func (l *Library) SetSubsonicTracks(albumID string, tracks []models.Track) {
+	l.subsonicTracksByAlbum[albumID] = tracks
+	// Same staleness guard as albums: only display if this is still the
+	// selected album. Playlist/search responses carry no albumID and are
+	// routed by the caller, so an empty albumID always displays.
+	if albumID != "" && (l.albumCursor >= len(l.subsonicAlbumIDs) || l.subsonicAlbumIDs[l.albumCursor] != albumID) {
+		return
 	}
 	l.loadSubsonicTracksForAlbum()
 }
@@ -362,7 +373,14 @@ func (l *Library) loadSubsonicTracksForAlbum() {
 		l.albumTracks = tracks
 		l.trackCursor = 0
 		l.trackScrollOffset = 0
-	} else if l.PendingFetchArtistID == "" {
+		return
+	}
+	// Never leave the previous album's tracks on screen while waiting:
+	// show empty until the fetch for this album lands.
+	l.albumTracks = nil
+	l.trackCursor = 0
+	l.trackScrollOffset = 0
+	if l.PendingFetchArtistID == "" {
 		l.PendingFetchAlbumID = id
 	}
 }
@@ -672,70 +690,122 @@ func (l *Library) loadTracksForAlbum() {
 func (l *Library) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "esc":
-			if l.filterText != "" {
-				l.clearFilter()
-				return nil
-			}
-			l.enqueueNextMode = false
-			return func() tea.Msg { return LibraryModalMsg{Closed: true} }
-		case "q":
-			if l.filterText != "" {
-				l.clearFilter()
-				return nil
-			}
-			l.enqueueNextMode = false
-			return func() tea.Msg { return LibraryModalMsg{Closed: true} }
-		case "up", "k":
-			l.moveUp()
-		case "down", "j":
-			l.moveDown()
-		case "pgdown":
-			l.pageDown()
-		case "pgup":
-			l.pageUp()
-		case "home":
-			l.jumpHome()
-		case "end":
-			l.jumpEnd()
-		case "h", "left":
-			l.focusLeft()
-		case "l", "right":
-			if l.filterText != "" {
-				l.appendToFilter("l")
-				return nil
-			}
-			l.focusRight()
-		case "enter":
-			if l.filterText != "" {
-				l.clearFilter()
-			}
-			return l.handleEnter()
-		case "e":
-			return l.handleEnqueue()
-		case "E":
-			l.enqueueNextMode = true
-			cmd := l.handleEnqueue()
-			l.enqueueNextMode = false
-			return cmd
-		case "g":
-			l.toggleBrowseMode()
-		case "backspace":
-			l.backspaceFilter()
-		case "ctrl+t":
-			l.cycleSource()
-		case "ctrl+l":
-			l.SetSource(SearchLocal)
-		case "ctrl+s":
-			l.SetSource(SearchSubsonic)
-		default:
-			k := msg.Key()
-			if k.Text != "" {
-				l.appendToFilter(k.Text)
-				return nil
-			}
+		if l.filtering {
+			return l.updateFilterMode(msg)
 		}
+		return l.updateBrowseMode(msg)
+	}
+	return nil
+}
+
+func (l *Library) updateFilterMode(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		if l.filterText != "" {
+			l.clearFilter()
+		}
+		l.filtering = false
+		return nil
+	case "enter":
+		l.filtering = false
+		return nil
+	case "backspace":
+		l.backspaceFilter()
+		return nil
+	case "up":
+		l.moveUp()
+		return nil
+	case "down":
+		l.moveDown()
+		return nil
+	case "pgdown":
+		l.pageDown()
+		return nil
+	case "pgup":
+		l.pageUp()
+		return nil
+	case "home":
+		l.jumpHome()
+		return nil
+	case "end":
+		l.jumpEnd()
+		return nil
+	case "ctrl+t":
+		l.cycleSource()
+		return nil
+	case "ctrl+l":
+		l.SetSource(SearchLocal)
+		return nil
+	case "ctrl+s":
+		l.SetSource(SearchSubsonic)
+		return nil
+	default:
+		k := msg.Key()
+		if k.Text != "" {
+			l.appendToFilter(k.Text)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (l *Library) updateBrowseMode(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		if l.filterText != "" {
+			l.clearFilter()
+			return nil
+		}
+		l.enqueueNextMode = false
+		return func() tea.Msg { return LibraryModalMsg{Closed: true} }
+	case "q":
+		if l.filterText != "" {
+			l.clearFilter()
+			return nil
+		}
+		l.enqueueNextMode = false
+		return func() tea.Msg { return LibraryModalMsg{Closed: true} }
+	case "/", "f":
+		l.filtering = true
+		if l.focusPane == FocusTracks {
+			l.baseTracks = append([]models.Track(nil), l.albumTracks...)
+		}
+		return nil
+	case "up", "k":
+		l.moveUp()
+	case "down", "j":
+		l.moveDown()
+	case "pgdown":
+		l.pageDown()
+	case "pgup":
+		l.pageUp()
+	case "home":
+		l.jumpHome()
+	case "end":
+		l.jumpEnd()
+	case "h", "left":
+		l.focusLeft()
+	case "l", "right":
+		l.focusRight()
+	case "enter":
+		return l.handleEnter()
+	case "e":
+		return l.handleEnqueue()
+	case "E":
+		l.enqueueNextMode = true
+		cmd := l.handleEnqueue()
+		l.enqueueNextMode = false
+		return cmd
+	case "g":
+		l.toggleBrowseMode()
+	case "ctrl+t":
+		l.cycleSource()
+	case "ctrl+l":
+		l.SetSource(SearchLocal)
+	case "ctrl+s":
+		l.SetSource(SearchSubsonic)
+	default:
+		return nil
 	}
 	return nil
 }
@@ -754,6 +824,7 @@ func (l *Library) backspaceFilter() {
 
 func (l *Library) clearFilter() {
 	l.filterText = ""
+	l.baseTracks = nil
 	switch l.browseMode {
 	case BrowseGenres:
 		l.applyGenreSourceFilter()
@@ -770,30 +841,20 @@ func (l *Library) clearFilter() {
 	}
 }
 
+// Contextual filter (option A): only the focused pane is filtered, then the
+// dependent panes are reloaded (cascaded) so they never show stale content.
 func (l *Library) applyFilter() {
 	if l.filterText == "" {
-		switch l.browseMode {
-		case BrowseGenres:
-			l.applyGenreSourceFilter()
-		case BrowsePlaylists:
-			l.applyPlaylistSourceFilter()
-		default:
-			l.applySourceFilter()
-		}
-		l.albums = l.allAlbums
-		l.filteredAlbums = nil
+		l.resetFilteredLists()
 		return
 	}
 
 	switch l.browseMode {
-	case BrowseGenres:
-		l.filteredGenres = filterGenreDisplays(l.allGenres, l.filterText)
-		l.genres = l.filteredGenres
-		if l.genreCursor >= len(l.genres) {
-			l.genreCursor = 0
-			l.genreScrollOffset = 0
-		}
 	case BrowsePlaylists:
+		if l.focusPane == FocusTracks {
+			l.filterTrackList()
+			return
+		}
 		l.filteredPlaylists = filterPlaylistDisplays(l.allPlaylists, l.filterText)
 		l.playlists = l.filteredPlaylists
 		if l.playlistCursor >= len(l.playlists) {
@@ -802,24 +863,135 @@ func (l *Library) applyFilter() {
 		}
 		if len(l.playlists) > 0 && l.playlistCursor < len(l.playlists) {
 			l.loadPlaylistTracks()
+		} else {
+			l.albumTracks = nil
+			l.trackCursor = 0
+			l.trackScrollOffset = 0
+		}
+		l.baseTracks = append([]models.Track(nil), l.albumTracks...)
+		return
+	case BrowseGenres:
+		switch l.focusPane {
+		case FocusArtists:
+			l.filteredGenres = filterGenreDisplays(l.allGenres, l.filterText)
+			l.genres = l.filteredGenres
+			if l.genreCursor >= len(l.genres) {
+				l.genreCursor = 0
+				l.genreScrollOffset = 0
+			}
+			if len(l.genres) > 0 && l.genreCursor < len(l.genres) {
+				l.loadAlbumsForGenre()
+			} else {
+				l.albums = nil
+				l.allAlbums = nil
+				l.albumTracks = nil
+				l.albumCursor = 0
+				l.albumScrollOffset = 0
+				l.trackCursor = 0
+				l.trackScrollOffset = 0
+			}
+			l.baseTracks = append([]models.Track(nil), l.albumTracks...)
+			return
+		case FocusAlbums:
+			l.filterAlbumList()
+			return
+		default:
+			l.filterTrackList()
+			return
 		}
 	default:
-		l.filteredArtists = filterArtistDisplays(l.allArtists, l.filterText)
-		l.artists = l.filteredArtists
-		if l.artistCursor >= len(l.artists) {
-			l.artistCursor = 0
-			l.artistScrollOffset = 0
+		switch l.focusPane {
+		case FocusArtists:
+			l.filteredArtists = filterArtistDisplays(l.allArtists, l.filterText)
+			l.artists = l.filteredArtists
+			if l.artistCursor >= len(l.artists) {
+				l.artistCursor = 0
+				l.artistScrollOffset = 0
+			}
+			if len(l.artists) > 0 && l.artistCursor < len(l.artists) {
+				l.LoadAlbumsForArtist()
+			} else {
+				l.albums = nil
+				l.allAlbums = nil
+				l.albumTracks = nil
+				l.albumCursor = 0
+				l.albumScrollOffset = 0
+				l.trackCursor = 0
+				l.trackScrollOffset = 0
+			}
+			l.baseTracks = append([]models.Track(nil), l.albumTracks...)
+			return
+		case FocusAlbums:
+			l.filterAlbumList()
+			return
+		default:
+			l.filterTrackList()
+			return
 		}
 	}
+}
 
-	if l.focusPane >= FocusAlbums && l.browseMode != BrowsePlaylists {
-		l.filteredAlbums = filterAlbumEntries(l.allAlbums, l.filterText)
-		l.albums = l.filteredAlbums
-		if l.albumCursor >= len(l.albums) {
-			l.albumCursor = 0
-			l.albumScrollOffset = 0
+func (l *Library) resetFilteredLists() {
+	switch l.browseMode {
+	case BrowseGenres:
+		l.applyGenreSourceFilter()
+	case BrowsePlaylists:
+		l.applyPlaylistSourceFilter()
+	default:
+		l.applySourceFilter()
+	}
+	l.albums = l.allAlbums
+	l.filteredAlbums = nil
+	l.baseTracks = append([]models.Track(nil), l.albumTracks...)
+}
+
+func (l *Library) filterAlbumList() {
+	l.filteredAlbums = filterAlbumEntries(l.allAlbums, l.filterText)
+	l.albums = l.filteredAlbums
+	if l.albumCursor >= len(l.albums) {
+		l.albumCursor = 0
+		l.albumScrollOffset = 0
+	}
+	if len(l.albums) > 0 && l.albumCursor < len(l.albums) {
+		l.loadTracksForAlbum()
+	} else {
+		l.albumTracks = nil
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
+	}
+	l.baseTracks = append([]models.Track(nil), l.albumTracks...)
+}
+
+func (l *Library) filterTrackList() {
+	base := l.baseTracks
+	if len(base) == 0 {
+		base = l.albumTracks
+	}
+	if l.filterText == "" {
+		if len(base) > 0 {
+			l.albumTracks = append([]models.Track(nil), base...)
+		}
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
+		return
+	}
+	l.albumTracks = filterTrackEntries(base, l.filterText)
+	if l.trackCursor >= len(l.albumTracks) {
+		l.trackCursor = 0
+		l.trackScrollOffset = 0
+	}
+}
+
+func filterTrackEntries(items []models.Track, query string) []models.Track {
+	query = strings.ToLower(query)
+	var result []models.Track
+	for _, item := range items {
+		hay := strings.ToLower(item.Title + " " + item.Artist + " " + item.Album)
+		if strings.Contains(hay, query) {
+			result = append(result, item)
 		}
 	}
+	return result
 }
 
 func filterAlbumEntries(items []models.AlbumEntry, query string) []models.AlbumEntry {
@@ -1208,6 +1380,8 @@ func (l *Library) focusRight() {
 
 func (l *Library) toggleBrowseMode() {
 	l.filterText = ""
+	l.filtering = false
+	l.baseTracks = nil
 	l.focusPane = FocusArtists
 	l.albums = nil
 	l.allAlbums = nil
@@ -1413,6 +1587,14 @@ func (l Library) renderTopBar() string {
 	} else if l.browseMode == BrowsePlaylists {
 		modeLabel = "playlists"
 	}
+	if l.filtering {
+		filterDisplay := l.filterText
+		if len(filterDisplay) > 30 {
+			filterDisplay = filterDisplay[:30] + "…"
+		}
+		return l.styles.AccentStyle.Render(fmt.Sprintf("filter: %s▏", filterDisplay)) +
+			l.styles.MutedStyle.Render(fmt.Sprintf(" [%s]", modeLabel)) + "\n"
+	}
 	if l.filterText != "" {
 		filterDisplay := l.filterText
 		if len(filterDisplay) > 30 {
@@ -1421,7 +1603,7 @@ func (l Library) renderTopBar() string {
 		return l.styles.AccentStyle.Render(fmt.Sprintf("filter: %s", filterDisplay)) +
 			l.styles.MutedStyle.Render(fmt.Sprintf(" [%s]", modeLabel)) + "\n"
 	}
-	return l.styles.MutedStyle.Render(fmt.Sprintf("[%s]", modeLabel)) + "\n"
+	return l.styles.MutedStyle.Render(fmt.Sprintf("[%s] (/-f filter)", modeLabel)) + "\n"
 }
 
 func (l Library) renderSourceBar() string {
@@ -1446,14 +1628,22 @@ func (l Library) renderHelpLine() string {
 		{"e", "enqueue"},
 		{"^t", "source"},
 		{"g", "genre/playlists"},
+		{"/", "filter"},
 		{"esc", "close"},
 	}
 
-	if l.filterText != "" {
+	if l.filtering {
 		helpPairs = []helpItem{
 			{"type", "filter"},
 			{"bksp", "del"},
+			{"enter", "done"},
 			{"esc", "clear"},
+		}
+	} else if l.filterText != "" {
+		helpPairs = []helpItem{
+			{"esc", "clear filter"},
+			{"enter", "play"},
+			{"/", "refilter"},
 		}
 	}
 	focusName := "artists"

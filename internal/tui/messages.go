@@ -31,13 +31,15 @@ type subsonicArtistsMsg struct {
 }
 
 type subsonicArtistAlbumsMsg struct {
-	albums []api.AlbumID3
-	err    error
+	artistID string
+	albums   []api.AlbumID3
+	err      error
 }
 
 type subsonicAlbumTracksMsg struct {
-	tracks []models.Track
-	err    error
+	albumID string
+	tracks  []models.Track
+	err     error
 }
 
 type subsonicGenresMsg struct {
