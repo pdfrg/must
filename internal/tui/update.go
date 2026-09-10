@@ -48,6 +48,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 
+	case tea.MouseMsg:
+		if !m.cfg.MouseEnabled || m.activeModal != ModalLibrary || m.libraryModal == nil {
+			return m, tea.Batch(cmds...)
+		}
+		return m.handleLibraryModalInput(msg)
+
 	case progressTickMsg:
 		return m.handleProgressTick(msg)
 
@@ -905,32 +911,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch m.activeModal {
 	case ModalLibrary:
-		if m.libraryModal != nil {
-			cmd := m.libraryModal.Update(msg)
-			var extra []tea.Cmd
-			if m.subsonicClient != nil {
-				if id := m.libraryModal.PendingFetchArtistID; id != "" {
-					m.libraryModal.PendingFetchArtistID = ""
-					extra = append(extra, subsonicArtistAlbumsCmd(m.subsonicClient, id))
-				}
-				if id := m.libraryModal.PendingFetchAlbumID; id != "" {
-					m.libraryModal.PendingFetchAlbumID = ""
-					extra = append(extra, subsonicAlbumTracksCmd(m.subsonicClient, id))
-				}
-				if name := m.libraryModal.PendingFetchGenreName; name != "" {
-					m.libraryModal.PendingFetchGenreName = ""
-					extra = append(extra, subsonicGenreAlbumsCmd(m.subsonicClient, name))
-				}
-				if id := m.libraryModal.PendingFetchPlaylistID; id != "" {
-					m.libraryModal.PendingFetchPlaylistID = ""
-					extra = append(extra, subsonicPlaylistTracksCmd(m.subsonicClient, id))
-				}
-			}
-			if len(extra) > 0 {
-				return m, tea.Batch(append([]tea.Cmd{cmd}, extra...)...)
-			}
-			return m, cmd
-		}
+		return m.handleLibraryModalInput(msg)
 	case ModalSearch:
 		if m.searchModal != nil {
 			cmd := m.searchModal.Update(msg)
@@ -1003,6 +984,37 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m Model) handleLibraryModalInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.libraryModal == nil {
+		return m, nil
+	}
+
+	cmd := m.libraryModal.Update(msg)
+	var extra []tea.Cmd
+	if m.subsonicClient != nil {
+		if id := m.libraryModal.PendingFetchArtistID; id != "" {
+			m.libraryModal.PendingFetchArtistID = ""
+			extra = append(extra, subsonicArtistAlbumsCmd(m.subsonicClient, id))
+		}
+		if id := m.libraryModal.PendingFetchAlbumID; id != "" {
+			m.libraryModal.PendingFetchAlbumID = ""
+			extra = append(extra, subsonicAlbumTracksCmd(m.subsonicClient, id))
+		}
+		if name := m.libraryModal.PendingFetchGenreName; name != "" {
+			m.libraryModal.PendingFetchGenreName = ""
+			extra = append(extra, subsonicGenreAlbumsCmd(m.subsonicClient, name))
+		}
+		if id := m.libraryModal.PendingFetchPlaylistID; id != "" {
+			m.libraryModal.PendingFetchPlaylistID = ""
+			extra = append(extra, subsonicPlaylistTracksCmd(m.subsonicClient, id))
+		}
+	}
+	if len(extra) > 0 {
+		return m, tea.Batch(append([]tea.Cmd{cmd}, extra...)...)
+	}
+	return m, cmd
 }
 
 func (m Model) handleLibraryModalMsg(msg modals.LibraryModalMsg) (tea.Model, tea.Cmd) {
@@ -1373,6 +1385,7 @@ func (m Model) openLibrary() (tea.Model, tea.Cmd) {
 	}
 	m.libraryModal.SetArtists(m.artists)
 	m.libraryModal.SetAlbumSort(m.cfg.AlbumSort)
+	m.libraryModal.SetMouseFocusOnHover(m.cfg.MouseFocusOnHover)
 	m.libraryModal.LoadAlbumsForArtist()
 	m.libraryModal.SetSize(m.width, m.height)
 

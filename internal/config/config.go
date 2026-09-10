@@ -23,6 +23,8 @@ type Config struct {
 	RepeatMode            string                `toml:"repeat_mode" comment:"repeat mode: off, all, one (default: off)"`
 	Shuffle               bool                  `toml:"shuffle" comment:"shuffle playback order (default: false)"`
 	AlbumSort             string                `toml:"album_sort" comment:"album sort order in library browser\nalpha: alphabetical (default)\nyear_desc: by year, newest first\nyear_asc: by year, oldest first"`
+	MouseEnabled          bool                  `toml:"mouse_enabled" comment:"enable mouse interaction in the library browser (default: false)"`
+	MouseFocusOnHover     bool                  `toml:"mouse_focus_on_hover" comment:"focus a library browser column when the pointer moves over it (default: false)"`
 	ReplayGainMode        string                `toml:"replaygain_mode" comment:"replaygain volume normalization\noff, track, album (default: off)"`
 	RestoreOnStart        bool                  `toml:"restore_on_start" comment:"restore last session's playlist and position on startup (default: true)"`
 	Autoplay              bool                  `toml:"autoplay" comment:"auto-play a random album when launched with no paths (default: false)"`
@@ -102,18 +104,20 @@ type VisualizerConfig struct {
 func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
 	return &Config{
-		MusicDir:         filepath.Join(homeDir, "Music"),
-		MusicDirs:        []string{filepath.Join(homeDir, "Music")},
-		PlaylistPathMode: "relative",
-		RepeatMode:       "off",
-		Shuffle:          false,
-		AlbumSort:        SortAlpha,
-		ReplayGainMode:   "off",
-		RestoreOnStart:   true,
-		Autoplay:         false,
-		ShowAlbumArt:     true,
-		AlbumArtPath:     filepath.Join(os.TempDir(), "cover.jpg"),
-		CopyAlbumArt:     false,
+		MusicDir:          filepath.Join(homeDir, "Music"),
+		MusicDirs:         []string{filepath.Join(homeDir, "Music")},
+		PlaylistPathMode:  "relative",
+		RepeatMode:        "off",
+		Shuffle:           false,
+		AlbumSort:         SortAlpha,
+		MouseEnabled:      false,
+		MouseFocusOnHover: false,
+		ReplayGainMode:    "off",
+		RestoreOnStart:    true,
+		Autoplay:          false,
+		ShowAlbumArt:      true,
+		AlbumArtPath:      filepath.Join(os.TempDir(), "cover.jpg"),
+		CopyAlbumArt:      false,
 		Visualizer: VisualizerConfig{
 			Mode:         "Segmented",
 			ShowInfo:     "fade",

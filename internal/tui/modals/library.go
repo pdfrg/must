@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -33,6 +34,14 @@ const (
 	FocusAlbums
 	FocusTracks
 )
+
+const libraryContentStartRow = 2
+
+type libraryPaneBounds struct {
+	pane  FocusPane
+	x     int
+	width int
+}
 
 type BrowseMode int
 
@@ -120,6 +129,16 @@ type Library struct {
 	PendingFetchAlbumID    string
 	PendingFetchGenreName  string
 	PendingFetchPlaylistID string
+
+	mouseFocusOnHover bool
+
+	// Wheel acceleration state: hi-res wheels emit a burst of events per
+	// physical notch. Events inside the coalesce window are counted as
+	// pending; the next honored event converts them into a larger step so
+	// slow ticks move 1 row (precise) and fast flicks move up to 5 (fast).
+	lastWheelAt  time.Time
+	wheelPending int
+	lastWheelUp  bool
 }
 
 func NewLibrary(styles *config.ThemeStyles, libraryDB *db.LibraryDB) *Library {
@@ -145,6 +164,10 @@ func (l *Library) InPlaylistMode() bool {
 func (l *Library) SetSize(width, height int) {
 	l.width = width
 	l.height = height
+}
+
+func (l *Library) SetMouseFocusOnHover(enabled bool) {
+	l.mouseFocusOnHover = enabled
 }
 
 func (l *Library) SetSubsonicBadge(badge string) { l.subsonicBadge = badge }
@@ -704,6 +727,163 @@ func (l *Library) Update(msg tea.Msg) tea.Cmd {
 			return l.updateFilterMode(msg)
 		}
 		return l.updateBrowseMode(msg)
+	case tea.MouseMsg:
+		return l.handleMouse(msg)
+	}
+	return nil
+}
+
+func (l *Library) handleMouse(msg tea.MouseMsg) tea.Cmd {
+	mouse := msg.Mouse()
+	pane, row, ok := l.mouseTarget(mouse.X, mouse.Y)
+	if !ok {
+		return nil
+	}
+
+	switch msg.(type) {
+	case tea.MouseMotionMsg:
+		if l.mouseFocusOnHover && l.canFocusPane(pane) {
+			l.focusPane = pane
+		}
+	case tea.MouseWheelMsg:
+		if !l.canFocusPane(pane) {
+			return nil
+		}
+		now := time.Now()
+		up := mouse.Button == tea.MouseWheelUp
+		if mouse.Button != tea.MouseWheelUp && mouse.Button != tea.MouseWheelDown {
+			return nil
+		}
+		// Direction flip: drop momentum so reversing never jumps.
+		if up != l.lastWheelUp {
+			l.wheelPending = 0
+			l.lastWheelUp = up
+		}
+		const wheelWindow = 30 * time.Millisecond
+		if now.Sub(l.lastWheelAt) < wheelWindow {
+			l.wheelPending++
+			return nil
+		}
+		l.lastWheelAt = now
+		// Slow isolated tick: pending==0 -> 1 row. Fast flick: pending
+		// events accumulated inside the window -> up to 5 rows.
+		step := 1 + l.wheelPending/2
+		if step > 5 {
+			step = 5
+		}
+		l.wheelPending = 0
+		l.focusPane = pane
+		for i := 0; i < step; i++ {
+			if up {
+				l.moveUp()
+			} else {
+				l.moveDown()
+			}
+		}
+	case tea.MouseClickMsg:
+		if mouse.Button == tea.MouseLeft {
+			return l.selectMouseRow(pane, row)
+		}
+	}
+	return nil
+}
+
+func (l Library) canFocusPane(pane FocusPane) bool {
+	switch pane {
+	case FocusArtists:
+		return true
+	case FocusAlbums:
+		return l.browseMode != BrowsePlaylists && len(l.albums) > 0
+	case FocusTracks:
+		return len(l.albumTracks) > 0
+	default:
+		return false
+	}
+}
+
+func (l *Library) selectMouseRow(pane FocusPane, row int) tea.Cmd {
+	if row < 0 {
+		return nil
+	}
+
+	switch pane {
+	case FocusArtists:
+		wasActive := l.focusPane == FocusArtists
+		l.focusPane = FocusArtists
+		switch l.browseMode {
+		case BrowseGenres:
+			idx := l.genreScrollOffset + row
+			if idx >= len(l.genres) {
+				return nil
+			}
+			if l.genreCursor != idx {
+				l.genreCursor = idx
+				l.loadAlbumsForGenre()
+				return nil
+			}
+			// Second click on the selected genre moves focus to albums,
+			// matching Enter.
+			if wasActive {
+				return l.handleEnter()
+			}
+		case BrowsePlaylists:
+			idx := l.playlistScrollOffset + row
+			if idx >= len(l.playlists) {
+				return nil
+			}
+			if l.playlistCursor != idx {
+				l.playlistCursor = idx
+				l.loadPlaylistTracks()
+				return nil
+			}
+			// Second click on the selected playlist plays it, like Enter.
+			if wasActive {
+				return l.handleEnter()
+			}
+		default:
+			idx := l.artistScrollOffset + row
+			if idx >= len(l.artists) {
+				return nil
+			}
+			if l.artistCursor != idx {
+				l.artistCursor = idx
+				l.LoadAlbumsForArtist()
+				return nil
+			}
+			// Second click on the selected artist moves focus to albums,
+			// matching Enter.
+			if wasActive {
+				return l.handleEnter()
+			}
+		}
+	case FocusAlbums:
+		idx := l.albumScrollOffset + row
+		if idx >= len(l.albums) {
+			return nil
+		}
+		wasSelected := l.focusPane == FocusAlbums && l.albumCursor == idx
+		l.focusPane = FocusAlbums
+		if l.albumCursor != idx {
+			l.albumCursor = idx
+			l.loadTracksForAlbum()
+			return nil
+		}
+		// Second click on the selected album (or genre "artist - album")
+		// plays it, matching Enter.
+		if wasSelected {
+			return l.handleEnter()
+		}
+	case FocusTracks:
+		idx := l.trackScrollOffset + row
+		if idx >= len(l.albumTracks) {
+			return nil
+		}
+		wasSelected := l.focusPane == FocusTracks && l.trackCursor == idx
+		l.focusPane = FocusTracks
+		l.trackCursor = idx
+		if wasSelected {
+			return l.handleEnter()
+		}
 	}
 	return nil
 }
@@ -1482,6 +1662,50 @@ func (l *Library) paneHeight() int {
 	return l.height - 4
 }
 
+func (l Library) columnWidths() (int, int, int) {
+	available := l.width - 4
+	var first, second, third int
+	if l.browseMode == BrowseGenres {
+		first = available * 25 / 100
+		second = available * 45 / 100
+		third = available - first - second
+	} else {
+		first = available / 3
+		second = available / 3
+		third = available / 3
+	}
+	return max(first, 10), max(second, 10), max(third, 10)
+}
+
+func (l Library) paneBounds() []libraryPaneBounds {
+	first, second, third := l.columnWidths()
+	if l.browseMode == BrowsePlaylists {
+		playlistWidth := first + second
+		return []libraryPaneBounds{
+			{pane: FocusArtists, x: 0, width: playlistWidth},
+			{pane: FocusTracks, x: playlistWidth + 3, width: third},
+		}
+	}
+	return []libraryPaneBounds{
+		{pane: FocusArtists, x: 0, width: first},
+		{pane: FocusAlbums, x: first + 3, width: second},
+		{pane: FocusTracks, x: first + second + 6, width: third},
+	}
+}
+
+func (l Library) mouseTarget(x, y int) (FocusPane, int, bool) {
+	height := max(l.paneHeight(), 3)
+	if y < libraryContentStartRow || y >= libraryContentStartRow+height {
+		return FocusArtists, 0, false
+	}
+	for _, bounds := range l.paneBounds() {
+		if x >= bounds.x && x < bounds.x+bounds.width {
+			return bounds.pane, y - libraryContentStartRow, true
+		}
+	}
+	return FocusArtists, 0, false
+}
+
 func (l Library) View() string {
 	if l.browseMode == BrowseArtists && len(l.allArtists) == 0 {
 		return l.styles.MutedStyle.Render("Library empty - press R to rescan")
@@ -1490,27 +1714,7 @@ func (l Library) View() string {
 		return l.styles.MutedStyle.Render("Library empty - press R to rescan")
 	}
 
-	avail := l.width - 4
-	var col1Width, col2Width, col3Width int
-	if l.browseMode == BrowseGenres {
-		col1Width = avail * 25 / 100
-		col2Width = avail * 45 / 100
-		col3Width = avail - col1Width - col2Width
-	} else {
-		col1Width = avail / 3
-		col2Width = avail / 3
-		col3Width = avail / 3
-	}
-	minWidth := 10
-	if col1Width < minWidth {
-		col1Width = minWidth
-	}
-	if col2Width < minWidth {
-		col2Width = minWidth
-	}
-	if col3Width < minWidth {
-		col3Width = minWidth
-	}
+	col1Width, col2Width, col3Width := l.columnWidths()
 	height := l.paneHeight()
 	if height < 3 {
 		height = 3

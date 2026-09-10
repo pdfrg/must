@@ -59,6 +59,12 @@ func getFittingLayouts(width, height int) []string {
 func (m Model) altView(s string) tea.View {
 	v := tea.NewView(s)
 	v.AltScreen = true
+	if m.cfg.MouseEnabled && m.activeModal == ModalLibrary {
+		v.MouseMode = tea.MouseModeCellMotion
+		if m.cfg.MouseFocusOnHover {
+			v.MouseMode = tea.MouseModeAllMotion
+		}
+	}
 	if !m.cfg.TransparentBackground && !m.cfg.DisableTheme {
 		v.BackgroundColor = m.styles.BackgroundStyle.GetBackground()
 		v.ForegroundColor = m.styles.ForegroundStyle.GetForeground()

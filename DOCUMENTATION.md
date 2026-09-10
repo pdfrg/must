@@ -147,6 +147,8 @@ Config file: `~/.config/must/config.toml` (auto-created with defaults on first r
 | `repeat_mode` | `off` | Repeat mode: off, all, one |
 | `shuffle` | `false` | Shuffle playback order |
 | `replaygain_mode` | `off` | ReplayGain volume normalization: off, track, album |
+| `mouse_enabled` | `false` | Enable hover, click, and wheel interaction in the library browser |
+| `mouse_focus_on_hover` | `false` | Focus a browser column when the pointer moves over it |
 | `show_header` | `true` | Show header bar on startup (toggle with `H`) |
 | `show_footer` | `true` | Show keybinding footer on startup (toggle with `M`) |
 | `restore_on_start` | `true` | Restore last session on startup |
@@ -355,4 +357,3 @@ Queried from MPV at playback time (shown in now-playing view):
 | Sample Rate | 44100 Hz |
 | Channels | 2 |
 | Bit Depth | 16 (lossless only) |
-
