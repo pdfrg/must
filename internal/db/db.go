@@ -351,6 +351,24 @@ func (ld *LibraryDB) GetTracksByAlbum(album string) ([]models.Track, error) {
 	return scanTracks(rows)
 }
 
+func (ld *LibraryDB) GetTracksByGenreAlbumDisplay(display string) ([]models.Track, error) {
+	// Local genre browser entries are "artist - album" composites
+	// (see GetAlbumsByGenreSorted), so match the composite expression
+	// directly instead of splitting on " - " (artist names may contain it).
+	rows, err := ld.db.Query(`
+		SELECT id, path, title, artist, album, album_artist, year, genre,
+		track_num, disc_num, duration, has_cover_art, file_mod_time
+		FROM tracks
+		WHERE COALESCE(NULLIF(album_artist, ''), artist) || ' - ' || album = ?
+		ORDER BY disc_num, track_num`, display)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tracks by genre album: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanTracks(rows)
+}
+
 func (ld *LibraryDB) GetAllTracks() ([]models.Track, error) {
 	rows, err := ld.db.Query(`
 		SELECT id, path, title, artist, album, album_artist, year, genre,

@@ -645,8 +645,32 @@ func (l *Library) LoadAlbumsForArtist() {
 }
 
 func (l *Library) loadTracksForAlbum() {
-	if l.browseMode == BrowseGenres && l.genreCursor < len(l.genres) && l.genres[l.genreCursor].IsSubsonic {
-		l.loadSubsonicTracksForAlbum()
+	if l.browseMode == BrowseGenres {
+		if l.genreCursor < len(l.genres) && l.genres[l.genreCursor].IsSubsonic {
+			l.loadSubsonicTracksForAlbum()
+			return
+		}
+		// Local genre: middle column holds "artist - album" composites.
+		// In genre mode the artists pane is not meaningful, so never take
+		// the artist-subsonic path here (it left stale Subsonic tracks on
+		// screen when switching source with ctrl+t).
+		if l.db == nil || len(l.albums) == 0 || l.albumCursor >= len(l.albums) {
+			l.albumTracks = nil
+			l.trackCursor = 0
+			l.trackScrollOffset = 0
+			return
+		}
+		albumEntry := l.albums[l.albumCursor]
+		tracks, err := l.db.GetTracksByGenreAlbumDisplay(albumEntry.Name)
+		if err == nil && len(tracks) > 0 {
+			l.albumTracks = tracks
+			l.trackCursor = 0
+			l.trackScrollOffset = 0
+		} else {
+			l.albumTracks = nil
+			l.trackCursor = 0
+			l.trackScrollOffset = 0
+		}
 		return
 	}
 	if len(l.artists) > 0 && l.artistCursor < len(l.artists) && l.artists[l.artistCursor].IsSubsonic {
@@ -657,20 +681,6 @@ func (l *Library) loadTracksForAlbum() {
 		l.albumTracks = nil
 		l.trackCursor = 0
 		l.trackScrollOffset = 0
-		return
-	}
-	if l.browseMode == BrowseGenres {
-		albumEntry := l.albums[l.albumCursor]
-		tracks, err := l.db.GetTracksByAlbum(albumEntry.Name)
-		if err == nil && len(tracks) > 0 {
-			l.albumTracks = tracks
-			l.trackCursor = 0
-			l.trackScrollOffset = 0
-		} else {
-			l.albumTracks = nil
-			l.trackCursor = 0
-			l.trackScrollOffset = 0
-		}
 		return
 	}
 	entry := l.artists[l.artistCursor]
