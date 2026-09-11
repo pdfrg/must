@@ -19,7 +19,13 @@
 
 **See additional [SCREENSHOTS.md](SCREENSHOTS.md).  Includes themes, views, modals, and IPC examples.**
 
-![human-animation](assets/human.gif) ![machine-animation](assets/machine.gif)
+![human-animation](assets/human.gif)
+
+Optional human-style typed metadata `title_animantion = 'human'` off by default.
+
+ ![machine-animation](assets/machine.gif)
+
+Machine-style `title_animation = 'machine'`
 
 ## There's a million music players, why must?
 
