@@ -19,6 +19,8 @@
 
 **See additional [SCREENSHOTS.md](SCREENSHOTS.md).  Includes themes, views, modals, and IPC examples.**
 
+![human-animation](assets/human.gif) ![machine-animation](assets/machine.gif)
+
 ## There's a million music players, why must?
 
 1. TUI speed — incredibly fast, responsive, keyboard-driven.
