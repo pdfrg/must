@@ -8,7 +8,6 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	termimg "github.com/blacktop/go-termimg"
-	"github.com/pdfrg/must/assets"
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/ctl"
@@ -282,12 +281,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		m.cellRatio = 2.0
 	}
 
-	if logoImg, err := pkgimage.LoadImageFromBytes(assets.BubblesLogoPNG); err == nil {
-		m.logoImage = logoImg
-		if m.imageRenderer != nil {
-			m.renderLogoArt(logoImg)
-		}
-	}
+	m.rethemeLogoArt()
 
 	themeWatcher := config.NewThemeWatcher(cfg.ColorsFile)
 	if err := themeWatcher.Start(); err == nil {

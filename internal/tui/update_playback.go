@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	termimg "github.com/blacktop/go-termimg"
+	"github.com/pdfrg/must/assets"
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
 	imgpkg "github.com/pdfrg/must/internal/image"
@@ -49,13 +50,38 @@ func (m *Model) renderLogoArt(img image.Image) {
 
 	m.logoArtStr = rendered
 	m.logoArtLoaded = true
-
 	if m.imageProtocol == termimg.Halfblocks {
 		m.logoArtWidth = width / 2
 		m.logoArtHeight = height / 2
 	} else {
 		m.logoArtWidth = width
 		m.logoArtHeight = height
+	}
+}
+
+func (m *Model) rethemeLogoArt() {
+	if m.styles == nil {
+		return
+	}
+	background := m.styles.BackgroundHex
+	if background == "" || background == "transparent" {
+		background = m.styles.ProgressBarBackground
+	}
+	logo, err := imgpkg.RenderThemedFallbackSVG(
+		assets.BubblesLogoSVG,
+		1024,
+		1024,
+		background,
+		m.styles.AccentHex,
+		m.styles.ForegroundHex,
+	)
+	if err != nil {
+		logf("failed to render themed fallback art: %v", err)
+		return
+	}
+	m.logoImage = logo
+	if m.imageRenderer != nil {
+		m.renderLogoArt(m.logoImage)
 	}
 }
 

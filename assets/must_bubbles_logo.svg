@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>must fallback album cover</title>
+  <rect width="1024" height="1024" fill="{{BACKGROUND}}"/>
+
+  <!-- The logo is built from paths so rendering never depends on a font. -->
+  <path fill="{{ACCENT}}" d="
+    M138 430h45v24h18v-24h42v24h18v-24h43q53 0 53 55v130h-45V486q0-14-14-14h-27v143h-45V472h-43v143h-45V430z
+    M389 430h45v140q0 16 16 16h41V430h45v185h-45v-18h-13q-4 18-30 18h-13q-46 0-46-49V430z
+    M573 474q0-44 45-44h62q29 0 39 23v38h-43v-13q0-9-11-9h-37q-11 0-11 10v8q0 9 12 12l53 13q40 10 40 49v9q0 45-46 45h-61q-42 0-46-39v-31h43v17q0 13 13 13h38q14 0 14-12v-8q0-10-14-14l-53-13q-37-9-37-49v-5z
+    M778 309h45v41h62v42h-62v157q0 24 23 24h47v42h-57q-58 0-58-59V392h-36v-42h36v-41z"/>
+
+  <!-- Each ring has explicit fills so partial SVG renderers need no inherited stroke styles. -->
+  <g>
+    <circle cx="279" cy="107" r="35" fill="{{FOREGROUND}}"/><circle cx="279" cy="107" r="27" fill="{{BACKGROUND}}"/>
+    <circle cx="383" cy="133" r="31" fill="{{FOREGROUND}}"/><circle cx="383" cy="133" r="23" fill="{{BACKGROUND}}"/>
+    <circle cx="737" cy="3" r="48" fill="{{FOREGROUND}}"/><circle cx="737" cy="3" r="40" fill="{{BACKGROUND}}"/>
+    <circle cx="645" cy="216" r="29" fill="{{FOREGROUND}}"/><circle cx="645" cy="216" r="21" fill="{{BACKGROUND}}"/>
+    <circle cx="928" cy="229" r="35" fill="{{FOREGROUND}}"/><circle cx="928" cy="229" r="27" fill="{{BACKGROUND}}"/>
+    <circle cx="1016" cy="326" r="41" fill="{{FOREGROUND}}"/><circle cx="1016" cy="326" r="33" fill="{{BACKGROUND}}"/>
+    <circle cx="957" cy="395" r="24" fill="{{FOREGROUND}}"/><circle cx="957" cy="395" r="16" fill="{{BACKGROUND}}"/>
+    <circle cx="61" cy="501" r="39" fill="{{FOREGROUND}}"/><circle cx="61" cy="501" r="31" fill="{{BACKGROUND}}"/>
+    <circle cx="831" cy="641" r="48" fill="{{FOREGROUND}}"/><circle cx="831" cy="641" r="40" fill="{{BACKGROUND}}"/>
+    <circle cx="236" cy="758" r="31" fill="{{FOREGROUND}}"/><circle cx="236" cy="758" r="23" fill="{{BACKGROUND}}"/>
+    <circle cx="561" cy="840" r="31" fill="{{FOREGROUND}}"/><circle cx="561" cy="840" r="23" fill="{{BACKGROUND}}"/>
+    <circle cx="637" cy="908" r="43" fill="{{FOREGROUND}}"/><circle cx="637" cy="908" r="35" fill="{{BACKGROUND}}"/>
+    <circle cx="357" cy="1008" r="34" fill="{{FOREGROUND}}"/><circle cx="357" cy="1008" r="26" fill="{{BACKGROUND}}"/>
+    <circle cx="913" cy="784" r="28" fill="{{FOREGROUND}}"/><circle cx="913" cy="784" r="20" fill="{{BACKGROUND}}"/>
+    <circle cx="957" cy="958" r="24" fill="{{FOREGROUND}}"/><circle cx="957" cy="958" r="16" fill="{{BACKGROUND}}"/>
+    <circle cx="302" cy="262" r="25" fill="{{FOREGROUND}}"/><circle cx="302" cy="262" r="17" fill="{{BACKGROUND}}"/>
+  </g>
+  <path fill="{{FOREGROUND}}" d="M258 88h15v7h-8v10h-7zM365 115h14v7h-7v10h-7zM713 0h15v7h-8v10h-7z
+    M628 199h13v7h-6v10h-7zM909 209h15v7h-8v10h-7zM994 304h15v7h-8v10h-7z
+    M943 379h11v7h-4v9h-7zM38 478h16v7h-9v11h-7zM805 613h17v7h-10v11h-7z
+    M218 738h13v7h-6v10h-7zM544 820h13v7h-6v10h-7zM615 881h16v7h-9v11h-7z
+    M337 986h14v7h-7v10h-7zM897 765h12v7h-5v10h-7zM943 941h11v7h-4v9h-7z
+    M287 245h11v7h-4v9h-7z"/>
+</svg>

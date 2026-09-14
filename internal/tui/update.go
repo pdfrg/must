@@ -486,15 +486,17 @@ func (m Model) handleThemeChanged(msg themeChangedMsg) (tea.Model, tea.Cmd) {
 	m.nowPlaying.UpdateStyles(m.styles, m.styles.Accent, m.styles.Cursor, m.styles.Background)
 	m.playlistWidget.UpdateStyles(m.styles)
 	m.footer.UpdateStyles(m.styles.AccentStyle, m.styles.MutedStyle)
+	m.rethemeLogoArt()
 
 	if m.vis != nil {
 		m.vis.SetColors(m.styles.Accent, m.styles.Cursor, m.styles.Muted)
 	}
 
+	cmds := []tea.Cmd{clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay()}
 	if m.themeWatcher != nil {
-		return m, watchThemeCmd(m.themeWatcher)
+		cmds = append(cmds, watchThemeCmd(m.themeWatcher))
 	}
-	return m, nil
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) handleWindowSize(msg tea.WindowSizeMsg, priorCmds []tea.Cmd) (tea.Model, tea.Cmd) {
@@ -1859,6 +1861,7 @@ func (m Model) handleOptionsModalMsg(msg modals.OptionsMsg) (tea.Model, tea.Cmd)
 			m.nowPlaying.UpdateStyles(m.styles, m.styles.Accent, m.styles.Cursor, m.styles.Background)
 			m.playlistWidget.UpdateStyles(m.styles)
 			m.footer.UpdateStyles(m.styles.AccentStyle, m.styles.MutedStyle)
+			m.rethemeLogoArt()
 		}
 	}
 
