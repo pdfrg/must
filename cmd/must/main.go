@@ -135,7 +135,7 @@ func main() {
 				layoutOverride = args[i+1]
 				i++
 			} else {
-				fmt.Fprintf(os.Stderr, "Error: --layout requires an argument (large, medium, compact, narrow)\n")
+				fmt.Fprintf(os.Stderr, "Error: --layout requires an argument (auto, large, medium, compact, narrow)\n")
 				os.Exit(1)
 			}
 		case "--sleep":
@@ -471,7 +471,7 @@ FLAGS:
   --play                   Auto-play on launch
   --no-restore             Don't restore last session
   --repeat [off|all|one]   Set repeat mode (default: all if flag given without arg)
-  --layout LAYOUT          Set UI layout: large, medium, compact, narrow
+  --layout LAYOUT          Set UI layout: auto, large, medium, compact, narrow
   --sleep DURATION         Start sleep timer (e.g., 20m, 1.5h)
   --alarm TIME             Start app at wall-clock time (e.g., 7:20am, 19:20)
   --lastfm-auth            Run Last.fm OAuth authentication flow

@@ -21,6 +21,7 @@ type NowPlaying struct {
 	width           int
 	maxWidth        int
 	contentWidth    int
+	artworkGap      int
 
 	sleepTimerActive bool
 	sleepTimerMins   int
@@ -59,9 +60,7 @@ func NewNowPlaying(styles *config.ThemeStyles, accentColor, cursorColor, progres
 
 func (n *NowPlaying) SetWidth(width int) {
 	n.width = width
-	progWidth := min(40, width-2)
-	progWidth = max(20, progWidth)
-	n.progress.SetWidth(progWidth)
+	n.progress.SetWidth(progressWidth(width))
 }
 
 func (n *NowPlaying) GetWidth() int {
@@ -74,6 +73,13 @@ func (n *NowPlaying) SetMaxWidth(maxWidth int) {
 
 func (n *NowPlaying) SetContentWidth(width int) {
 	n.contentWidth = width
+	if width > 0 {
+		n.progress.SetWidth(progressWidth(width))
+	}
+}
+
+func (n *NowPlaying) SetArtworkGap(rows int) {
+	n.artworkGap = max(rows, 0)
 }
 
 func (n *NowPlaying) UpdateStyles(styles *config.ThemeStyles, accentColor, cursorColor, bgColor string) {
@@ -97,8 +103,7 @@ func (n *NowPlaying) UpdateStyles(styles *config.ThemeStyles, accentColor, curso
 }
 
 func buildProgress(width int, accentColor, cursorColor string, emptyColor color.Color) progress.Model {
-	progWidth := min(40, width-2)
-	progWidth = max(20, progWidth)
+	progWidth := progressWidth(width)
 	p := progress.New(
 		progress.WithWidth(progWidth),
 		progress.WithColors(lipgloss.Color(cursorColor), lipgloss.Color(accentColor)),
@@ -107,6 +112,10 @@ func buildProgress(width int, accentColor, cursorColor string, emptyColor color.
 	)
 	p.EmptyColor = emptyColor
 	return p
+}
+
+func progressWidth(width int) int {
+	return min(72, max(width-2, 1))
 }
 
 func (n *NowPlaying) UpdateProgress(percent float64) tea.Cmd {
@@ -176,13 +185,18 @@ func (n NowPlaying) renderIdleView(data NowPlayingData) string {
 
 	output := fmt.Sprintf(" %s\n %s\n %s\n\n %s\n %s\n\n %s\n\n %s\n\n %s",
 		title, artist, album, progView, timeStr, modeLine, audioLine, statusLine)
+	output = n.insertArtworkGap(output)
 
 	if n.contentWidth > 0 {
 		lines := strings.Split(output, "\n")
 		for i, line := range lines {
 			originalWidth := lipgloss.Width(line)
 			if originalWidth > n.contentWidth {
-				line = ansi.Truncate(line, n.contentWidth-3, "...")
+				if n.contentWidth > 3 {
+					line = ansi.Truncate(line, n.contentWidth-3, "...")
+				} else {
+					line = ansi.Truncate(line, n.contentWidth, "")
+				}
 			}
 			if lipgloss.Width(line) < n.contentWidth {
 				line = lipgloss.NewStyle().Width(n.contentWidth).Render(line)
@@ -301,13 +315,18 @@ func (n NowPlaying) View(data NowPlayingData) string {
 	}
 
 	output := fmt.Sprintf(" %s\n %s\n %s\n\n %s\n %s\n\n %s\n\n %s\n\n %s", title, artist, album, progView, timeStr, modeLine, audioLine, statusLine)
+	output = n.insertArtworkGap(output)
 
 	if n.contentWidth > 0 {
 		lines := strings.Split(output, "\n")
 		for i, line := range lines {
 			originalWidth := lipgloss.Width(line)
 			if originalWidth > n.contentWidth {
-				line = ansi.Truncate(line, n.contentWidth-3, "...")
+				if n.contentWidth > 3 {
+					line = ansi.Truncate(line, n.contentWidth-3, "...")
+				} else {
+					line = ansi.Truncate(line, n.contentWidth, "")
+				}
 			}
 			if lipgloss.Width(line) < n.contentWidth {
 				line = lipgloss.NewStyle().Width(n.contentWidth).Render(line)
@@ -318,6 +337,21 @@ func (n NowPlaying) View(data NowPlayingData) string {
 	}
 
 	return output
+}
+
+func (n NowPlaying) insertArtworkGap(output string) string {
+	if n.artworkGap <= 0 {
+		return output
+	}
+	lines := strings.Split(output, "\n")
+	if len(lines) < 3 {
+		return output
+	}
+	withGap := make([]string, 0, len(lines)+n.artworkGap)
+	withGap = append(withGap, lines[:3]...)
+	withGap = append(withGap, make([]string, n.artworkGap)...)
+	withGap = append(withGap, lines[3:]...)
+	return strings.Join(withGap, "\n")
 }
 
 func runeCount(s string) int {

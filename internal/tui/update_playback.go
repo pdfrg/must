@@ -20,43 +20,63 @@ import (
 )
 
 func (m *Model) renderLogoArt(img image.Image) {
-	termimg.ClearResizeCache()
-
-	const targetHeight = 16
-	var width, height int
-	if m.imageProtocol == termimg.Halfblocks {
-		targetWidth := int(float64(targetHeight) * m.cellRatio)
-		if targetWidth < 10 {
-			targetWidth = 10
-		}
-		width = targetWidth * 2
-		height = targetHeight * 2
-	} else {
-		height = targetHeight
-		width = int(float64(height) * m.cellRatio)
-		if width < 10 {
-			width = 10
-		}
-	}
-
-	tiImg := termimg.New(img).Size(width, height).
-		Scale(termimg.ScaleFit).Protocol(m.imageProtocol).UseUnicode(false)
-
-	rendered, err := tiImg.Render()
-	if err != nil {
+	rendered, width, height, ok := m.renderArtwork(img, m.artworkTargetHeight())
+	if !ok {
 		return
 	}
-
 	m.logoArtStr = rendered
 	m.logoArtLoaded = true
+	m.logoArtWidth = width
+	m.logoArtHeight = height
+}
 
-	if m.imageProtocol == termimg.Halfblocks {
-		m.logoArtWidth = width / 2
-		m.logoArtHeight = height / 2
-	} else {
-		m.logoArtWidth = width
-		m.logoArtHeight = height
+func (m *Model) artworkTargetHeight() int {
+	if m.width > 0 && m.height > 0 {
+		if plan := m.currentLayoutPlan(true); !plan.Artwork.Empty() {
+			return plan.Artwork.Height
+		}
 	}
+	return 16
+}
+
+func (m *Model) renderArtwork(img image.Image, targetHeight int) (string, int, int, bool) {
+	if img == nil || targetHeight <= 0 {
+		return "", 0, 0, false
+	}
+	termimg.ClearResizeCache()
+	displayWidth := max(int(float64(targetHeight)*m.cellRatio), 8)
+	renderWidth, renderHeight := displayWidth, targetHeight
+	if m.imageProtocol == termimg.Halfblocks {
+		renderWidth *= 2
+		renderHeight *= 2
+	}
+	rendered, err := termimg.New(img).Size(renderWidth, renderHeight).
+		Scale(termimg.ScaleFit).Protocol(m.imageProtocol).UseUnicode(false).Render()
+	if err != nil {
+		return "", 0, 0, false
+	}
+	return rendered, displayWidth, targetHeight, true
+}
+
+func (m *Model) resizeArtwork() bool {
+	targetHeight := m.artworkTargetHeight()
+	if targetHeight <= 0 {
+		return false
+	}
+	changed := false
+	if m.albumArtImage != nil && m.albumArtHeight != targetHeight {
+		if rendered, width, height, ok := m.renderArtwork(m.albumArtImage, targetHeight); ok {
+			m.albumArtStr, m.albumArtWidth, m.albumArtHeight = rendered, width, height
+			m.albumArtLoaded, changed = true, true
+		}
+	}
+	if m.logoImage != nil && m.logoArtHeight != targetHeight {
+		if rendered, width, height, ok := m.renderArtwork(m.logoImage, targetHeight); ok {
+			m.logoArtStr, m.logoArtWidth, m.logoArtHeight = rendered, width, height
+			m.logoArtLoaded, changed = true, true
+		}
+	}
+	return changed
 }
 
 func (m Model) handleProgressTick(msg progressTickMsg) (tea.Model, tea.Cmd) {
@@ -461,6 +481,7 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 
 	m.albumArtStr = ""
 	m.albumArtLoaded = false
+	m.albumArtImage = nil
 	m.notifSentForSong = false
 
 	if m.vis != nil && m.bottomViewMode == BottomVisualizer {
@@ -600,43 +621,15 @@ func (m Model) handleImageLoaded(msg imageLoadedMsg) (tea.Model, tea.Cmd) {
 		_ = imgpkg.CacheArtData(msg.trackPath, msg.imageData)
 	}
 
-	termimg.ClearResizeCache()
-
-	const targetHeight = 16
-	var width, height int
-	if m.imageProtocol == termimg.Halfblocks {
-		targetWidth := int(float64(targetHeight) * m.cellRatio)
-		if targetWidth < 10 {
-			targetWidth = 10
-		}
-		width = targetWidth * 2
-		height = targetHeight * 2
-	} else {
-		height = targetHeight
-		width = int(float64(height) * m.cellRatio)
-		if width < 10 {
-			width = 10
-		}
-	}
-
-	tiImg := termimg.New(img).Size(width, height).
-		Scale(termimg.ScaleFit).Protocol(m.imageProtocol).UseUnicode(false)
-
-	rendered, err := tiImg.Render()
-	if err != nil {
+	rendered, width, height, ok := m.renderArtwork(img, m.artworkTargetHeight())
+	if !ok {
 		return m, nil
 	}
-
+	m.albumArtImage = img
 	m.albumArtStr = rendered
 	m.albumArtLoaded = true
-
-	if m.imageProtocol == termimg.Halfblocks {
-		m.albumArtWidth = width / 2
-		m.albumArtHeight = height / 2
-	} else {
-		m.albumArtWidth = width
-		m.albumArtHeight = height
-	}
+	m.albumArtWidth = width
+	m.albumArtHeight = height
 
 	var cmd tea.Cmd
 	if m.cfg.NotificationsEnabled && !m.notifSentForSong && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) && m.playlist[m.currentIndex].Path == msg.trackPath {
@@ -659,13 +652,10 @@ func (m Model) renderImagesCmd() tea.Cmd {
 		return nil
 	}
 
-	layout := m.layoutMode()
-	compactLayout := layout == "compact"
-	narrowLayout := layout == "narrow"
-
-	hasAlbumArt := m.cfg.ShowAlbumArt && m.albumArtLoaded && m.albumArtStr != "" && !compactLayout
-	hasLogoArt := !hasAlbumArt && m.logoArtLoaded && m.logoArtStr != "" && m.cfg.ShowAlbumArt && !compactLayout
-	hasArtistArt := m.artistArtLoaded && m.artistArtStr != "" && m.bottomViewMode == BottomArtistBio
+	plan := m.currentLayoutPlan(true)
+	hasAlbumArt := m.cfg.ShowAlbumArt && m.albumArtLoaded && m.albumArtStr != "" && !plan.Artwork.Empty()
+	hasLogoArt := !hasAlbumArt && m.logoArtLoaded && m.logoArtStr != "" && m.cfg.ShowAlbumArt && !plan.Artwork.Empty()
+	hasArtistArt := m.artistArtLoaded && m.artistArtStr != "" && m.bottomViewMode == BottomArtistBio && !plan.Bottom.Empty()
 
 	if !hasAlbumArt && !hasLogoArt && !hasArtistArt {
 		return nil
@@ -673,35 +663,24 @@ func (m Model) renderImagesCmd() tea.Cmd {
 
 	var raw string
 
-	headerOffset := 0
-	if m.showHeader {
-		headerOffset = 2
-	}
-
 	if m.imageProtocol == termimg.Kitty || m.imageProtocol == termimg.Halfblocks ||
 		m.imageProtocol == termimg.Sixel || m.imageProtocol == termimg.ITerm2 {
 
 		if hasAlbumArt {
-			artCol := m.width - m.albumArtWidth - 2
-			if narrowLayout {
-				artCol = 2
-			}
-			artRow := 1 + headerOffset
+			artCol := plan.Artwork.X + max((plan.Artwork.Width-m.albumArtWidth)/2, 0) + 1
+			artRow := plan.Artwork.Y + 1
 			raw += "\x1b[s"
-			for i := 0; i < m.albumArtHeight && i < 20; i++ {
+			for i := 0; i < m.albumArtHeight && artRow+i <= m.height; i++ {
 				raw += fmt.Sprintf("\x1b[%d;%dH%s", artRow+i, artCol,
 					strings.Repeat(" ", m.albumArtWidth))
 			}
 			raw += fmt.Sprintf("\x1b[%d;%dH%s", artRow, artCol, m.albumArtStr)
 			raw += "\x1b[u"
 		} else if hasLogoArt {
-			artCol := m.width - m.logoArtWidth - 2
-			if narrowLayout {
-				artCol = 2
-			}
-			artRow := 1 + headerOffset
+			artCol := plan.Artwork.X + max((plan.Artwork.Width-m.logoArtWidth)/2, 0) + 1
+			artRow := plan.Artwork.Y + 1
 			raw += "\x1b[s"
-			for i := 0; i < m.logoArtHeight && i < 20; i++ {
+			for i := 0; i < m.logoArtHeight && artRow+i <= m.height; i++ {
 				raw += fmt.Sprintf("\x1b[%d;%dH%s", artRow+i, artCol,
 					strings.Repeat(" ", m.logoArtWidth))
 			}
@@ -710,8 +689,8 @@ func (m Model) renderImagesCmd() tea.Cmd {
 		}
 
 		if hasArtistArt {
-			artistRow := 18 + headerOffset
-			availableSpace := m.height - artistRow - 3
+			artistRow := plan.Bottom.Y + 1
+			availableSpace := plan.Bottom.Height
 			if availableSpace >= m.artistArtHeight {
 				if m.imageProtocol == termimg.Kitty {
 					raw += fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", artistRow, 2, m.artistArtStr)

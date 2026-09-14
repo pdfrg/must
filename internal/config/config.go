@@ -48,7 +48,7 @@ type Config struct {
 	TempDirs              []string              `toml:"temp_dirs" comment:"directories containing temp/download albums (each subfolder = one album)\nformat: comma-separated quoted paths inside brackets, e.g. [\"~/Downloads\", \"/tmp/music\"]\npress T in the TUI to browse (default: [])"`
 	NotificationsEnabled  bool                  `toml:"notifications_enabled" comment:"show desktop notifications on song changes (default: false)"`
 	NotificationsShowArt  bool                  `toml:"notifications_show_art" comment:"include album art thumbnail in notifications (default: true)"`
-	Layout                string                `toml:"layout" comment:"UI layout mode\nlarge: full layout with all elements (default)\nmedium: no bottom view (no playlist/lyrics/visualizer)\ncompact: no album art, no bottom view, mini footer\nnarrow: album art top-left, now playing below, mini footer (default: large)"`
+	Layout                string                `toml:"layout" comment:"UI layout mode\nauto: adapt to the current terminal size (default)\nlarge: full layout with all elements\nmedium: no bottom view\ncompact: no album art, no bottom view, mini footer\nnarrow: stacked album art and player (default: auto)"`
 	ForceProtocol         string                `toml:"force_protocol" comment:"force a specific image protocol instead of auto-detecting\noptions: kitty, sixel, halfblocks, iterm2, or empty for auto-detect (default: '')"`
 	ShowHeader            bool                  `toml:"show_header" comment:"show header bar with title (default: true)"`
 	ShowFooter            bool                  `toml:"show_footer" comment:"show footer bar with keybindings (default: true)"`
@@ -129,7 +129,7 @@ func DefaultConfig() *Config {
 		},
 		NotificationsEnabled:  false,
 		NotificationsShowArt:  true,
-		Layout:                "large",
+		Layout:                "auto",
 		ForceProtocol:         "",
 		TheAudioDBApiKey:      "123",
 		TransparentBackground: false,
@@ -254,7 +254,7 @@ func (c *Config) applyDefaults() {
 		c.Visualizer.InfoDuration = defaults.Visualizer.InfoDuration
 	}
 
-	validLayouts := map[string]bool{"large": true, "medium": true, "compact": true, "narrow": true}
+	validLayouts := map[string]bool{"auto": true, "large": true, "medium": true, "compact": true, "narrow": true}
 	if c.Layout == "" || !validLayouts[c.Layout] {
 		c.Layout = defaults.Layout
 	}

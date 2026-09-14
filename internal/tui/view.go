@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/tui/widgets"
 )
@@ -77,12 +78,6 @@ func (m Model) View() tea.View {
 		return m.altView("Loading...")
 	}
 
-	if !m.layoutCheckDone {
-		if view, ok := m.checkAndRenderLayoutPrompt(); ok {
-			return view
-		}
-	}
-
 	// Fullscreen visualizer replaces everything
 	if m.visFullscreen && m.bottomViewMode == BottomVisualizer && m.vis != nil {
 		return m.renderFullscreenVis()
@@ -95,85 +90,67 @@ func (m Model) View() tea.View {
 		}
 	}
 
-	layout := m.layoutMode()
-
-	var b strings.Builder
-
-	if m.showHeader {
-		headerView := m.header.View()
-		b.WriteString(headerView)
-		b.WriteString("\n\n")
+	plan := m.currentLayoutPlan(true)
+	headerView := ""
+	if !plan.Header.Empty() {
+		headerView = m.header.View()
+	}
+	nowPlayingView := m.renderNowPlaying(plan)
+	bottomView := ""
+	if !plan.Bottom.Empty() {
+		m.bottomSectionStartRow = plan.Bottom.Y + 1
+		bottomView = m.renderBottomSection(plan.Bottom.Width, plan.Bottom.Height)
+	}
+	footerView := ""
+	if !plan.Footer.Empty() {
+		footerView = m.renderFooter(plan)
 	}
 
-	// Narrow: reserve space for album art above nowplaying
-	if layout == "narrow" {
-		artHeight := 16
-		for i := 0; i < artHeight+1; i++ {
-			b.WriteString("\n")
-		}
-	}
-
-	nowPlayingView := m.renderNowPlaying()
-	b.WriteString(nowPlayingView)
-
-	nowPlayingLines := lipgloss.Height(nowPlayingView)
-
-	// Add trailing newline if needed
-	if !strings.HasSuffix(nowPlayingView, "\n") {
-		b.WriteString("\n")
-	}
-
-	// Large/medium: pad below nowplaying so album art (right side) doesn't overflow
-	if layout != "compact" && layout != "narrow" {
-		artHeight := 16
-		canShowArt := m.imageRenderer != nil && m.cfg.ShowAlbumArt
-		if canShowArt && nowPlayingLines < artHeight {
-			for i := 0; i < artHeight-nowPlayingLines; i++ {
-				b.WriteString("\n")
-			}
-		}
-	}
-
-	b.WriteString("\n")
-
-	footerView := m.renderFooter()
-
-	// Bottom section: large only
-	if layout == "large" {
-		currentHeight := lipgloss.Height(b.String())
-		m.bottomSectionStartRow = currentHeight + 1
-		footerHeight := lipgloss.Height(footerView)
-		if footerHeight == 0 && m.showFooter {
-			footerHeight = 1
-		}
-		remainingHeight := m.height - currentHeight - footerHeight
-
-		if remainingHeight > 0 {
-			bottomView := m.renderBottomSection(remainingHeight)
-			bottomLines := strings.Split(bottomView, "\n")
-			for i := 0; i < remainingHeight; i++ {
-				if i < len(bottomLines) {
-					b.WriteString(bottomLines[i])
-				}
-				b.WriteString("\n")
-			}
-		}
-
-		if m.showFooter {
-			b.WriteString("\n")
-		}
-	} else if m.showFooter {
-		b.WriteString("\n")
-	}
-
-	if m.showFooter {
-		b.WriteString(footerView)
-	}
-
-	return m.altView(b.String())
+	canvas := make([]string, plan.Height)
+	placeLayoutBlock(canvas, plan.Header, headerView)
+	placeLayoutBlock(canvas, plan.NowPlaying, nowPlayingView)
+	placeLayoutBlock(canvas, plan.Bottom, bottomView)
+	placeLayoutBlock(canvas, plan.Footer, footerView)
+	return m.altView(strings.Join(canvas, "\n"))
 }
 
-func (m Model) renderNowPlaying() string {
+func (m Model) currentLayoutPlan(showBottom bool) LayoutPlan {
+	showArtwork := m.cfg != nil && m.cfg.ShowAlbumArt && m.imageRenderer != nil
+	requested := "auto"
+	if m.cfg != nil {
+		requested = m.layoutMode()
+	}
+	showBottom = showBottom && m.bottomViewMode != BottomOff
+	if m.bottomViewMode == BottomPlaylist && m.width < 64 {
+		showBottom = false
+	}
+	return planLayout(m.width, m.height, layoutPreferences{
+		Requested: requested, ShowHeader: m.showHeader, ShowFooter: m.showFooter,
+		ShowArtwork: showArtwork, ShowBottom: showBottom,
+		CompactBottom:  m.bottomViewMode == BottomVisualizer,
+		NowPlayingRows: 12, CellRatio: m.cellRatio,
+	})
+}
+
+func placeLayoutBlock(canvas []string, rect Rect, content string) {
+	if rect.Empty() || content == "" {
+		return
+	}
+	lines := strings.Split(content, "\n")
+	for i := 0; i < rect.Height && i < len(lines); i++ {
+		y := rect.Y + i
+		if y < 0 || y >= len(canvas) {
+			continue
+		}
+		line := ansi.Truncate(lines[i], rect.Width, "")
+		if rect.X > 0 {
+			line = strings.Repeat(" ", rect.X) + line
+		}
+		canvas[y] = line
+	}
+}
+
+func (m Model) renderNowPlaying(plan LayoutPlan) string {
 	var track *models.Track
 	if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
 		track = &m.playlist[m.currentIndex]
@@ -212,60 +189,31 @@ func (m Model) renderNowPlaying() string {
 		data.StatusMsg = "Scanning music library..."
 	}
 
-	layout := m.layoutMode()
-
-	switch layout {
-	case "narrow":
-		artHeight := 16
-		artWidth := int(float64(artHeight) * m.cellRatio)
-		if artWidth < 10 {
-			artWidth = 10
-		}
-		m.nowPlaying.SetWidth(min(m.width-4, artWidth))
-		m.nowPlaying.SetMaxWidth(artWidth)
-		m.nowPlaying.SetContentWidth(0)
-
-	case "compact":
-		m.nowPlaying.SetWidth(m.width - 4)
-		m.nowPlaying.SetMaxWidth(m.width - 6)
-		m.nowPlaying.SetContentWidth(0)
-
-	default: // large, medium
-		m.nowPlaying.SetWidth(m.width - 4)
-		m.nowPlaying.SetMaxWidth(0)
-
-		canShowArt := m.imageRenderer != nil && m.cfg.ShowAlbumArt
-		if canShowArt {
-			artHeight := 16
-			artWidth := int(float64(artHeight) * m.cellRatio)
-			if artWidth < 10 {
-				artWidth = 10
-			}
-			artCol := m.width - artWidth - 2
-			if artCol > 10 {
-				m.nowPlaying.SetContentWidth(artCol - 2)
-			} else {
-				m.nowPlaying.SetContentWidth(0)
-			}
-		} else {
-			m.nowPlaying.SetContentWidth(0)
-		}
+	paneWidth := max(plan.NowPlaying.Width, 1)
+	m.nowPlaying.SetWidth(paneWidth)
+	m.nowPlaying.SetMaxWidth(max(paneWidth-2, 1))
+	m.nowPlaying.SetContentWidth(paneWidth)
+	if plan.ArtworkStacked {
+		m.nowPlaying.SetArtworkGap(plan.Artwork.Height + 1)
+	} else {
+		m.nowPlaying.SetArtworkGap(0)
 	}
 
 	return m.nowPlaying.View(data)
 }
 
-func (m Model) renderBottomSection(height int) string {
-	if height <= 0 {
+func (m Model) renderBottomSection(width, height int) string {
+	if width <= 0 || height <= 0 {
 		return ""
 	}
 
 	switch m.bottomViewMode {
 	case BottomPlaylist:
-		m.playlistWidget.SetSize(m.width, height)
+		m.playlistWidget.SetSize(width, height)
 		return m.playlistWidget.View()
 
 	case BottomLyrics:
+		m.viewport.SetWidth(width)
 		m.viewport.SetHeight(height)
 		m.viewportReady = true
 		return m.viewport.View()
@@ -274,13 +222,17 @@ func (m Model) renderBottomSection(height int) string {
 		return m.renderSyncedLyrics(height)
 
 	case BottomArtistBio:
+		viewportWidth := width
+		if m.artistArtLoaded && m.artistArtStr != "" && height >= m.artistArtHeight {
+			viewportWidth = max(width-m.artistArtWidth-5, 1)
+		}
+		m.viewport.SetWidth(viewportWidth)
 		m.viewport.SetHeight(height)
 		m.viewportReady = true
 
 		viewContent := m.viewport.View()
 		if m.artistArtLoaded && m.artistArtStr != "" {
-			availableSpace := m.height - 20 - 3
-			if availableSpace >= m.artistArtHeight {
+			if height >= m.artistArtHeight {
 				leftPad := strings.Repeat(" ", m.artistArtWidth+5)
 				vpLines := strings.Split(viewContent, "\n")
 				for i, line := range vpLines {
@@ -299,7 +251,7 @@ func (m Model) renderBottomSection(height int) string {
 		}
 		m.vis.SetRows(max(3, height))
 		if m.vis.AudioReady() {
-			return m.vis.Render(m.width)
+			return m.vis.Render(width)
 		}
 		modeName := m.vis.ModeName()
 		source := m.vis.AudioSource()
@@ -538,15 +490,15 @@ func (m Model) renderSyncedLyrics(height int) string {
 	return b.String()
 }
 
-func (m Model) renderFooter() string {
+func (m Model) renderFooter(plan LayoutPlan) string {
 	if m.activeModal != ModalNone {
 		m.footer.SetMiniMode(true)
-	} else if m.layoutMode() == "compact" || m.layoutMode() == "narrow" {
+	} else if plan.MiniFooter {
 		m.footer.SetMiniMode(true)
 	} else {
 		m.footer.SetMiniMode(false)
 	}
-	m.footer.SetWidth(m.width)
+	m.footer.SetWidth(plan.Footer.Width)
 
 	var services []string
 	if m.cfg.LastFM.Enabled && m.cfg.LastFM.SessionKey != "" {

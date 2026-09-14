@@ -112,6 +112,7 @@ type Model struct {
 
 	imageRenderer  *pkgimage.Renderer
 	logoImage      image.Image
+	albumArtImage  image.Image
 	imageProtocol  termimg.Protocol
 	cellRatio      float64
 	fontW          int

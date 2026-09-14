@@ -307,7 +307,9 @@ func (v *Visualizer) AudioReady() bool {
 		return false
 	}
 	if !v.realAudio {
-		return false
+		// Synthetic mode has no external audio source to wait for; its seeded
+		// spectrum is ready as soon as the visualizer is created.
+		return true
 	}
 	return v.audioReady
 }

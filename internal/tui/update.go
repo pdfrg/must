@@ -498,16 +498,15 @@ func (m Model) handleThemeChanged(msg themeChangedMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleWindowSize(msg tea.WindowSizeMsg, priorCmds []tea.Cmd) (tea.Model, tea.Cmd) {
+	oldWidth, oldHeight := m.width, m.height
 	m.width = msg.Width
 	m.height = msg.Height
 	m.header.SetWidth(m.width)
-
-	if !m.layoutCheckDone {
-		fits, suboptimal, _ := checkTerminalSize(m.width, m.height, m.layoutMode())
-		m.layoutPromptActive = !fits || suboptimal
-		if fits && !suboptimal {
-			m.layoutCheckDone = true
-		}
+	m.layoutCheckDone = true
+	m.layoutPromptActive = false
+	artworkResized := m.resizeArtwork()
+	if artworkResized || oldWidth != m.width || oldHeight != m.height {
+		priorCmds = append(priorCmds, clearKittyImagesCmdIf(m.imageProtocol))
 	}
 
 	priorCmds = append(priorCmds, renderAlbumArtAfterDelay())
@@ -1250,7 +1249,9 @@ func (m Model) handleVisTick(msg visTickMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) cycleView() (tea.Model, tea.Cmd) {
-	if m.layoutMode() != "large" {
+	probe := m
+	probe.bottomViewMode = BottomPlaylist
+	if probe.currentLayoutPlan(true).Bottom.Empty() {
 		return m, setStatus(&m, "Bottom view unavailable in current layout", true)
 	}
 	var cmds []tea.Cmd
