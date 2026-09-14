@@ -94,8 +94,8 @@ func TestUltraWideMiniVisualizerStaysWithPlayer(t *testing.T) {
 		Requested: "auto", ShowArtwork: true, ShowBottom: true,
 		CompactBottom: true, NowPlayingRows: 12, CellRatio: 2,
 	})
-	if plan.NowPlaying.X != 2 || plan.Artwork.Right() > maximumPlayerWidth+2 {
-		t.Fatalf("player stage is not left-aligned/constrained: now=%+v art=%+v", plan.NowPlaying, plan.Artwork)
+	if plan.NowPlaying.X < 30 || plan.Artwork.Right() > 172 {
+		t.Fatalf("player stage is not centered/constrained: now=%+v art=%+v", plan.NowPlaying, plan.Artwork)
 	}
 	if plan.Bottom.Height != 6 || plan.Bottom.Width > maximumPlayerWidth {
 		t.Fatalf("mini visualizer is not bounded: %+v", plan.Bottom)
@@ -107,6 +107,40 @@ func TestUltraWideMiniVisualizerStaysWithPlayer(t *testing.T) {
 	spaceBelow := plan.Height - plan.Bottom.Bottom()
 	if difference(spaceAbove, spaceBelow) > 2 {
 		t.Fatalf("player group is vertically unbalanced: above=%d below=%d plan=%+v", spaceAbove, spaceBelow, plan)
+	}
+}
+
+func TestPlayerAndTableShareContentFrame(t *testing.T) {
+	plan := planLayout(202, 51, layoutPreferences{
+		Requested: "auto", ShowArtwork: true, ShowBottom: true,
+		BottomRows: 2, NowPlayingRows: 8, CellRatio: 2,
+	})
+	if plan.Bottom.X != plan.NowPlaying.X || plan.Bottom.Width != maximumPlayerWidth {
+		t.Fatalf("bottom section and player do not share a frame: bottom=%+v now=%+v", plan.Bottom, plan.NowPlaying)
+	}
+	if plan.Bottom.Height != 2 {
+		t.Fatalf("one-track table height = %d, want its natural two rows", plan.Bottom.Height)
+	}
+	if plan.Artwork.Right() != plan.Bottom.Right() {
+		t.Fatalf("artwork does not align to frame right edge: art=%+v bottom=%+v", plan.Artwork, plan.Bottom)
+	}
+	spaceAbove := plan.NowPlaying.Y
+	spaceBelow := plan.Height - plan.Bottom.Bottom()
+	if difference(spaceAbove, spaceBelow) > 1 {
+		t.Fatalf("short player/table group is not vertically centered: above=%d below=%d plan=%+v", spaceAbove, spaceBelow, plan)
+	}
+}
+
+func TestLongTableUsesAvailableHeight(t *testing.T) {
+	plan := planLayout(202, 51, layoutPreferences{
+		Requested: "auto", ShowArtwork: true, ShowBottom: true,
+		BottomRows: 101, NowPlayingRows: 8, CellRatio: 2,
+	})
+	if plan.NowPlaying.Y != 1 {
+		t.Fatalf("scrollable composition should remain top-aligned: %+v", plan)
+	}
+	if plan.Bottom.Bottom() != plan.Height {
+		t.Fatalf("long table should use all available rows: %+v", plan.Bottom)
 	}
 }
 

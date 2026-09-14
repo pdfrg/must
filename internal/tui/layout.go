@@ -36,6 +36,7 @@ type layoutPreferences struct {
 	ShowArtwork    bool
 	ShowBottom     bool
 	CompactBottom  bool
+	BottomRows     int
 	NowPlayingRows int
 	CellRatio      float64
 }
@@ -97,13 +98,10 @@ func planLayout(width, height int, prefs layoutPreferences) LayoutPlan {
 	}
 	contentWidth := max(width-margin*2, 1)
 	stageWidth := min(contentWidth, maximumPlayerWidth)
-	// Horizontal layouts share the playlist's left edge. Centering only the
-	// player above a full-width table makes the two sections look unrelated.
-	// The stacked/tall composition remains centered as a single column.
-	stageX := margin
-	if tallStack {
-		stageX = max((width-stageWidth)/2, 0)
-	}
+	// All primary sections share one centered, bounded content frame. This is
+	// what keeps a table and the player above it visually related on ultrawide
+	// terminals, rather than centering only one of the two sections.
+	stageX := max((width-stageWidth)/2, 0)
 	baseRows := min(max(prefs.NowPlayingRows, 1), max(footerY-mainY, 1))
 
 	showArtwork := prefs.ShowArtwork && plan.Mode != "compact" && width >= 48 && footerY-mainY >= 8
@@ -165,32 +163,47 @@ func planLayout(width, height int, prefs layoutPreferences) LayoutPlan {
 	if allowBottom {
 		bottomY := mainBottom + 1
 		bottomHeight := footerY - bottomY
+		minimumHeight := minimumBottomRows
+		if prefs.BottomRows > 0 {
+			// A playlist can still be useful with only its heading (one row),
+			// whereas the visualizer needs several rows to remain legible.
+			minimumHeight = 1
+		}
 		if footerRows > 0 && bottomHeight > minimumBottomRows {
 			bottomHeight--
 		}
 		if prefs.CompactBottom {
 			bottomHeight = min(bottomHeight, 6)
 		}
-		if bottomHeight >= minimumBottomRows {
-			plan.Bottom = Rect{Y: bottomY, Width: width, Height: bottomHeight}
-			if prefs.CompactBottom {
-				plan.Bottom.X = stageX
-				plan.Bottom.Width = stageWidth
-			}
+		if prefs.BottomRows > 0 {
+			bottomHeight = min(bottomHeight, prefs.BottomRows)
+		}
+		if bottomHeight >= minimumHeight {
+			plan.Bottom = Rect{X: stageX, Y: bottomY, Width: stageWidth, Height: bottomHeight}
 		}
 	}
 
-	// Keep compact components, such as the embedded visualizer, attached to the
-	// player instead of pinning them to the bottom of a very tall window.
-	if prefs.CompactBottom && !plan.Bottom.Empty() {
-		slack := footerY - plan.Bottom.Bottom()
-		if slack >= 12 {
-			shift := slack / 2
+	// Center the complete composition when its content has a natural height.
+	// Long/scrollable bottom views keep filling the available region, so they
+	// remain top-aligned and gain rows instead.
+	centerGroup := plan.Bottom.Empty() || prefs.CompactBottom || prefs.BottomRows > 0
+	if centerGroup {
+		groupBottom := mainBottom
+		if !plan.Bottom.Empty() {
+			groupBottom = plan.Bottom.Bottom()
+		}
+		groupHeight := groupBottom - mainY
+		availableHeight := footerY - headerRows
+		targetY := headerRows + max((availableHeight-groupHeight)/2, 0)
+		shift := targetY - mainY
+		if shift > 0 {
 			plan.NowPlaying.Y += shift
 			if !plan.Artwork.Empty() {
 				plan.Artwork.Y += shift
 			}
-			plan.Bottom.Y += shift
+			if !plan.Bottom.Empty() {
+				plan.Bottom.Y += shift
+			}
 		}
 	}
 

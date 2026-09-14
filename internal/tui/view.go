@@ -121,15 +121,28 @@ func (m Model) currentLayoutPlan(showBottom bool) LayoutPlan {
 		requested = m.layoutMode()
 	}
 	showBottom = showBottom && m.bottomViewMode != BottomOff
-	if m.bottomViewMode == BottomPlaylist && m.width < 64 {
-		showBottom = false
+	bottomRows := 0
+	if m.bottomViewMode == BottomPlaylist {
+		bottomRows = max(len(m.playlist)+1, 1)
 	}
 	return planLayout(m.width, m.height, layoutPreferences{
 		Requested: requested, ShowHeader: m.showHeader, ShowFooter: m.showFooter,
 		ShowArtwork: showArtwork, ShowBottom: showBottom,
 		CompactBottom:  m.bottomViewMode == BottomVisualizer,
-		NowPlayingRows: 12, CellRatio: m.cellRatio,
+		BottomRows:     bottomRows,
+		NowPlayingRows: m.nowPlayingRows(), CellRatio: m.cellRatio,
 	})
+}
+
+func (m Model) nowPlayingRows() int {
+	rows := 8
+	if m.cfg != nil && m.cfg.ShowEncodingDetails {
+		rows += 2
+	}
+	if m.currentIndex < 0 || m.currentIndex >= len(m.playlist) || m.statusMsg != "" || m.sleepTimerActive {
+		rows += 2
+	}
+	return rows
 }
 
 func placeLayoutBlock(canvas []string, rect Rect, content string) {

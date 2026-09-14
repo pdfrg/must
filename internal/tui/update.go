@@ -483,7 +483,7 @@ func (m Model) handleThemeChanged(msg themeChangedMsg) (tea.Model, tea.Cmd) {
 	m.styles = config.NewThemeStyles(newTheme, m.cfg.TransparentBackground, m.cfg.DisableTheme, m.cfg.TerminalPalette)
 
 	m.header.UpdateStyles(m.styles.Header)
-	m.nowPlaying.UpdateStyles(m.styles, m.styles.Accent, m.styles.Cursor, m.styles.Background)
+	m.nowPlaying.UpdateStyles(m.styles, m.styles.Accent, m.styles.Cursor, m.styles.Muted)
 	m.playlistWidget.UpdateStyles(m.styles)
 	m.footer.UpdateStyles(m.styles.AccentStyle, m.styles.MutedStyle)
 
@@ -766,20 +766,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
 		}
 		m.bottomViewMode = BottomVisualizer
-		if m.vis == nil {
-			seed := uint64(0)
-			if m.playing && m.currentIndex >= 0 {
-				seed = uint64(m.currentIndex)
-			}
-			m.vis = visualizer.New(seed)
-			m.vis.SetColors(m.styles.Accent, m.styles.Cursor, m.styles.Muted)
-			mode := visualizer.ModeFromString(m.cfg.Visualizer.Mode)
-			m.vis.SetMode(mode)
-		} else {
-			m.vis.SetColors(m.styles.Accent, m.styles.Cursor, m.styles.Muted)
-		}
-		source := m.vis.EnableRealAudio(m.cfg.Visualizer.RealAudio)
-		m.vis.RequestRefresh()
+		source := m.startVisualizer()
 		cmds = append(cmds, tickVisCmd(), setStatus(&m, "Visualizer: "+source, false))
 		return m, tea.Batch(cmds...)
 
@@ -1248,6 +1235,21 @@ func (m Model) handleVisTick(msg visTickMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func (m *Model) startVisualizer() string {
+	if m.vis == nil {
+		seed := uint64(0)
+		if m.playing && m.currentIndex >= 0 {
+			seed = uint64(m.currentIndex)
+		}
+		m.vis = visualizer.New(seed)
+		m.vis.SetMode(visualizer.ModeFromString(m.cfg.Visualizer.Mode))
+	}
+	m.vis.SetColors(m.styles.Accent, m.styles.Cursor, m.styles.Muted)
+	source := m.vis.EnableRealAudio(m.cfg.Visualizer.RealAudio)
+	m.vis.RequestRefresh()
+	return source
+}
+
 func (m Model) cycleView() (tea.Model, tea.Cmd) {
 	probe := m
 	probe.bottomViewMode = BottomPlaylist
@@ -1270,20 +1272,7 @@ func (m Model) cycleView() (tea.Model, tea.Cmd) {
 			m.artistArtEventID = 0
 			cmds = append(cmds, clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
 		}
-		if m.vis == nil {
-			seed := uint64(0)
-			if m.playing && m.currentIndex >= 0 {
-				seed = uint64(m.currentIndex)
-			}
-			m.vis = visualizer.New(seed)
-			m.vis.SetColors(m.styles.Accent, m.styles.Cursor, m.styles.Muted)
-			mode := visualizer.ModeFromString(m.cfg.Visualizer.Mode)
-			m.vis.SetMode(mode)
-		} else {
-			m.vis.SetColors(m.styles.Accent, m.styles.Cursor, m.styles.Muted)
-		}
-		source := m.vis.EnableRealAudio(m.cfg.Visualizer.RealAudio)
-		m.vis.RequestRefresh()
+		source := m.startVisualizer()
 		cmds = append(cmds, tickVisCmd())
 		cmds = append(cmds, setStatus(&m, "Visualizer: "+source, false))
 		return m, tea.Batch(cmds...)
@@ -1857,7 +1846,7 @@ func (m Model) handleOptionsModalMsg(msg modals.OptionsMsg) (tea.Model, tea.Cmd)
 			m.theme = newTheme
 			m.styles = config.NewThemeStyles(newTheme, m.cfg.TransparentBackground, m.cfg.DisableTheme, m.cfg.TerminalPalette)
 			m.header.UpdateStyles(m.styles.Header)
-			m.nowPlaying.UpdateStyles(m.styles, m.styles.Accent, m.styles.Cursor, m.styles.Background)
+			m.nowPlaying.UpdateStyles(m.styles, m.styles.Accent, m.styles.Cursor, m.styles.Muted)
 			m.playlistWidget.UpdateStyles(m.styles)
 			m.footer.UpdateStyles(m.styles.AccentStyle, m.styles.MutedStyle)
 		}

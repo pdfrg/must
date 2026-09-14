@@ -34,6 +34,23 @@ const (
 	BottomViewModeCount
 )
 
+func bottomViewFromString(name string) BottomViewMode {
+	switch name {
+	case "lyrics":
+		return BottomLyrics
+	case "synced_lyrics":
+		return BottomSyncedLyrics
+	case "artist_bio":
+		return BottomArtistBio
+	case "visualizer":
+		return BottomVisualizer
+	case "off":
+		return BottomOff
+	default:
+		return BottomPlaylist
+	}
+}
+
 type ActiveModal int
 
 const (
@@ -223,7 +240,7 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		sleepRemaining:      sleepTimer,
 		sleepTimerActive:    sleepTimer > 0,
 		sleepTimerExpiresAt: time.Now().Add(sleepTimer),
-		bottomViewMode:      BottomPlaylist,
+		bottomViewMode:      bottomViewFromString(cfg.DefaultView),
 		activeModal:         ModalNone,
 		artistCache:         make(map[string]*models.ArtistInfo),
 		showHeader:          cfg.ShowHeader,
@@ -231,8 +248,10 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 	}
 
 	m.header = widgets.NewHeader(styles.Header, "must - MUSic TUI")
-	m.nowPlaying = widgets.NewNowPlaying(styles, styles.Accent, styles.Cursor, styles.Background)
+	m.nowPlaying = widgets.NewNowPlaying(styles, styles.Accent, styles.Cursor, styles.Muted)
+	m.nowPlaying.SetDisplayOptions(cfg.ShowEncodingDetails, cfg.ProgressDisplay)
 	m.playlistWidget = widgets.NewPlaylist(styles)
+	m.playlistWidget.SetColumns(cfg.PlaylistColumns)
 	m.footer = widgets.NewFooter(styles.AccentStyle, styles.MutedStyle, styles.ForegroundStyle)
 
 	m.header.SetHidden(!m.showHeader)
@@ -318,6 +337,10 @@ func NewModel(cfg *config.Config, theme *config.ColorTheme, paths []string, layo
 		}
 	}
 
+	if m.bottomViewMode == BottomVisualizer && (m.initialLayout == "auto" || m.initialLayout == "large") {
+		m.startVisualizer()
+	}
+
 	return m
 }
 
@@ -332,6 +355,9 @@ func (m Model) Init() tea.Cmd {
 	}
 	if m.sleepTimerActive {
 		cmds = append(cmds, tickSleepTimerCmd())
+	}
+	if m.vis != nil && m.bottomViewMode == BottomVisualizer {
+		cmds = append(cmds, tickVisCmd())
 	}
 	return tea.Batch(cmds...)
 }
