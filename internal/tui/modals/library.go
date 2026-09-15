@@ -2076,9 +2076,6 @@ func (l Library) renderAlbumColumn(width, height int) string {
 		}
 		entry := items[idx]
 		displayName := entry.Name
-		if entry.Year > 0 {
-			displayName = entry.Name + " (" + fmt.Sprintf("%d", entry.Year) + ")"
-		}
 		if l.browseMode == BrowseGenres {
 			if parts := strings.SplitN(displayName, " - ", 2); len(parts) == 2 {
 				artistMax := width/2 - 3
@@ -2089,13 +2086,22 @@ func (l Library) renderAlbumColumn(width, height int) string {
 				displayName = artist + " - " + parts[1]
 			}
 		}
-		displayName = ansi.Truncate(displayName, width-2, "…")
+		year := ""
+		if entry.Year > 0 {
+			year = fmt.Sprintf(" (%d)", entry.Year)
+		}
+		contentWidth := max(width-2, 0)
+		if ansi.StringWidth(year) > contentWidth {
+			year = ansi.Truncate(year, contentWidth, "")
+		}
+		displayName = ansi.Truncate(displayName, max(contentWidth-ansi.StringWidth(year), 0), "…")
+		year = l.styles.MutedStyle.Render(year)
 		if idx == l.albumCursor && focused {
-			displayName = l.styles.CursorStyle.Render("> " + displayName)
+			displayName = l.styles.CursorStyle.Render("> "+displayName) + year
 		} else if idx == l.albumCursor {
-			displayName = l.styles.AccentStyle.Render(" " + displayName)
+			displayName = l.styles.AccentStyle.Render(" "+displayName) + year
 		} else {
-			displayName = l.styles.ForegroundStyle.Render(" " + displayName)
+			displayName = l.styles.ForegroundStyle.Render(" "+displayName) + year
 		}
 		b.WriteString(displayName)
 		if i < maxRows-1 {
