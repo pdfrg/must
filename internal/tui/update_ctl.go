@@ -17,6 +17,7 @@ import (
 	"github.com/pdfrg/must/internal/fold"
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/mpv"
+	"github.com/pdfrg/must/internal/navidrome"
 	"github.com/pdfrg/must/internal/playlist"
 )
 
@@ -1424,15 +1425,7 @@ func (m *Model) resolveResultIndex(n int) ([]models.Track, string, error) {
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to load playlist: %v", err)
 		}
-		tracks := make([]models.Track, 0, len(pl.Tracks))
-		for i, p := range pl.Tracks {
-			var extinf string
-			if i < len(pl.Titles) {
-				extinf = pl.Titles[i]
-			}
-			tracks = append(tracks, m.playlistEntryToTrack(p, extinf))
-		}
-		return tracks, r.Display, nil
+		return m.playlistTracks(path, pl), r.Display, nil
 
 	case ctl.ResultSubsonicPlaylist:
 		if m.subsonicClient == nil {
@@ -1470,15 +1463,7 @@ func (m *Model) resolvePathOrPlaylist(arg string) ([]models.Track, string, error
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to load playlist: %v", err)
 		}
-		tracks := make([]models.Track, 0, len(pl.Tracks))
-		for i, tp := range pl.Tracks {
-			var extinf string
-			if i < len(pl.Titles) {
-				extinf = pl.Titles[i]
-			}
-			tracks = append(tracks, m.playlistEntryToTrack(tp, extinf))
-		}
-		return tracks, filepath.Base(arg), nil
+		return m.playlistTracks(arg, pl), filepath.Base(arg), nil
 	}
 
 	if isAudioFile(arg) {
@@ -1521,6 +1506,61 @@ func (m *Model) playlistEntryToTrack(entry, extinfTitle string) models.Track {
 		return *t
 	}
 	return readTrackFromFile(entry)
+}
+
+// playlistTracks resolves loaded m3u entries to tracks, healing pre-0.64
+// Navidrome stream URLs both in memory and, when any entry changed, on disk.
+// The on-disk rewrite is best-effort and atomic; playback works regardless.
+func (m *Model) playlistTracks(path string, pl *playlist.Playlist) []models.Track {
+	tracks := make([]models.Track, 0, len(pl.Tracks))
+	healed := false
+	for i, p := range pl.Tracks {
+		var extinf string
+		if i < len(pl.Titles) {
+			extinf = pl.Titles[i]
+		}
+		t := m.playlistEntryToTrack(p, extinf)
+		if t.Path != p && subsonicIDFromURL(p) != "" {
+			healed = true
+		}
+		tracks = append(tracks, t)
+	}
+	if healed && path != "" {
+		if n, err := playlist.HealSubsonicIDs(path, navidrome.Canonical); err != nil {
+			logf("Playlist heal %s: %v", path, err)
+		} else if n > 0 {
+			logf("Playlist heal %s: rewrote %d Subsonic id(s)", path, n)
+		}
+	}
+	return tracks
+}
+
+// healSubsonicTracks upgrades bare Subsonic stream-URL tracks to full tracks,
+// healing pre-0.64 Navidrome ids along the way. The library and search modals
+// build playlist entries without the Subsonic client, so entries selected from
+// a saved m3u arrive as {Path: streamURL, Title: basename}; resolving them
+// restores metadata, cover art, scrobbling, and — crucially — a playable URL
+// after a Navidrome 0.64 id migration. Non-Subsonic tracks and entries that
+// fail to resolve are returned unchanged.
+func (m Model) healSubsonicTracks(tracks []models.Track) []models.Track {
+	if m.subsonicClient == nil || len(tracks) == 0 {
+		return tracks
+	}
+	for i, t := range tracks {
+		if t.Source == models.SourceSubsonic || !playlist.IsURL(t.Path) {
+			continue
+		}
+		id := subsonicIDFromURL(t.Path)
+		if id == "" {
+			continue
+		}
+		song, err := m.subsonicClient.GetSong(id)
+		if err != nil || song == nil {
+			continue
+		}
+		tracks[i] = m.subsonicClient.ChildToTrack(*song)
+	}
+	return tracks
 }
 
 // subsonicIDFromURL extracts the ?id= query param from a subsonic
@@ -1621,7 +1661,7 @@ func (m Model) handleStreamTracksEnriched(msg streamTracksEnrichedMsg) (tea.Mode
 		// endpoint, must's salts) while the playlist entry holds the
 		// original URL (e.g. amla's stream endpoint, cliamp's salts),
 		// so exact-Path equality never holds here.
-		if cur.Path != tr.Path && subsonicIDFromURL(cur.Path) != tr.RemoteID {
+		if cur.Path != tr.Path && navidrome.Canonical(subsonicIDFromURL(cur.Path)) != tr.RemoteID {
 			logf("Stream enrich: skipping index %d (playlist changed: %q)", idx, cur.Path)
 			skipped++
 			continue

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/pdfrg/must/internal/models"
+	"github.com/pdfrg/must/internal/navidrome"
 )
 
 const subsonicVersion = "1.16.1"
@@ -109,9 +111,10 @@ func (c *SubsonicClient) getJSON(endpoint string, params url.Values, dst any) er
 
 	if wrapper.SubsonicResponse.Status != "ok" {
 		if wrapper.SubsonicResponse.Error != nil {
-			return fmt.Errorf("subsonic: %s (code %d)",
-				wrapper.SubsonicResponse.Error.Message,
-				wrapper.SubsonicResponse.Error.Code)
+			return &subsonicAPIError{
+				Code:    wrapper.SubsonicResponse.Error.Code,
+				Message: wrapper.SubsonicResponse.Error.Message,
+			}
 		}
 		return fmt.Errorf("subsonic: status %s", wrapper.SubsonicResponse.Status)
 	}
@@ -123,6 +126,40 @@ func (c *SubsonicClient) getJSON(endpoint string, params url.Values, dst any) er
 	}
 
 	return nil
+}
+
+// subsonicErrorDataNotFound is the OpenSubsonic error code for a missing entity.
+const subsonicErrorDataNotFound = 70
+
+type subsonicAPIError struct {
+	Code    int
+	Message string
+}
+
+func (e *subsonicAPIError) Error() string {
+	return fmt.Sprintf("subsonic: %s (code %d)", e.Message, e.Code)
+}
+
+func isDataNotFound(err error) bool {
+	var apiErr *subsonicAPIError
+	return errors.As(err, &apiErr) && apiErr.Code == subsonicErrorDataNotFound
+}
+
+// retryCanonicalID calls get with id; if the server reports "data not found"
+// and id is a pre-0.64 Navidrome id with a different canonical form, it retries
+// with that form. This transparently heals references cached before a Navidrome
+// 0.64 upgrade (PR #5824), whose id migration is deterministic.
+func retryCanonicalID[T any](id string, get func(string) (T, error)) (T, error) {
+	v, err := get(id)
+	if err == nil || !isDataNotFound(err) {
+		return v, err
+	}
+	if newID := navidrome.Canonical(id); newID != id {
+		if healed, retryErr := get(newID); retryErr == nil {
+			return healed, nil
+		}
+	}
+	return v, err
 }
 
 func (c *SubsonicClient) ServerName() string {
@@ -156,7 +193,12 @@ func (c *SubsonicClient) GetArtists() (*ArtistsID3, error) {
 	return resp.SubsonicResponse.Artists, nil
 }
 
+// GetArtist returns an artist by id, healing pre-0.64 Navidrome ids.
 func (c *SubsonicClient) GetArtist(id string) (*ArtistWithAlbumsID3, error) {
+	return retryCanonicalID(id, c.getArtistByID)
+}
+
+func (c *SubsonicClient) getArtistByID(id string) (*ArtistWithAlbumsID3, error) {
 	params := url.Values{"id": {id}}
 	var resp struct {
 		SubsonicResponse struct {
@@ -172,7 +214,12 @@ func (c *SubsonicClient) GetArtist(id string) (*ArtistWithAlbumsID3, error) {
 	return resp.SubsonicResponse.Artist, nil
 }
 
+// GetAlbum returns an album by id, healing pre-0.64 Navidrome ids.
 func (c *SubsonicClient) GetAlbum(id string) (*AlbumID3WithSongs, error) {
+	return retryCanonicalID(id, c.getAlbumByID)
+}
+
+func (c *SubsonicClient) getAlbumByID(id string) (*AlbumID3WithSongs, error) {
 	params := url.Values{"id": {id}}
 	var resp struct {
 		SubsonicResponse struct {
@@ -257,7 +304,12 @@ func (c *SubsonicClient) GetGenres() ([]GenreID3, error) {
 	return resp.SubsonicResponse.Genres.Genre, nil
 }
 
+// GetSong returns a song by id, healing pre-0.64 Navidrome ids.
 func (c *SubsonicClient) GetSong(id string) (*Child, error) {
+	return retryCanonicalID(id, c.getSongByID)
+}
+
+func (c *SubsonicClient) getSongByID(id string) (*Child, error) {
 	params := url.Values{"id": {id}}
 	var resp struct {
 		SubsonicResponse struct {
@@ -331,7 +383,12 @@ func (c *SubsonicClient) GetPlaylists() ([]PlaylistInfo, error) {
 	return resp.SubsonicResponse.Playlists.Playlist, nil
 }
 
+// GetPlaylist returns a playlist by id, healing pre-0.64 Navidrome ids.
 func (c *SubsonicClient) GetPlaylist(id string) (*PlaylistWithSongs, error) {
+	return retryCanonicalID(id, c.getPlaylistByID)
+}
+
+func (c *SubsonicClient) getPlaylistByID(id string) (*PlaylistWithSongs, error) {
 	params := url.Values{"id": {id}}
 	var resp struct {
 		SubsonicResponse struct {

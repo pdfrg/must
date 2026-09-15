@@ -1027,6 +1027,10 @@ func (m Model) handleLibraryModalMsg(msg modals.LibraryModalMsg) (tea.Model, tea
 		return m, tea.Batch(cmds...)
 	}
 
+	msg.PlayTracks = m.healSubsonicTracks(msg.PlayTracks)
+	msg.Enqueue = m.healSubsonicTracks(msg.Enqueue)
+	msg.EnqueueNext = m.healSubsonicTracks(msg.EnqueueNext)
+
 	if len(msg.PlayTracks) > 0 {
 		m.playlist = msg.PlayTracks
 		m.shuffleOrder = nil
@@ -1130,6 +1134,10 @@ func (m Model) handleSearchModalMsg(msg modals.SearchModalMsg) (tea.Model, tea.C
 		}
 		return m, tea.Batch(cmds...)
 	}
+
+	msg.PlayTracks = m.healSubsonicTracks(msg.PlayTracks)
+	msg.Enqueue = m.healSubsonicTracks(msg.Enqueue)
+	msg.EnqueueNext = m.healSubsonicTracks(msg.EnqueueNext)
 
 	if len(msg.PlayTracks) > 0 {
 		m.playlist = msg.PlayTracks
