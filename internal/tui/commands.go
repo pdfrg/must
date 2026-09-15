@@ -518,6 +518,14 @@ func trySubsonicArt(client *api.SubsonicClient, artID, trackPath string) *imageL
 	if resp.StatusCode != http.StatusOK {
 		return nil
 	}
+	// Navidrome 0.64+ resolves artwork in the background and serves a generic
+	// placeholder with `Cache-Control: no-store` until the real image is ready.
+	// Never persist those: the cache is keyed by album ID and never revalidated,
+	// so a stored placeholder would stick forever. Treat it as "no art yet" and
+	// let a later track change retry once resolution has completed.
+	if isNoStore(resp.Header.Get("Cache-Control")) {
+		return nil
+	}
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil
@@ -536,6 +544,11 @@ func trySubsonicArt(client *api.SubsonicClient, artID, trackPath string) *imageL
 		return nil
 	}
 	return &imageLoadedMsg{imageData: buf.Bytes(), trackPath: trackPath}
+}
+
+// isNoStore reports whether a Cache-Control header forbids storing the response.
+func isNoStore(cacheControl string) bool {
+	return strings.Contains(strings.ToLower(cacheControl), "no-store")
 }
 
 func shuffleIndices(n int) []int {
