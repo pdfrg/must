@@ -64,6 +64,7 @@ type searchEntry struct {
 	ArtistName   string
 	AlbumName    string
 	AlbumArtist  string
+	AlbumYear    int
 	PlaylistName string
 	SubsonicID   string
 	IsSubsonic   bool
@@ -154,6 +155,7 @@ func (s *Search) AddSubsonicResults(artists []api.ArtistID3, albums []api.AlbumI
 	for _, a := range albums {
 		entries = append(entries, searchEntry{
 			Kind: resultAlbum, AlbumName: a.Name, AlbumArtist: a.Artist,
+			AlbumYear:  a.Year,
 			IsSubsonic: true, SubsonicID: a.ID, TrackCount: a.SongCount,
 		})
 	}
@@ -628,6 +630,7 @@ func (s *Search) localSearch(query string) []searchEntry {
 						seenAlbum[key] = true
 						fieldEntries = append(fieldEntries, searchEntry{
 							Kind: resultAlbum, AlbumName: album, AlbumArtist: name,
+							AlbumYear: s.albumYear(name, album),
 						})
 					}
 				}
@@ -644,6 +647,7 @@ func (s *Search) localSearch(query string) []searchEntry {
 				seenAlbum[key] = true
 				fieldEntries = append(fieldEntries, searchEntry{
 					Kind: resultAlbum, AlbumName: a.Album, AlbumArtist: a.Artist,
+					AlbumYear: s.albumYear(a.Artist, a.Album),
 				})
 			}
 		}
@@ -699,6 +703,7 @@ func (s *Search) searchLocalFields(pq parsedQuery) ([]models.Track, []searchEntr
 			for _, a := range albums {
 				entryResults = append(entryResults, searchEntry{
 					Kind: resultAlbum, AlbumName: a.Album, AlbumArtist: a.Artist,
+					AlbumYear: s.albumYear(a.Artist, a.Album),
 				})
 			}
 			tracks := s.fuzzyExpandField("album", value)
@@ -718,6 +723,17 @@ func (s *Search) searchLocalFields(pq parsedQuery) ([]models.Track, []searchEntr
 	}
 
 	return allTracks, entryResults
+}
+
+func (s *Search) albumYear(artist, album string) int {
+	if s.db == nil {
+		return 0
+	}
+	year, err := s.db.GetAlbumYear(artist, album)
+	if err != nil {
+		return 0
+	}
+	return year
 }
 
 // --- Plain fuzzy: match against combined "artist album title" strings ---
@@ -868,9 +884,17 @@ func (s Search) View() string {
 					line = label
 				}
 			case resultAlbum:
-				label := fmt.Sprintf("Album: %s — %s", e.AlbumArtist, e.AlbumName)
-				label = ansi.Truncate(label, s.width-10, "...")
-				line = badge + label
+				base := fmt.Sprintf("Album: %s — %s", e.AlbumArtist, e.AlbumName)
+				year := ""
+				if e.AlbumYear > 0 {
+					year = fmt.Sprintf(" (%d)", e.AlbumYear)
+				}
+				avail := s.width - ansi.StringWidth(badge) - ansi.StringWidth(year) - 10
+				if avail < 1 {
+					avail = 1
+				}
+				base = ansi.Truncate(base, avail, "...")
+				line = badge + base + s.styles.MutedStyle.Render(year)
 			case resultPlaylist:
 				label := fmt.Sprintf("Playlist: %s (%d tracks)", e.PlaylistName, e.TrackCount)
 				label = ansi.Truncate(label, s.width-10, "...")

@@ -258,6 +258,17 @@ func (ld *LibraryDB) GetAlbumsByArtist(artist string) ([]string, error) {
 	return albums, rows.Err()
 }
 
+func (ld *LibraryDB) GetAlbumYear(artist, album string) (int, error) {
+	var year int
+	err := ld.db.QueryRow(`SELECT COALESCE(MAX(NULLIF(year, 0)), 0) FROM tracks
+		WHERE (COALESCE(NULLIF(album_artist, ''), artist) = ? OR COALESCE(NULLIF(album_artist, ''), artist) LIKE ?) AND album = ?`,
+		artist, artist+" feat.%", album).Scan(&year)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query album year: %w", err)
+	}
+	return year, nil
+}
+
 func (ld *LibraryDB) GetTracksByArtistAndAlbum(artist, album string) ([]models.Track, error) {
 	rows, err := ld.db.Query(`
 	SELECT id, path, title, artist, album, album_artist, year, genre,
