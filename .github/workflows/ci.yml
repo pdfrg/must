@@ -17,7 +17,15 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v7
       with:
-        go-version: '1.27'
+        # Pinned to an exact patch on purpose: a floating minor ('1.27') lets
+        # CI silently move to a newer patch, and Go's internal export-data
+        # format can change between patches (1.27.1 emits V4, 1.27.2 emits
+        # V5). golangci-lint loads compiled package data through x/tools and
+        # can only decode the format of the toolchain it was built with, so a
+        # newer Go here breaks the lint step with "export data version 5 is
+        # greater than maximum supported version 4". Keep this at or below the
+        # Go that the pinned golangci-lint was built with.
+        go-version: '1.27.1'
         cache: true
 
     - name: Download dependencies
