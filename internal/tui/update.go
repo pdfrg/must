@@ -16,7 +16,6 @@ import (
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/ctl"
-	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/playlist"
 	"github.com/pdfrg/must/internal/tui/modals"
 	"github.com/pdfrg/must/internal/tui/visualizer"
@@ -1050,24 +1049,18 @@ func (m Model) handleLibraryModalMsg(msg modals.LibraryModalMsg) (tea.Model, tea
 	}
 
 	if len(msg.Enqueue) > 0 {
-		wasPlaying := m.playing && m.mpvBackend.IsRunning()
-		m.playlist = append(m.playlist, msg.Enqueue...)
-		m.updatePlaylist()
+		at, wasPlaying := m.enqueueTracks(msg.Enqueue)
 		m.activeModal = ModalNone
 
 		if wasPlaying {
-			newPaths := make([]string, len(msg.Enqueue))
-			for i, t := range msg.Enqueue {
-				newPaths[i] = t.Path
-			}
-			_ = m.mpvBackend.AppendToPlaylist(newPaths)
+			m.commitPlaylistChange()
 			return m, tea.Batch(
 				setStatus(&m, fmt.Sprintf("Enqueued %d track(s)", len(msg.Enqueue)), false),
 				renderAlbumArtAfterDelay(),
 			)
 		} else if len(m.playlist) > 0 {
 			paths := m.buildMPVPlaylistPaths()
-			playIdx := m.playlistIndexToMPVIndex(len(m.playlist) - len(msg.Enqueue))
+			playIdx := m.playlistIndexToMPVIndex(at)
 			return m, tea.Batch(
 				startPlaybackCmd(m.mpvBackend, paths, playIdx),
 				m.trackChangedCmds(),
@@ -1080,45 +1073,26 @@ func (m Model) handleLibraryModalMsg(msg modals.LibraryModalMsg) (tea.Model, tea
 	}
 
 	if len(msg.EnqueueNext) > 0 {
-		wasPlaying := m.playing && m.mpvBackend.IsRunning()
-		insertAt := m.currentIndex + 1
-		if insertAt > len(m.playlist) {
-			insertAt = len(m.playlist)
-		}
-
-		newTracks := msg.EnqueueNext
-		m.playlist = append(m.playlist[:insertAt], append(newTracks, m.playlist[insertAt:]...)...)
-
-		if m.currentIndex >= insertAt {
-			m.currentIndex += len(newTracks)
-		}
-
-		m.updatePlaylist()
+		wasPlaying := m.enqueueNextTracks(msg.EnqueueNext)
 		m.activeModal = ModalNone
 
 		if wasPlaying {
-			mpvInsertAt := m.playlistIndexToMPVIndex(m.currentIndex)
-			newPaths := make([]string, len(newTracks))
-			for i, t := range newTracks {
-				newPaths[i] = t.Path
-			}
-			_ = m.mpvBackend.InsertInPlaylist(newPaths, mpvInsertAt)
 			return m, tea.Batch(
-				setStatus(&m, fmt.Sprintf("Enqueued next %d track(s)", len(newTracks)), false),
+				setStatus(&m, fmt.Sprintf("Enqueued next %d track(s)", len(msg.EnqueueNext)), false),
 				renderAlbumArtAfterDelay(),
 			)
 		} else if len(m.playlist) > 0 {
 			paths := m.buildMPVPlaylistPaths()
-			playIdx := m.playlistIndexToMPVIndex(insertAt)
+			playIdx := m.playlistIndexToMPVIndex(m.currentIndex + 1)
 			return m, tea.Batch(
 				startPlaybackCmd(m.mpvBackend, paths, playIdx),
 				m.trackChangedCmds(),
-				setStatus(&m, fmt.Sprintf("Enqueued next %d track(s) — playing", len(newTracks)), false),
+				setStatus(&m, fmt.Sprintf("Enqueued next %d track(s) — playing", len(msg.EnqueueNext)), false),
 				renderAlbumArtAfterDelay(),
 			)
 		}
 
-		return m, setStatus(&m, fmt.Sprintf("Enqueued next %d track(s)", len(newTracks)), false)
+		return m, setStatus(&m, fmt.Sprintf("Enqueued next %d track(s)", len(msg.EnqueueNext)), false)
 	}
 
 	return m, nil
@@ -1160,25 +1134,19 @@ func (m Model) handleSearchModalMsg(msg modals.SearchModalMsg) (tea.Model, tea.C
 	}
 
 	if len(msg.Enqueue) > 0 {
-		wasPlaying := m.playing && m.mpvBackend.IsRunning()
-		m.playlist = append(m.playlist, msg.Enqueue...)
-		m.updatePlaylist()
+		at, wasPlaying := m.enqueueTracks(msg.Enqueue)
 		m.activeModal = ModalNone
 		m.searchModal.Blur()
 
 		if wasPlaying {
-			newPaths := make([]string, len(msg.Enqueue))
-			for i, t := range msg.Enqueue {
-				newPaths[i] = t.Path
-			}
-			_ = m.mpvBackend.AppendToPlaylist(newPaths)
+			m.commitPlaylistChange()
 			return m, tea.Batch(
 				setStatus(&m, "Track enqueued", false),
 				renderAlbumArtAfterDelay(),
 			)
 		} else if len(m.playlist) > 0 {
 			paths := m.buildMPVPlaylistPaths()
-			playIdx := m.playlistIndexToMPVIndex(len(m.playlist) - len(msg.Enqueue))
+			playIdx := m.playlistIndexToMPVIndex(at)
 			return m, tea.Batch(
 				startPlaybackCmd(m.mpvBackend, paths, playIdx),
 				m.trackChangedCmds(),
@@ -1191,37 +1159,18 @@ func (m Model) handleSearchModalMsg(msg modals.SearchModalMsg) (tea.Model, tea.C
 	}
 
 	if len(msg.EnqueueNext) > 0 {
-		wasPlaying := m.playing && m.mpvBackend.IsRunning()
-		insertAt := m.currentIndex + 1
-		if insertAt > len(m.playlist) {
-			insertAt = len(m.playlist)
-		}
-
-		newTracks := msg.EnqueueNext
-		m.playlist = append(m.playlist[:insertAt], append(newTracks, m.playlist[insertAt:]...)...)
-
-		if m.currentIndex >= insertAt {
-			m.currentIndex += len(newTracks)
-		}
-
-		m.updatePlaylist()
+		wasPlaying := m.enqueueNextTracks(msg.EnqueueNext)
 		m.activeModal = ModalNone
 		m.searchModal.Blur()
 
 		if wasPlaying {
-			mpvInsertAt := m.playlistIndexToMPVIndex(m.currentIndex)
-			newPaths := make([]string, len(newTracks))
-			for i, t := range newTracks {
-				newPaths[i] = t.Path
-			}
-			_ = m.mpvBackend.InsertInPlaylist(newPaths, mpvInsertAt)
 			return m, tea.Batch(
 				setStatus(&m, "Track enqueued next", false),
 				renderAlbumArtAfterDelay(),
 			)
 		} else if len(m.playlist) > 0 {
 			paths := m.buildMPVPlaylistPaths()
-			playIdx := m.playlistIndexToMPVIndex(insertAt)
+			playIdx := m.playlistIndexToMPVIndex(m.currentIndex + 1)
 			return m, tea.Batch(
 				startPlaybackCmd(m.mpvBackend, paths, playIdx),
 				m.trackChangedCmds(),
@@ -1661,25 +1610,19 @@ func (m Model) handleTempDirsModalMsg(msg modals.TempDirsModalMsg) (tea.Model, t
 		)
 
 	case "enqueue":
-		wasPlaying := m.playing && m.mpvBackend.IsRunning()
-		m.playlist = append(m.playlist, tracks...)
-		m.updatePlaylist()
+		at, wasPlaying := m.enqueueTracks(tracks)
 		m.activeModal = ModalNone
 		m.tempDirsModal = nil
 
 		if wasPlaying {
-			newPaths := make([]string, len(tracks))
-			for i, t := range tracks {
-				newPaths[i] = t.Path
-			}
-			_ = m.mpvBackend.AppendToPlaylist(newPaths)
+			m.commitPlaylistChange()
 			return m, tea.Batch(
 				setStatus(&m, fmt.Sprintf("Enqueued %d track(s)", len(tracks)), false),
 				renderAlbumArtAfterDelay(),
 			)
 		} else if len(m.playlist) > 0 {
 			paths := m.buildMPVPlaylistPaths()
-			playIdx := m.playlistIndexToMPVIndex(len(m.playlist) - len(tracks))
+			playIdx := m.playlistIndexToMPVIndex(at)
 			return m, tea.Batch(
 				startPlaybackCmd(m.mpvBackend, paths, playIdx),
 				m.trackChangedCmds(),
@@ -1691,36 +1634,18 @@ func (m Model) handleTempDirsModalMsg(msg modals.TempDirsModalMsg) (tea.Model, t
 		return m, setStatus(&m, fmt.Sprintf("Enqueued %d track(s)", len(tracks)), false)
 
 	case "enqueue_next":
-		wasPlaying := m.playing && m.mpvBackend.IsRunning()
-		insertAt := m.currentIndex + 1
-		if insertAt > len(m.playlist) {
-			insertAt = len(m.playlist)
-		}
-
-		m.playlist = append(m.playlist[:insertAt], append(tracks, m.playlist[insertAt:]...)...)
-
-		if m.currentIndex >= insertAt {
-			m.currentIndex += len(tracks)
-		}
-
-		m.updatePlaylist()
+		wasPlaying := m.enqueueNextTracks(tracks)
 		m.activeModal = ModalNone
 		m.tempDirsModal = nil
 
 		if wasPlaying {
-			mpvInsertAt := m.playlistIndexToMPVIndex(m.currentIndex)
-			newPaths := make([]string, len(tracks))
-			for i, t := range tracks {
-				newPaths[i] = t.Path
-			}
-			_ = m.mpvBackend.InsertInPlaylist(newPaths, mpvInsertAt)
 			return m, tea.Batch(
 				setStatus(&m, fmt.Sprintf("Enqueued next %d track(s)", len(tracks)), false),
 				renderAlbumArtAfterDelay(),
 			)
 		} else if len(m.playlist) > 0 {
 			paths := m.buildMPVPlaylistPaths()
-			playIdx := m.playlistIndexToMPVIndex(insertAt)
+			playIdx := m.playlistIndexToMPVIndex(m.currentIndex + 1)
 			return m, tea.Batch(
 				startPlaybackCmd(m.mpvBackend, paths, playIdx),
 				m.trackChangedCmds(),
@@ -1918,59 +1843,35 @@ func (m Model) openArtistBio() (tea.Model, tea.Cmd) {
 
 func (m Model) deleteCurrentTrack() (tea.Model, tea.Cmd) {
 	cursor := m.playlistWidget.GetCursor()
-	if len(m.playlist) > 0 && cursor >= 0 && cursor < len(m.playlist) {
-		mpvIdx := m.playlistIndexToMPVIndex(cursor)
-		isCurrentTrack := cursor == m.currentIndex
-
-		m.playlist = append(m.playlist[:cursor], m.playlist[cursor+1:]...)
-		if cursor >= len(m.playlist) && len(m.playlist) > 0 {
-			m.playlistWidget.SetCursor(len(m.playlist) - 1)
-		}
-		if m.currentIndex >= len(m.playlist) {
-			m.currentIndex = len(m.playlist) - 1
-		} else if cursor < m.currentIndex {
-			m.currentIndex--
-		}
-
-		if m.shuffle && len(m.shuffleOrder) > 0 {
-			newOrder := make([]int, 0, len(m.playlist))
-			for _, idx := range m.shuffleOrder {
-				if idx == cursor {
-					continue
-				}
-				if idx > cursor {
-					idx--
-				}
-				newOrder = append(newOrder, idx)
-			}
-			m.shuffleOrder = newOrder
-		}
-
-		if m.mpvBackend.IsRunning() && mpvIdx >= 0 {
-			_ = m.mpvBackend.RemoveFromPlaylist(mpvIdx)
-		}
-
-		m.updatePlaylist()
-
-		if isCurrentTrack && m.mpvBackend.IsRunning() && len(m.playlist) > 0 {
-			newMPVIdx := m.playlistIndexToMPVIndex(m.currentIndex)
-			if newMPVIdx >= 0 {
-				_ = m.mpvBackend.PlaylistPlayIndex(newMPVIdx)
-			}
-			return m, tea.Batch(setStatus(&m, "Track removed", false), m.trackChangedCmds())
-		}
-
-		if len(m.playlist) == 0 {
-			m.playing = false
-			m.paused = false
-			if m.mpvBackend != nil {
-				_ = m.mpvBackend.Stop()
-			}
-		}
-
-		return m, setStatus(&m, "Track removed", false)
+	if len(m.playlist) == 0 || cursor < 0 || cursor >= len(m.playlist) {
+		return m, nil
 	}
-	return m, nil
+
+	isCurrentTrack := cursor == m.currentIndex
+	m.removePlaylistTrack(cursor)
+
+	if len(m.playlist) == 0 {
+		m.playing = false
+		m.paused = false
+		if m.mpvBackend != nil {
+			_ = m.mpvBackend.Stop()
+		}
+		return m, setStatus(&m, "Playlist cleared", false)
+	}
+
+	if cursor >= len(m.playlist) {
+		m.playlistWidget.SetCursor(len(m.playlist) - 1)
+	}
+
+	// Mirror the removal into mpv; when the playing track was deleted, mpv has
+	// already advanced on its own, so point it back at the new current entry.
+	m.commitPlaylistChange()
+
+	if isCurrentTrack {
+		return m, tea.Batch(setStatus(&m, "Track removed", false), m.trackChangedCmds())
+	}
+
+	return m, setStatus(&m, "Track removed", false)
 }
 
 func (m Model) clearPlaylist() (tea.Model, tea.Cmd) {
@@ -2018,24 +1919,9 @@ func (m Model) moveTrackUp() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.playlist[cursor-1], m.playlist[cursor] = m.playlist[cursor], m.playlist[cursor-1]
-
-	if m.currentIndex == cursor {
-		m.currentIndex = cursor - 1
-	} else if m.currentIndex == cursor-1 {
-		m.currentIndex = cursor
-	}
-
+	m.movePlaylistTrack(cursor, cursor-1)
 	m.playlistWidget.SetCursor(cursor - 1)
-	m.updatePlaylist()
-
-	if m.mpvBackend.IsRunning() && m.playing {
-		mpvFrom := m.playlistIndexToMPVIndex(cursor)
-		mpvTo := m.playlistIndexToMPVIndex(cursor - 1)
-		if mpvFrom >= 0 && mpvTo >= 0 {
-			_ = m.mpvBackend.PlaylistMove(mpvFrom, mpvTo)
-		}
-	}
+	m.commitPlaylistChange()
 
 	return m, setStatus(&m, "Moved up", false)
 }
@@ -2046,24 +1932,9 @@ func (m Model) moveTrackDown() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.playlist[cursor], m.playlist[cursor+1] = m.playlist[cursor+1], m.playlist[cursor]
-
-	if m.currentIndex == cursor {
-		m.currentIndex = cursor + 1
-	} else if m.currentIndex == cursor+1 {
-		m.currentIndex = cursor
-	}
-
+	m.movePlaylistTrack(cursor, cursor+1)
 	m.playlistWidget.SetCursor(cursor + 1)
-	m.updatePlaylist()
-
-	if m.mpvBackend.IsRunning() && m.playing {
-		mpvFrom := m.playlistIndexToMPVIndex(cursor)
-		mpvTo := m.playlistIndexToMPVIndex(cursor+1) + 1
-		if mpvFrom >= 0 && mpvTo >= 1 {
-			_ = m.mpvBackend.PlaylistMove(mpvFrom, mpvTo)
-		}
-	}
+	m.commitPlaylistChange()
 
 	return m, setStatus(&m, "Moved down", false)
 }
@@ -2074,26 +1945,9 @@ func (m Model) moveTrackTop() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	track := m.playlist[cursor]
-	m.playlist = append(m.playlist[:cursor], m.playlist[cursor+1:]...)
-	m.playlist = append([]models.Track{track}, m.playlist...)
-
-	if m.currentIndex == cursor {
-		m.currentIndex = 0
-	} else if m.currentIndex < cursor {
-		m.currentIndex++
-	}
-
+	m.movePlaylistTrack(cursor, 0)
 	m.playlistWidget.SetCursor(0)
-	m.updatePlaylist()
-
-	if m.mpvBackend.IsRunning() && m.playing {
-		mpvFrom := m.playlistIndexToMPVIndex(1)
-		mpvTo := 0
-		if mpvFrom >= 0 {
-			_ = m.mpvBackend.PlaylistMove(mpvFrom, mpvTo)
-		}
-	}
+	m.commitPlaylistChange()
 
 	return m, setStatus(&m, "Moved to top", false)
 }
@@ -2104,26 +1958,9 @@ func (m Model) moveTrackBottom() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	track := m.playlist[cursor]
-	m.playlist = append(m.playlist[:cursor], m.playlist[cursor+1:]...)
-	m.playlist = append(m.playlist, track)
-
-	if m.currentIndex == cursor {
-		m.currentIndex = len(m.playlist) - 1
-	} else if m.currentIndex > cursor {
-		m.currentIndex--
-	}
-
+	m.movePlaylistTrack(cursor, len(m.playlist)-1)
 	m.playlistWidget.SetCursor(len(m.playlist) - 1)
-	m.updatePlaylist()
-
-	if m.mpvBackend.IsRunning() && m.playing {
-		mpvFrom := m.playlistIndexToMPVIndex(cursor)
-		mpvTo := len(m.playlist) - 1
-		if mpvFrom >= 0 {
-			_ = m.mpvBackend.PlaylistMove(mpvFrom, mpvTo)
-		}
-	}
+	m.commitPlaylistChange()
 
 	return m, setStatus(&m, "Moved to bottom", false)
 }
@@ -2133,36 +1970,11 @@ func (m Model) reversePlaylist() (tea.Model, tea.Cmd) {
 		return m, setStatus(&m, "Playlist too short to reverse", true)
 	}
 
-	currPath := m.playlist[m.currentIndex].Path
-
-	for i, j := 0, len(m.playlist)-1; i < j; i, j = i+1, j-1 {
-		m.playlist[i], m.playlist[j] = m.playlist[j], m.playlist[i]
-	}
-
-	m.currentIndex = -1
-	for i := range m.playlist {
-		if m.playlist[i].Path == currPath {
-			m.currentIndex = i
-			break
-		}
-	}
-
-	m.shuffleOrder = nil
-	if m.shuffle {
-		m.shuffleOrder = shuffleIndices(len(m.playlist))
-	}
-
+	m.reversePlaylistOrder()
 	m.playlistWidget.SetCursor(m.currentIndex)
-	m.updatePlaylist()
+	m.commitPlaylistChange()
 
-	paths := m.buildMPVPlaylistPaths()
-	playIdx := m.playlistIndexToMPVIndex(m.currentIndex)
-
-	return m, tea.Batch(
-		startPlaybackCmd(m.mpvBackend, paths, playIdx),
-		m.trackChangedCmds(),
-		setStatus(&m, "Playlist reversed", false),
-	)
+	return m, setStatus(&m, "Playlist reversed", false)
 }
 
 func (m Model) savePlaylist() (tea.Model, tea.Cmd) {
@@ -2231,35 +2043,16 @@ func (m Model) enqueueHighlightedNext() (tea.Model, tea.Cmd) {
 	}
 
 	track := m.playlist[cursor]
-	insertAt := m.currentIndex + 1
 
-	m.playlist = append(m.playlist[:insertAt], append([]models.Track{track}, m.playlist[insertAt:]...)...)
-
-	if cursor < insertAt {
-		m.currentIndex++
+	// Enqueuing next means "play this right after the current entry"; while
+	// shuffling that is a move inside the playback order only.
+	plPos := m.playbackPosOf(m.currentIndex) + 1
+	if plPos < 1 {
+		plPos = len(m.shuffleOrder)
 	}
+	m.moveToPlaybackPos(cursor, plPos)
+	m.commitPlaylistChange()
 
-	if cursor >= insertAt {
-		m.playlist = append(m.playlist[:cursor+1], m.playlist[cursor+2:]...)
-	} else {
-		m.playlist = append(m.playlist[:cursor], m.playlist[cursor+1:]...)
-	}
-
-	if m.currentIndex > cursor && cursor < insertAt {
-		m.currentIndex--
-	}
-
-	if m.mpvBackend.IsRunning() && m.playing {
-		mpvInsertAt := m.playlistIndexToMPVIndex(m.currentIndex)
-		_ = m.mpvBackend.InsertInPlaylist([]string{track.Path}, mpvInsertAt)
-		mpvRemoveFrom := m.playlistIndexToMPVIndex(cursor)
-		if mpvRemoveFrom > mpvInsertAt {
-			mpvRemoveFrom++
-		}
-		_ = m.mpvBackend.RemoveFromPlaylist(mpvRemoveFrom)
-	}
-
-	m.updatePlaylist()
 	return m, setStatus(&m, fmt.Sprintf("Enqueued next: %s", track.Title), false)
 }
 

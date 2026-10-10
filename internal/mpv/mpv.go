@@ -346,25 +346,6 @@ func (m *MPVBackend) RemoveFromPlaylist(index int) error {
 	return err
 }
 
-func (m *MPVBackend) GetPlaylistCount() (int, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.process == nil {
-		return 0, fmt.Errorf("MPV not running")
-	}
-	resp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "playlist-count"}})
-	if err != nil {
-		return 0, err
-	}
-	if resp == nil || resp.Data == nil {
-		return 0, nil
-	}
-	if count, ok := resp.Data.(float64); ok {
-		return int(count), nil
-	}
-	return 0, nil
-}
-
 func (m *MPVBackend) SeekRelative(delta float64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -545,37 +526,66 @@ func (m *MPVBackend) GetPlaylistPosition() (int, error) {
 	return -1, nil
 }
 
-func (m *MPVBackend) AppendToPlaylist(paths []string) error {
+// PlaylistEntry is a single entry of mpv's internal playlist. The TUI playlist is
+// the source of truth for what is queued; this is what mpv actually holds.
+type PlaylistEntry struct {
+	Filename string
+	Current  bool
+}
+
+// GetPlaylist returns mpv's playlist in playback order.
+func (m *MPVBackend) GetPlaylist() ([]PlaylistEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.process == nil {
+		return nil, fmt.Errorf("MPV not running")
+	}
+
+	resp, err := m.sendIPCCommandLocked(IPCCommand{Command: []any{"get_property", "playlist"}})
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil || resp.Data == nil {
+		return nil, nil
+	}
+	raw, ok := resp.Data.([]any)
+	if !ok {
+		return nil, nil
+	}
+
+	entries := make([]PlaylistEntry, 0, len(raw))
+	for _, item := range raw {
+		obj, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		e := PlaylistEntry{}
+		if f, ok := obj["filename"].(string); ok {
+			e.Filename = f
+		}
+		if c, ok := obj["current"].(bool); ok {
+			e.Current = c
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
+// InsertPlaylistEntry loads a single file into mpv's playlist at index.
+func (m *MPVBackend) InsertPlaylistEntry(path string, index int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.process == nil {
 		return fmt.Errorf("MPV not running")
 	}
-	for _, p := range paths {
-		cmd := IPCCommand{Command: []any{"loadfile", p, "append"}}
-		if _, err := m.sendIPCCommandLocked(cmd); err != nil {
-			return err
-		}
-	}
-	return nil
+	cmd := IPCCommand{Command: []any{"loadfile", path, "insert-at", index}}
+	_, err := m.sendIPCCommandLocked(cmd)
+	return err
 }
 
-func (m *MPVBackend) InsertInPlaylist(paths []string, afterIndex int) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.process == nil {
-		return fmt.Errorf("MPV not running")
-	}
-	insertAt := afterIndex + 1
-	for i, p := range paths {
-		cmd := IPCCommand{Command: []any{"loadfile", p, "insert-at", insertAt + i}}
-		if _, err := m.sendIPCCommandLocked(cmd); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
+// PlaylistMove moves mpv's playlist entry from one index to another. mpv uses
+// "drag" semantics: for from > to the entry lands exactly at to (which is the
+// only direction the playlist reconciler uses).
 func (m *MPVBackend) PlaylistMove(fromIndex, toIndex int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

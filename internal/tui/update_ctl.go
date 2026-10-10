@@ -171,36 +171,10 @@ func (m Model) ctlEnqueue(args []string, insertNext bool) (Model, ctl.CtlResult,
 	}
 
 	if insertNext && m.currentIndex >= 0 {
-		insertPos := m.currentIndex + 1
-		m.playlist = append(m.playlist, make([]models.Track, len(tracks))...)
-		copy(m.playlist[insertPos+len(tracks):], m.playlist[insertPos:])
-		copy(m.playlist[insertPos:], tracks)
+		// Enqueue so the new tracks play immediately after the current one.
+		m.enqueueNextTracks(tracks)
 	} else {
-		m.playlist = append(m.playlist, tracks...)
-	}
-
-	if m.shuffle && len(m.shuffleOrder) > 0 {
-		oldLen := len(m.shuffleOrder)
-		for i := 0; i < len(tracks); i++ {
-			m.shuffleOrder = append(m.shuffleOrder, oldLen+i)
-		}
-	}
-
-	m.updatePlaylist()
-
-	if m.playing && m.mpvBackend.IsRunning() {
-		var trackPaths []string
-		for _, t := range tracks {
-			trackPaths = append(trackPaths, t.Path)
-		}
-		if insertNext && m.currentIndex >= 0 {
-			mpvPos := m.playlistIndexToMPVIndex(m.currentIndex)
-			if mpvPos >= 0 {
-				_ = m.mpvBackend.InsertInPlaylist(trackPaths, mpvPos)
-			}
-		} else {
-			_ = m.mpvBackend.AppendToPlaylist(trackPaths)
-		}
+		m.enqueueTracks(tracks)
 	}
 
 	dir := "Enqueued"
@@ -229,23 +203,17 @@ func (m Model) ctlPause() (Model, ctl.CtlResult, tea.Cmd) {
 }
 
 func (m Model) ctlClear() (Model, ctl.CtlResult, tea.Cmd) {
-	if m.playing && m.mpvBackend.IsRunning() {
-		currentMPVIdx, err := m.mpvBackend.GetPlaylistPosition()
-		if err == nil && currentMPVIdx >= 0 {
-			count, _ := m.mpvBackend.GetPlaylistCount()
-			for i := count - 1; i > currentMPVIdx; i-- {
-				_ = m.mpvBackend.RemoveFromPlaylist(i)
-			}
-			for i := currentMPVIdx - 1; i >= 0; i-- {
-				_ = m.mpvBackend.RemoveFromPlaylist(i)
-			}
-		}
+	if m.mpvBackend.IsRunning() {
+		_ = m.mpvBackend.Stop()
 	}
 
 	m.playlist = nil
 	m.currentIndex = -1
 	m.shuffleOrder = nil
+	m.playing = false
+	m.paused = false
 	m.updatePlaylist()
+	m.playlistWidget.SetCursor(0)
 	return m, ctl.CtlResult{OK: true, Data: "Playlist cleared"}, nil
 }
 
@@ -477,21 +445,8 @@ func (m Model) ctlRemove(args []string) (Model, ctl.CtlResult, tea.Cmd) {
 
 	idx := pos - 1
 	isCurrent := idx == m.currentIndex
-	mpvIdx := m.playlistIndexToMPVIndex(idx)
 
-	m.playlist = append(m.playlist[:idx], m.playlist[idx+1:]...)
-
-	if m.shuffle && len(m.shuffleOrder) > 0 {
-		var newOrder []int
-		for _, si := range m.shuffleOrder {
-			if si < idx {
-				newOrder = append(newOrder, si)
-			} else if si > idx {
-				newOrder = append(newOrder, si-1)
-			}
-		}
-		m.shuffleOrder = newOrder
-	}
+	m.removePlaylistTrack(idx)
 
 	if len(m.playlist) == 0 {
 		m.playing = false
@@ -504,25 +459,13 @@ func (m Model) ctlRemove(args []string) (Model, ctl.CtlResult, tea.Cmd) {
 		return m, ctl.CtlResult{OK: true, Data: "Removed last track. Playlist empty."}, nil
 	}
 
-	if m.currentIndex >= len(m.playlist) {
-		m.currentIndex = len(m.playlist) - 1
-	} else if m.currentIndex > idx {
-		m.currentIndex--
-	}
-
-	m.updatePlaylist()
+	// Mirror the removal into mpv, and keep mpv on the entry the UI marks as
+	// current (removing the playing track makes mpv advance on its own).
+	m.commitPlaylistChange()
 
 	var cmd tea.Cmd
-	if m.playing && m.mpvBackend.IsRunning() && mpvIdx >= 0 {
-		_ = m.mpvBackend.RemoveFromPlaylist(mpvIdx)
-
-		if isCurrent {
-			newMPVIdx := m.playlistIndexToMPVIndex(m.currentIndex)
-			if newMPVIdx >= 0 {
-				_ = m.mpvBackend.PlaylistPlayIndex(newMPVIdx)
-			}
-			cmd = m.trackChangedCmds()
-		}
+	if isCurrent {
+		cmd = m.trackChangedCmds()
 	}
 
 	return m, ctl.CtlResult{OK: true, Data: fmt.Sprintf("Removed track %d", pos)}, cmd
@@ -542,30 +485,8 @@ func (m Model) ctlMove(args []string) (Model, ctl.CtlResult, tea.Cmd) {
 	fromIdx := from - 1
 	toIdx := to - 1
 
-	mpvFrom := m.playlistIndexToMPVIndex(fromIdx)
-	mpvTo := m.playlistIndexToMPVIndex(toIdx)
-
-	track := m.playlist[fromIdx]
-	m.playlist = append(m.playlist[:fromIdx], m.playlist[fromIdx+1:]...)
-	m.playlist = append(m.playlist[:toIdx], append([]models.Track{track}, m.playlist[toIdx:]...)...)
-
-	if m.currentIndex == fromIdx {
-		m.currentIndex = toIdx
-	} else if fromIdx < m.currentIndex && toIdx >= m.currentIndex {
-		m.currentIndex--
-	} else if fromIdx > m.currentIndex && toIdx <= m.currentIndex {
-		m.currentIndex++
-	}
-
-	if m.shuffle && len(m.shuffleOrder) > 0 {
-		m.shuffleOrder = nil
-	}
-
-	m.updatePlaylist()
-
-	if m.playing && m.mpvBackend.IsRunning() && mpvFrom >= 0 && mpvTo >= 0 {
-		_ = m.mpvBackend.PlaylistMove(mpvFrom, mpvTo)
-	}
+	m.movePlaylistTrack(fromIdx, toIdx)
+	m.commitPlaylistChange()
 
 	return m, ctl.CtlResult{OK: true, Data: fmt.Sprintf("Moved track %d to position %d", from, to)}, nil
 }

@@ -219,6 +219,25 @@ func (m Model) skipPrev() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// While shuffling, "previous" is the previous entry of the playback order,
+	// not the row above the highlighted one.
+	if m.shuffle && len(m.shuffleOrder) > 0 {
+		mpvPos, err := m.mpvBackend.GetPlaylistPosition()
+		if err == nil && mpvPos >= 0 {
+			prevMPVIdx := mpvPos - 1
+			if prevMPVIdx < 0 {
+				if m.repeatMode != "all" {
+					return m, setStatus(&m, "Start of playlist", false)
+				}
+				prevMPVIdx = len(m.shuffleOrder) - 1
+			}
+			m.currentIndex = m.shuffleOrder[prevMPVIdx]
+			m.updatePlaylist()
+			_ = m.mpvBackend.PlaylistPlayIndex(prevMPVIdx)
+			return m, m.trackChangedCmds()
+		}
+	}
+
 	prev := m.currentIndex - 1
 	if prev < 0 {
 		if m.repeatMode == "all" {
@@ -299,21 +318,24 @@ func (m Model) toggleShuffle() (tea.Model, tea.Cmd) {
 	if m.shuffle {
 		m.shuffleOrder = shuffleIndices(len(m.playlist))
 		if m.playing && m.mpvBackend.IsRunning() && m.currentIndex >= 0 {
-			currentMPVIdx, _ := m.mpvBackend.GetPlaylistPosition()
-			if currentMPVIdx >= 0 {
-				newOrder := make([]int, 0, len(m.playlist))
-				newOrder = append(newOrder, m.currentIndex)
-				for _, idx := range m.shuffleOrder {
-					if idx != m.currentIndex {
-						newOrder = append(newOrder, idx)
-					}
+			// Keep the entry that is already playing where it is, and shuffle the
+			// rest of the queue around it.
+			newOrder := make([]int, 0, len(m.playlist))
+			newOrder = append(newOrder, m.currentIndex)
+			for _, idx := range m.shuffleOrder {
+				if idx != m.currentIndex {
+					newOrder = append(newOrder, idx)
 				}
-				m.shuffleOrder = newOrder
 			}
+			m.shuffleOrder = newOrder
 		}
 	} else {
 		m.shuffleOrder = nil
 	}
+
+	// mpv mirrors the UI playlist, so adopt the new order without restarting
+	// playback: the current entry keeps playing, only the queue changes.
+	m.commitPlaylistChange()
 
 	shuffleStr := "off"
 	if m.shuffle {
