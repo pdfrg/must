@@ -3,8 +3,6 @@ package tui
 import (
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -81,6 +79,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scanCompleteMsg:
 		return m.handleScanComplete(msg)
 
+	case exploreTracksMsg:
+		if msg.err != nil {
+			return m, setStatus(&m, msg.err.Error(), true)
+		}
+		switch msg.action {
+		case modals.ExploreEnqueue:
+			return m.handleLibraryModalMsg(modals.LibraryModalMsg{Enqueue: msg.tracks})
+		case modals.ExploreEnqueueNext:
+			return m.handleLibraryModalMsg(modals.LibraryModalMsg{EnqueueNext: msg.tracks})
+		default:
+			return m.handleLibraryModalMsg(modals.LibraryModalMsg{PlayTracks: msg.tracks, PlayIndex: 0})
+		}
+
 	case randomAlbumPlayMsg:
 		if msg.err != nil {
 			return m, setStatus(&m, msg.err.Error(), true)
@@ -139,16 +150,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case modals.TempDirsModalMsg:
 		return m.handleTempDirsModalMsg(msg)
 
-	case modals.RandomAlbumMsg:
-		return m.handleRandomAlbumModalMsg(msg)
+	case modals.ExploreMsg:
+		return m.handleExploreMsg(msg)
 
-	case subsonicAlbumCountMsg:
-		if m.activeModal == ModalRandomAlbum && m.randomAlbumModal != nil {
-			if msg.err == nil && msg.count > 0 {
-				m.randomAlbumModal.SetSubsonicCount(msg.count)
-			}
+	case modals.ExploreAlbumsMsg:
+		return m.handleExploreAlbumsMsg(msg)
+
+	case modals.ExploreArtLoadedMsg:
+		if m.exploreModal != nil {
+			return m, m.exploreModal.HandleArtLoaded(msg)
 		}
 		return m, nil
+
+	case modals.ExploreRenderImageMsg:
+		raw := termimg.ClearAllString() + fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", msg.Row, msg.Col, msg.ImageStr)
+		return m, tea.Raw(raw)
 
 	case modals.SleepTimerMsg:
 		m.activeModal = ModalNone
@@ -806,7 +822,7 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.openTempDirs()
 
 	case key.Matches(msg, m.keyMap.RandomAlbum):
-		return m.openRandomAlbum()
+		return m.openExplore()
 
 	case key.Matches(msg, m.keyMap.ToggleHeader):
 		m.showHeader = !m.showHeader
@@ -976,10 +992,10 @@ func (m Model) handleModalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			cmd := m.tempDirsModal.Update(msg)
 			return m, cmd
 		}
-	case ModalRandomAlbum:
-		if m.randomAlbumModal != nil {
-			cmd := m.randomAlbumModal.Update(msg)
-			return m, cmd
+	case ModalExplore:
+		if m.exploreModal != nil {
+			cmd := m.exploreModal.Update(msg)
+			return m, tea.Batch(cmd, m.explorePendingArtCmd())
 		}
 	}
 	return m, nil
@@ -1497,83 +1513,95 @@ func (m Model) openTempDirs() (tea.Model, tea.Cmd) {
 	return m, clearKittyImagesCmdIf(m.imageProtocol)
 }
 
-func (m Model) openRandomAlbum() (tea.Model, tea.Cmd) {
-	var options []modals.RandomAlbumOption
-	options = append(options, modals.RandomAlbumOption{Source: "all"})
-
-	sources := 0
-	if m.libraryDB != nil && m.libraryReady {
-		if count, err := m.libraryDB.AlbumCount(); err == nil && count > 0 {
-			options = append(options, modals.RandomAlbumOption{Source: "local", Count: count, HasCount: true})
-			sources++
-		}
-	}
-	if m.subsonicClient != nil {
-		options = append(options, modals.RandomAlbumOption{Source: "subsonic"})
-		sources++
-	}
-	if tempCount := m.tempAlbumDirCount(); tempCount > 0 {
-		options = append(options, modals.RandomAlbumOption{Source: "temp", Count: tempCount, HasCount: true})
-		sources++
-	}
-
-	if sources == 0 {
+func (m Model) openExplore() (tea.Model, tea.Cmd) {
+	if (m.libraryDB == nil || !m.libraryReady) && m.subsonicClient == nil && len(m.cfg.TempDirs) == 0 {
 		return m, setStatus(&m, "No music sources available", true)
 	}
-	if sources == 1 {
-		// Only one real source: "all" is identical, play immediately.
-		return m, m.randomAlbumCmd("")
-	}
 
-	m.randomAlbumModal = modals.NewRandomAlbum(m.styles, options)
-	m.randomAlbumModal.SetSize(m.width, m.height)
-	m.activeModal = ModalRandomAlbum
+	m.exploreSeq++
+	m.exploreModal = modals.NewExplore(m.styles, m.cellRatio, m.fontW, m.fontH)
+	m.exploreModal.SetSize(m.width, m.height)
+	m.exploreModal.SetProtocol(m.imageProtocol)
+	m.exploreModal.SetLoading(true)
+	m.activeModal = ModalExplore
 
-	cmds := []tea.Cmd{clearKittyImagesCmdIf(m.imageProtocol)}
-	if m.subsonicClient != nil {
-		client := m.subsonicClient
-		cmds = append(cmds, subsonicAlbumCountCmd(client))
-	}
-	return m, tea.Batch(cmds...)
-}
-
-func (m Model) handleRandomAlbumModalMsg(msg modals.RandomAlbumMsg) (tea.Model, tea.Cmd) {
-	m.activeModal = ModalNone
-	m.randomAlbumModal = nil
-	if msg.Closed {
-		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
-	}
-	source := msg.Source
-	if source == "all" {
-		source = ""
-	}
 	return m, tea.Batch(
 		clearKittyImagesCmdIf(m.imageProtocol),
-		renderAlbumArtAfterDelay(),
-		m.randomAlbumCmd(source),
+		m.exploreAlbumsCmd(modals.ExploreAll, m.exploreModal.VisibleLimit(), m.exploreSeq),
 	)
 }
 
-func (m Model) tempAlbumDirCount() int {
-	count := 0
-	for _, dir := range m.cfg.TempDirs {
-		expanded := os.ExpandEnv(dir)
-		if strings.HasPrefix(expanded, "~/") {
-			if home, err := os.UserHomeDir(); err == nil {
-				expanded = filepath.Join(home, expanded[2:])
-			}
+func (m Model) handleExploreMsg(msg modals.ExploreMsg) (tea.Model, tea.Cmd) {
+	switch msg.Action {
+	case modals.ExploreClose:
+		m.activeModal = ModalNone
+		m.exploreModal = nil
+		return m, tea.Batch(clearKittyImagesCmdIf(m.imageProtocol), renderAlbumArtAfterDelay())
+
+	case modals.ExploreReroll:
+		m.exploreSeq++
+		if m.exploreModal != nil {
+			m.exploreModal.SetLoading(true)
 		}
-		entries, err := os.ReadDir(expanded)
-		if err != nil {
-			continue
+		return m, m.exploreAlbumsCmd(msg.Source, msg.Limit, m.exploreSeq)
+
+	case modals.ExploreLucky:
+		m.activeModal = ModalNone
+		m.exploreModal = nil
+		return m, tea.Batch(
+			clearKittyImagesCmdIf(m.imageProtocol),
+			renderAlbumArtAfterDelay(),
+			m.randomAlbumCmd(exploreSourceToRandom(msg.Source)),
+		)
+
+	case modals.ExplorePlay, modals.ExploreEnqueue, modals.ExploreEnqueueNext:
+		if msg.Album == nil {
+			return m, nil
 		}
-		for _, e := range entries {
-			if e.IsDir() && countAudioFilesInDir(filepath.Join(expanded, e.Name())) > 0 {
-				count++
-			}
-		}
+		m.activeModal = ModalNone
+		m.exploreModal = nil
+		return m, tea.Batch(
+			clearKittyImagesCmdIf(m.imageProtocol),
+			renderAlbumArtAfterDelay(),
+			m.exploreTracksCmd(*msg.Album, msg.Action),
+		)
 	}
-	return count
+	return m, nil
+}
+
+func (m Model) handleExploreAlbumsMsg(msg modals.ExploreAlbumsMsg) (tea.Model, tea.Cmd) {
+	if msg.Seq != m.exploreSeq || m.activeModal != ModalExplore || m.exploreModal == nil {
+		return m, nil // stale batch
+	}
+	m.exploreModal.SetAlbums(msg.Albums, msg.Source, msg.Counts, msg.Available)
+	if msg.Err != nil && len(msg.Albums) == 0 {
+		return m, setStatus(&m, msg.Err.Error(), true)
+	}
+	return m, m.explorePendingArtCmd()
+}
+
+func (m Model) explorePendingArtCmd() tea.Cmd {
+	if m.exploreModal == nil {
+		return nil
+	}
+	album, seq := m.exploreModal.TakePendingArt()
+	if album == nil {
+		return nil
+	}
+	return m.exploreArtCmd(*album, seq)
+}
+
+func exploreSourceToRandom(s modals.ExploreSource) string {
+	switch s {
+	case modals.ExploreLocal:
+		return "local"
+	case modals.ExploreSubsonic:
+		return "subsonic"
+	case modals.ExploreTemp:
+		return "temp"
+	default:
+		return ""
+	}
 }
 
 func (m Model) handleTempDirsModalMsg(msg modals.TempDirsModalMsg) (tea.Model, tea.Cmd) {

@@ -461,6 +461,34 @@ func (ld *LibraryDB) RandomAlbumTracks() ([]models.Track, error) {
 	return ld.GetTracksByField("album", []string{album})
 }
 
+func (ld *LibraryDB) RandomAlbums(limit int) ([]models.AlbumEntryWithArtist, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := ld.db.Query(`
+		SELECT album, COALESCE(NULLIF(album_artist, ''), artist) AS aa,
+		       COALESCE(MAX(NULLIF(year, 0)), 0) AS album_year
+		FROM tracks
+		WHERE album != ''
+		GROUP BY COALESCE(NULLIF(album_artist, ''), artist), album
+		ORDER BY RANDOM()
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query random albums: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var entries []models.AlbumEntryWithArtist
+	for rows.Next() {
+		var e models.AlbumEntryWithArtist
+		if err := rows.Scan(&e.Name, &e.Artist, &e.Year); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
 func (ld *LibraryDB) GetAllAlbumsSorted(sort string) ([]models.AlbumEntry, error) {
 	orderBy := albumOrderClause(sort)
 	query := fmt.Sprintf(`SELECT album, COALESCE(MAX(NULLIF(year, 0)), 0) AS album_year
@@ -652,7 +680,10 @@ func (ld *LibraryDB) TrackCount() (int, error) {
 
 func (ld *LibraryDB) AlbumCount() (int, error) {
 	var count int
-	err := ld.db.QueryRow(`SELECT COUNT(DISTINCT album) FROM tracks WHERE album != ''`).Scan(&count)
+	// Count albums by (album artist, album): same-named albums from different
+	// artists are distinct and must not collapse into one.
+	err := ld.db.QueryRow(`SELECT COUNT(DISTINCT COALESCE(NULLIF(album_artist, ''), artist) || char(31) || album)
+		FROM tracks WHERE album != ''`).Scan(&count)
 	return count, err
 }
 

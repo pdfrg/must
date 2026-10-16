@@ -61,6 +61,7 @@ Not convinced? See a full [COMPARISON](docs/COMPARISON.md) with popular TUI musi
 ## Features
 
 - **Music Library**: Scan and browse your music collection with a 3-column browser (artists, albums, tracks), genre and playlist browsing, and field-specific search. Toggle local, Subsonic, or both.
+- **Explore**: Press `A` to browse a randomized batch of albums drawn from every configured source (local, Subsonic, temp), with cover preview. `l` is "feeling lucky" — jump straight into a random album.
 - **Smart Search**: FTS5-powered full-text search with field queries (`artist:radiohead year:1997`) and year range filtering. Local and Subsonic playlists are searchable and browsable from the TUI.
 - **MPV Backend**: Full gapless audio playback with seek, repeat (off/all/one), shuffle, progress tracking, and ReplayGain normalization
 - **Lyrics**: Fetch plain and synced lyrics from [LRCLib](https://lrclib.net/)

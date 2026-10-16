@@ -359,10 +359,10 @@ func (m Model) renderModal() string {
 			m.tempDirsModal.SetSize(m.width, m.height)
 			return m.tempDirsModal.View()
 		}
-	case ModalRandomAlbum:
-		if m.randomAlbumModal != nil {
-			m.randomAlbumModal.SetSize(m.width, m.height)
-			return m.randomAlbumModal.View()
+	case ModalExplore:
+		if m.exploreModal != nil {
+			m.exploreModal.SetSize(m.width, m.height)
+			return m.exploreModal.View()
 		}
 	}
 	return ""

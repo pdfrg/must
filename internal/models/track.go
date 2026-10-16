@@ -7,6 +7,15 @@ type AlbumEntry struct {
 	Year int
 }
 
+// AlbumEntryWithArtist identifies an album together with its (album) artist.
+// Used by discovery features that need to distinguish same-named albums from
+// different artists.
+type AlbumEntryWithArtist struct {
+	Name   string
+	Artist string
+	Year   int
+}
+
 type TrackSource string
 
 const (

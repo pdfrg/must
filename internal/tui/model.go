@@ -45,7 +45,7 @@ const (
 	ModalOptions
 	ModalSleepTimer
 	ModalTempDirs
-	ModalRandomAlbum
+	ModalExplore
 )
 
 type Model struct {
@@ -165,16 +165,17 @@ type Model struct {
 	playlistWidget *widgets.Playlist
 	footer         *widgets.Footer
 
-	libraryModal     *modals.Library
-	searchModal      *modals.Search
-	helpModal        *modals.Help
-	galleryModal     *modals.Gallery
-	optionsModal     *modals.Options
-	sleepTimerModal  *modals.SleepTimer
-	tempDirsModal    *modals.TempDirs
-	randomAlbumModal *modals.RandomAlbum
-	viewport         viewport.Model
-	viewportReady    bool
+	libraryModal    *modals.Library
+	searchModal     *modals.Search
+	helpModal       *modals.Help
+	galleryModal    *modals.Gallery
+	optionsModal    *modals.Options
+	sleepTimerModal *modals.SleepTimer
+	tempDirsModal   *modals.TempDirs
+	exploreModal    *modals.Explore
+	exploreSeq      int
+	viewport        viewport.Model
+	viewportReady   bool
 
 	saveInput         textinput.Model
 	savingPlaylist    bool
@@ -391,8 +392,8 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "c", Desc: "copy song info"},
 		{Key: "z", Desc: "sleep timer"},
 		{Key: "T", Desc: "temp directories"},
-		{Key: "A", Desc: "random album source picker"},
-		{Key: "A then Enter", Desc: "play random album (all sources)"},
+		{Key: "A", Desc: "explore library (random albums)"},
+		{Key: "A then l", Desc: "lucky (play random album)"},
 		{Key: "o", Desc: "options"},
 		{Key: "?", Desc: "help"},
 		{Key: "H", Desc: "toggle header"},

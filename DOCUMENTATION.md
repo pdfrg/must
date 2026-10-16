@@ -126,11 +126,32 @@ ARG resolution for play / enqueue / enqueue-next:
 | `u` | Update view |
 | `/` | Search library (artists, albums, tracks, playlists) |
 | `l` | Library browser (artists, genres, playlists) |
+| `A` | Explore library (random album browser; `l` = play a random album) |
 | `H` | Toggle header visibility |
 | `M` | Toggle footer visibility |
 | `?` | Help |
 | `esc` | Back / close modal |
 | `q` / `ctrl+c` | Quit |
+
+### Explore modal
+
+Press `A` to open a randomized album browser drawn from every configured source
+(local library, Subsonic, and temp dirs). The batch is allocated with one
+guaranteed slot per source and the rest weighted by each source's album count,
+so no source disappears entirely. All items fit on screen for the current
+terminal height (6–20 items); no scrolling is needed on a normal large layout.
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` (`k` / `j`) | Move selection |
+| `pgup` / `pgdn`, `home` / `end` | Jump |
+| `enter` | Play the selected album |
+| `e` / `E` | Enqueue / enqueue next |
+| `l` | "Feeling lucky": play a random album from the current source now |
+| `r` | Reroll the current source |
+| `ctrl+t` / `tab` / `s` | Cycle source: all → local → subsonic → temp |
+| `ctrl+l` / `ctrl+s` / `ctrl+d` | Jump directly to local / subsonic / temp |
+| `esc` / `q` | Close |
 
 
 ## Configuration

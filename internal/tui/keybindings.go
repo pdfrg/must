@@ -251,7 +251,7 @@ var DefaultKeyMap = KeyMap{
 	),
 	RandomAlbum: key.NewBinding(
 		key.WithKeys("A"),
-		key.WithHelp("A", "random album"),
+		key.WithHelp("A", "explore library"),
 	),
 }
 
