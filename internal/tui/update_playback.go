@@ -543,7 +543,7 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 
 	if m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
 		track := m.playlist[m.currentIndex]
-		cmds = append(cmds, sendNowPlayingCmd(m.cfg, track))
+		cmds = append(cmds, sendNowPlayingCmd(m.cfg, m.subsonicClient, track))
 		cmds = append(cmds, fetchLyricsCmd(track))
 
 		m.artistInfoEventID++
@@ -823,7 +823,7 @@ func (m Model) renderArtistArtCmd() tea.Cmd {
 	return m.renderImagesCmd()
 }
 
-func sendNowPlayingCmd(cfg *config.Config, track models.Track) tea.Cmd {
+func sendNowPlayingCmd(cfg *config.Config, subsonicClient *api.SubsonicClient, track models.Track) tea.Cmd {
 	return func() tea.Msg {
 		apiKey := cfg.LastFM.APIKey
 		if apiKey == "" {
@@ -853,6 +853,12 @@ func sendNowPlayingCmd(cfg *config.Config, track models.Track) tea.Cmd {
 			}
 			if err := api.SubmitPlayingNowListenBrainz(cfg.ListenBrainz.Token, lbTrack); err != nil {
 				logf("Now-playing to listenbrainz failed: %v", err)
+			}
+		}
+
+		if subsonicClient != nil && track.Source == models.SourceSubsonic && track.RemoteID != "" {
+			if err := subsonicClient.Scrobble(track.RemoteID, false, time.Now().Unix()); err != nil {
+				logf("Now-playing to subsonic failed: %v", err)
 			}
 		}
 
