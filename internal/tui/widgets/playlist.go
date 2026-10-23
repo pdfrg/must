@@ -180,6 +180,9 @@ func (p Playlist) View() string {
 		if t.ServerBadge != "" {
 			songLabel = "[" + t.ServerBadge + "] " + t.Title
 		}
+		if t.Starred {
+			songLabel = "\u2b50 " + songLabel
+		}
 
 		pos := fmt.Sprintf("%d", idx+1)
 		num := formatTrackNum(t, idx, albumMultiDisc[albumKey(t)])

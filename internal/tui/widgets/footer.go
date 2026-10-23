@@ -71,6 +71,7 @@ func NewFooter(accentStyle, mutedStyle, foregroundStyle lipgloss.Style) *Footer 
 			{Key: "V", Icon: "", Label: "Vis"},
 		},
 		bottomLeftKeys: []KeyBinding{
+			{Key: "f", Icon: "", Label: "Fav"},
 			{Key: "E", Icon: "", Label: "EnqN"},
 			{Key: "d", Icon: "", Label: "Rem"},
 			{Key: "D", Icon: "", Label: "Clr"},

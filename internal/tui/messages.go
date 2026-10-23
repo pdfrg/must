@@ -53,6 +53,11 @@ type subsonicGenreAlbumsMsg struct {
 	err       error
 }
 
+type subsonicStarredMsg struct {
+	tracks []models.Track
+	err    error
+}
+
 type progressTickMsg time.Time
 
 type scanCompleteMsg struct {

@@ -105,6 +105,11 @@ CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path);
 		VALUES ('delete', old.id, old.title, old.artist, old.album, old.genre);
 	END;
 
+	CREATE TABLE IF NOT EXISTS favorites (
+		path TEXT PRIMARY KEY,
+		favorited_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+	);
+
 	CREATE TRIGGER IF NOT EXISTS tracks_au AFTER UPDATE ON tracks BEGIN
 		INSERT INTO tracks_fts(tracks_fts, rowid, title, artist, album, genre)
 		VALUES ('delete', old.id, old.title, old.artist, old.album, old.genre);
@@ -619,6 +624,56 @@ func (ld *LibraryDB) SearchWithYearRange(ftsQuery string, yearMin, yearMax int) 
 	rows, err := ld.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	return scanTracks(rows)
+}
+
+func (ld *LibraryDB) IsFavorite(path string) (bool, error) {
+	var n int
+	err := ld.db.QueryRow(`SELECT COUNT(*) FROM favorites WHERE path = ?`, path).Scan(&n)
+	if err != nil {
+		return false, fmt.Errorf("failed to check favorite: %w", err)
+	}
+	return n > 0, nil
+}
+
+func (ld *LibraryDB) SetFavorite(path string, starred bool) error {
+	if starred {
+		_, err := ld.db.Exec(`INSERT OR IGNORE INTO favorites (path) VALUES (?)`, path)
+		return err
+	}
+	_, err := ld.db.Exec(`DELETE FROM favorites WHERE path = ?`, path)
+	return err
+}
+
+func (ld *LibraryDB) FavoritePaths() (map[string]bool, error) {
+	rows, err := ld.db.Query(`SELECT path FROM favorites`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query favorites: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := make(map[string]bool)
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out[p] = true
+	}
+	return out, rows.Err()
+}
+
+func (ld *LibraryDB) FavoriteTracks() ([]models.Track, error) {
+	rows, err := ld.db.Query(`
+		SELECT t.id, t.path, t.title, t.artist, t.album, t.album_artist, t.year,
+			t.genre, t.track_num, t.disc_num, t.duration, t.has_cover_art, t.file_mod_time
+		FROM tracks t
+		JOIN favorites f ON t.path = f.path
+		ORDER BY t.artist, t.album, t.disc_num, t.track_num`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query favorite tracks: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 

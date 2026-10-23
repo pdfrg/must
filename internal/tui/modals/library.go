@@ -20,11 +20,12 @@ import (
 )
 
 type LibraryModalMsg struct {
-	PlayTracks  []models.Track
-	PlayIndex   int
-	Enqueue     []models.Track
-	EnqueueNext []models.Track
-	Closed      bool
+	PlayTracks     []models.Track
+	PlayIndex      int
+	Enqueue        []models.Track
+	EnqueueNext    []models.Track
+	FavoriteToggle *models.Track
+	Closed         bool
 }
 
 type FocusPane int
@@ -103,15 +104,22 @@ type Library struct {
 	playlistCursor       int
 	playlistScrollOffset int
 
-	filterText      string
-	filtering       bool
-	baseTracks      []models.Track
-	filteredArtists []artistDisplay
-	filteredAlbums  []models.AlbumEntry
-	filteredGenres  []genreDisplay
-	enqueueNextMode bool
-	albumSort       string
-	source          SearchSource
+	filterText     string
+	filtering      bool
+	baseTracks     []models.Track
+	favoritesOnly  bool
+	favLocalTracks []models.Track
+	favSubTracks   []models.Track
+	favNotice      string
+	// PendingFetchStarred is polled by the parent TUI, which owns the
+	// Subsonic client; the parent answers via SetStarredTracks.
+	PendingFetchStarred bool
+	filteredArtists     []artistDisplay
+	filteredAlbums      []models.AlbumEntry
+	filteredGenres      []genreDisplay
+	enqueueNextMode     bool
+	albumSort           string
+	source              SearchSource
 
 	subsonicBadge string
 
@@ -188,6 +196,12 @@ func (l *Library) SetSource(src SearchSource) {
 		return
 	}
 	l.source = src
+	if l.favoritesOnly {
+		l.filterText = ""
+		l.maybeRequestStarred()
+		l.rebuildFavorites()
+		return
+	}
 	l.filterText = ""
 	switch l.browseMode {
 	case BrowseGenres:
@@ -201,6 +215,12 @@ func (l *Library) SetSource(src SearchSource) {
 
 func (l *Library) cycleSource() {
 	l.source = (l.source + 1) % 3
+	if l.favoritesOnly {
+		l.filterText = ""
+		l.maybeRequestStarred()
+		l.rebuildFavorites()
+		return
+	}
 	l.filterText = ""
 	switch l.browseMode {
 	case BrowseGenres:
@@ -630,6 +650,10 @@ func (l *Library) loadSubsonicAlbumsForGenre(genreName string) {
 }
 
 func (l *Library) LoadAlbumsForArtist() {
+	if l.favoritesOnly && l.browseMode == BrowseArtists {
+		l.loadFavoriteAlbums()
+		return
+	}
 	if len(l.artists) == 0 || l.artistCursor >= len(l.artists) {
 		return
 	}
@@ -668,6 +692,10 @@ func (l *Library) LoadAlbumsForArtist() {
 }
 
 func (l *Library) loadTracksForAlbum() {
+	if l.favoritesOnly && l.browseMode == BrowseArtists {
+		l.loadFavoriteTracks()
+		return
+	}
 	if l.browseMode == BrowseGenres {
 		if l.genreCursor < len(l.genres) && l.genres[l.genreCursor].IsSubsonic {
 			l.loadSubsonicTracksForAlbum()
@@ -923,6 +951,9 @@ func (l *Library) updateFilterMode(msg tea.KeyPressMsg) tea.Cmd {
 	case "ctrl+t":
 		l.cycleSource()
 		return nil
+	case "ctrl+f":
+		l.ToggleFavorites()
+		return nil
 	case "ctrl+l":
 		l.SetSource(SearchLocal)
 		return nil
@@ -987,7 +1018,18 @@ func (l *Library) updateBrowseMode(msg tea.KeyPressMsg) tea.Cmd {
 		l.enqueueNextMode = false
 		return cmd
 	case "g":
+		if l.favoritesOnly {
+			l.exitFavorites()
+			break
+		}
 		l.toggleBrowseMode()
+	case "F":
+		if len(l.albumTracks) > 0 && l.trackCursor < len(l.albumTracks) {
+			tr := l.albumTracks[l.trackCursor]
+			return func() tea.Msg { return LibraryModalMsg{FavoriteToggle: &tr} }
+		}
+	case "ctrl+f":
+		l.ToggleFavorites()
 	case "ctrl+t":
 		l.cycleSource()
 	case "ctrl+l":
@@ -1707,6 +1749,12 @@ func (l Library) mouseTarget(x, y int) (FocusPane, int, bool) {
 }
 
 func (l Library) View() string {
+	if l.favoritesOnly && len(l.allArtists) == 0 {
+		if l.favNotice != "" {
+			return l.styles.MutedStyle.Render(l.favNotice)
+		}
+		return l.styles.MutedStyle.Render("No favorites yet — highlight a track and press F to star it")
+	}
 	if l.browseMode == BrowseArtists && len(l.allArtists) == 0 {
 		return l.styles.MutedStyle.Render("Library empty - press R to rescan")
 	}
@@ -1801,6 +1849,10 @@ func (l Library) renderTopBar() string {
 	} else if l.browseMode == BrowsePlaylists {
 		modeLabel = "playlists"
 	}
+	if l.favoritesOnly {
+		return l.styles.AccentStyle.Render("[\u2b50 favorites]") +
+			l.styles.MutedStyle.Render(fmt.Sprintf(" [%s] (ctrl+f to leave)", modeLabel)) + "\n"
+	}
 	if l.filtering {
 		filterDisplay := l.filterText
 		if len(filterDisplay) > 30 {
@@ -1841,6 +1893,8 @@ func (l Library) renderHelpLine() string {
 		{"enter", "play"},
 		{"e", "enqueue"},
 		{"^t", "source"},
+		{"^f", "favs"},
+		{"F", "star"},
 		{"g", "genre/playlists"},
 		{"/", "filter"},
 		{"esc", "close"},
@@ -2137,7 +2191,11 @@ func (l Library) renderTrackColumn(width, height int) string {
 		}
 		t := tracks[idx]
 		dur := t.GetDurationFormatted()
-		label := fmt.Sprintf("%2d. %s", t.TrackNum, t.Title)
+		title := t.Title
+		if t.Starred {
+			title = "\u2b50 " + title
+		}
+		label := fmt.Sprintf("%2d. %s", t.TrackNum, title)
 		avail := width - len(dur) - 5
 		if avail < 10 {
 			avail = 10

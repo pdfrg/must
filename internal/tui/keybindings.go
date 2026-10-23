@@ -49,6 +49,7 @@ type KeyMap struct {
 	VisCycleUp      key.Binding
 	VisCycleDown    key.Binding
 	VisFullscreen   key.Binding
+	Favorite        key.Binding
 	CopyClipboard   key.Binding
 	ReversePlaylist key.Binding
 	ToggleHeader    key.Binding
@@ -233,6 +234,10 @@ var DefaultKeyMap = KeyMap{
 		key.WithKeys("F"),
 		key.WithHelp("F", "fullscreen vis"),
 	),
+	Favorite: key.NewBinding(
+		key.WithKeys("f"),
+		key.WithHelp("f", "favorite/unfavorite"),
+	),
 	CopyClipboard: key.NewBinding(
 		key.WithKeys("c"),
 		key.WithHelp("c", "copy song info"),
@@ -275,7 +280,7 @@ func (k KeyMap) NavigationBindings() []key.Binding {
 func (k KeyMap) GlobalBindings() []key.Binding {
 	return []key.Binding{
 		k.Quit, k.Search, k.Help, k.Escape,
-		k.Rescan, k.ClearPlaylist, k.DeleteTrack,
+		k.Rescan, k.ClearPlaylist, k.DeleteTrack, k.Favorite,
 		k.Lyrics, k.SyncedLyrics, k.ArtistBio, k.Gallery, k.LidarrBrowser,
 		k.MoveTrackUp, k.MoveTrackDown, k.MoveTrackTop, k.MoveTrackBottom, k.SavePlaylist, k.ReversePlaylist,
 		k.Options, k.SleepTimer, k.UpdateView,

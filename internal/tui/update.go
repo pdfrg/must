@@ -115,6 +115,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			setStatus(&m, "Playing: "+albumName, false),
 		)
 
+	case favoriteResultMsg:
+		return m.handleFavoriteResult(msg)
+
 	case trackChangedMsg:
 		return m.handleTrackChanged(msg)
 
@@ -338,6 +341,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.libraryModal != nil {
 			m.libraryModal.SetSubsonicPlaylists(msg.playlists)
+		}
+		return m, nil
+
+	case subsonicStarredMsg:
+		if m.libraryModal != nil {
+			m.libraryModal.SetStarredTracks(msg.tracks, msg.err)
 		}
 		return m, nil
 
@@ -662,6 +671,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keyMap.Escape):
 		return m, nil
+
+	case key.Matches(msg, m.keyMap.Favorite):
+		return m.toggleFavorite()
 
 	case key.Matches(msg, m.keyMap.DeleteTrack):
 		return m.deleteCurrentTrack()
@@ -1021,6 +1033,14 @@ func (m Model) handleLibraryModalInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.libraryModal.PendingFetchGenreName = ""
 			extra = append(extra, subsonicGenreAlbumsCmd(m.subsonicClient, name))
 		}
+		if m.libraryModal.PendingFetchStarred {
+			m.libraryModal.PendingFetchStarred = false
+			if m.subsonicClient != nil {
+				extra = append(extra, subsonicStarredCmd(m.subsonicClient))
+			} else {
+				m.libraryModal.SetStarredTracks(nil, fmt.Errorf("subsonic not configured"))
+			}
+		}
 		if id := m.libraryModal.PendingFetchPlaylistID; id != "" {
 			m.libraryModal.PendingFetchPlaylistID = ""
 			extra = append(extra, subsonicPlaylistTracksCmd(m.subsonicClient, id))
@@ -1033,6 +1053,9 @@ func (m Model) handleLibraryModalInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleLibraryModalMsg(msg modals.LibraryModalMsg) (tea.Model, tea.Cmd) {
+	if msg.FavoriteToggle != nil {
+		return m.toggleModalFavorite(*msg.FavoriteToggle)
+	}
 	if msg.Closed {
 		m.activeModal = ModalNone
 		cmds := []tea.Cmd{renderAlbumArtAfterDelay()}
@@ -1356,6 +1379,7 @@ func (m Model) openLibrary() (tea.Model, tea.Cmd) {
 			m.libraryModal.SetSubsonicBadge(m.subsonicClient.ServerBadge())
 		}
 	}
+	m.libraryModal.DisableFavorites()
 	m.libraryModal.SetArtists(m.artists)
 	m.libraryModal.SetAlbumSort(m.cfg.AlbumSort)
 	m.libraryModal.SetMouseFocusOnHover(m.cfg.MouseFocusOnHover)

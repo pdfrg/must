@@ -40,6 +40,7 @@ type Track struct {
 
 	Source      TrackSource
 	RemoteID    string
+	Starred     bool
 	CoverArtID  string
 	AlbumID     string
 	ServerName  string

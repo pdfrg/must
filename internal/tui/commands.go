@@ -474,6 +474,19 @@ func subsonicGenreAlbumsCmd(client *api.SubsonicClient, genreName string) tea.Cm
 	}
 }
 
+func subsonicStarredCmd(client *api.SubsonicClient) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil {
+			return subsonicStarredMsg{err: fmt.Errorf("subsonic not configured")}
+		}
+		songs, err := client.GetStarred2()
+		if err != nil {
+			return subsonicStarredMsg{err: err}
+		}
+		return subsonicStarredMsg{tracks: client.ChildrenToTracks(songs)}
+	}
+}
+
 func loadSubsonicAlbumArtCmd(renderer *imgpkg.Renderer, client *api.SubsonicClient, track models.Track) tea.Cmd {
 	return func() tea.Msg {
 		// Prefer album-level art: per-song (disc-level, dc-*) artwork rows

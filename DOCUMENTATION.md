@@ -104,6 +104,7 @@ ARG resolution for play / enqueue / enqueue-next:
 | `ctrl+r` | Restart current song |
 | `e` | Enqueue (append to playlist) |
 | `E` | Enqueue next (after current track) |
+| `f` | Favorite/unfavorite track (⭐) |
 | `d` | Delete track from playlist |
 | `D` | Clear playlist |
 | `J` / `K` | Move track down / up |
@@ -331,6 +332,23 @@ CREATE VIRTUAL TABLE tracks_fts USING fts5(
     prefix='2 3'
 );
 ```
+
+### Favorites
+
+Press `f` on the playlist cursor track to toggle its favorite state,
+shown as `⭐` in the playlist and now-playing title. Subsonic/Navidrome
+tracks call the server `star`/`unstar` endpoints so favorites sync with
+other clients (Feishin, etc.). Local-library favorites are stored in a
+`favorites(path)` table in the SQLite library DB. Tracks under
+`temp_dirs` and stream URLs cannot be favorited.
+
+Press `ctrl+f` in the library browser (`l`) for a favorites-only view:
+the same artist/album/track panes, filtered to starred tracks. `ctrl+t`
+still switches Local/Both/Subsonic sources inside the view, and text
+filter (`/`) composes with it. Press `F` on any library track to
+star/unstar it; an `F`-unstarred track stays visible (starless) until the
+view rebuilds, so `F` again undoes a slip. `g` (genres/playlists) and
+leaving the view rebuild from server/DB truth.
 
 ### Search Architecture
 

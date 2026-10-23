@@ -352,6 +352,11 @@ func (m *Model) loadCLIPaths() {
 }
 
 func (m *Model) updatePlaylist() {
+	m.applyLocalFavorites()
+	m.refreshPlaylistWidget()
+}
+
+func (m *Model) refreshPlaylistWidget() {
 	if len(m.playlist) == 0 {
 		m.playlistWidget.SetRows(nil)
 		return
@@ -377,6 +382,7 @@ func defaultHelpEntries() []modals.HelpEntry {
 		{Key: "l", Desc: "library browser (g cycles artists/genres/playlists)"},
 		{Key: "e", Desc: "enqueue track/album"},
 		{Key: "E", Desc: "enqueue highlighted next"},
+		{Key: "f", Desc: "favorite/unfavorite track (\u2b50)"},
 		{Key: "d", Desc: "delete track from playlist"},
 		{Key: "D", Desc: "clear playlist"},
 		{Key: "J/K", Desc: "move track down/up"},

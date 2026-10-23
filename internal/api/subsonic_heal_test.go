@@ -69,3 +69,28 @@ func TestGetSongDoesNotRetryUnrecognizedID(t *testing.T) {
 		t.Errorf("made %d requests, want 1 (no retry for unrecognized shape)", requests)
 	}
 }
+
+func TestChildStarredMapsToTrack(t *testing.T) {
+	var raw = []byte(`{"id":"abc","title":"Fav Song","artist":"A","album":"B","starred":"2024-05-01T12:00:00Z"}`)
+	var c Child
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Starred == "" {
+		t.Fatal("starred attribute not parsed")
+	}
+	client, err := NewSubsonicClient("http://localhost:4533", "u", "p", "Navidrome", "ND")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if track := client.ChildToTrack(c); !track.Starred {
+		t.Errorf("ChildToTrack starred = false, want true")
+	}
+	var plain Child
+	if err := json.Unmarshal([]byte(`{"id":"xyz","title":"Plain"}`), &plain); err != nil {
+		t.Fatal(err)
+	}
+	if track := client.ChildToTrack(plain); track.Starred {
+		t.Errorf("ChildToTrack starred = true for unstarred child, want false")
+	}
+}

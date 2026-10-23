@@ -236,6 +236,10 @@ func (n NowPlaying) View(data NowPlayingData) string {
 		}
 	}
 
+	if data.Track != nil && data.Track.Starred {
+		titleText = "\u2b50 " + titleText
+	}
+
 	if n.maxWidth > 0 {
 		titleText = ansi.Truncate(titleText, n.maxWidth, "...")
 		artistText = ansi.Truncate(artistText, n.maxWidth, "...")

@@ -355,6 +355,33 @@ func (c *SubsonicClient) GetAlbumList2(listType string, fromYear, toYear, size i
 	return resp.SubsonicResponse.AlbumList2.Album, nil
 }
 
+func (c *SubsonicClient) Star(id string) error {
+	params := url.Values{"id": {id}}
+	return c.getJSON("star", params, nil)
+}
+
+func (c *SubsonicClient) Unstar(id string) error {
+	params := url.Values{"id": {id}}
+	return c.getJSON("unstar", params, nil)
+}
+
+func (c *SubsonicClient) GetStarred2() ([]Child, error) {
+	var resp struct {
+		SubsonicResponse struct {
+			Starred *struct {
+				Song []Child `json:"song"`
+			} `json:"starred2"`
+		} `json:"subsonic-response"`
+	}
+	if err := c.getJSON("getStarred2", nil, &resp); err != nil {
+		return nil, err
+	}
+	if resp.SubsonicResponse.Starred == nil {
+		return nil, nil
+	}
+	return resp.SubsonicResponse.Starred.Song, nil
+}
+
 func (c *SubsonicClient) Scrobble(id string, submission bool, time int64) error {
 	params := url.Values{
 		"id":         {id},
@@ -421,6 +448,7 @@ func (c *SubsonicClient) ChildToTrack(s Child) models.Track {
 		AlbumID:     s.AlbumID,
 		ServerName:  c.serverName,
 		ServerBadge: c.serverBadge,
+		Starred:     s.Starred != "",
 		ContentType: s.ContentType,
 		Bitrate:     s.BitRate,
 	}
@@ -514,6 +542,7 @@ type Child struct {
 	AlbumID      string `json:"albumId,omitempty"`
 	Size         int64  `json:"size,omitempty"`
 	ContentType  string `json:"contentType,omitempty"`
+	Starred      string `json:"starred,omitempty"`
 	Suffix       string `json:"suffix,omitempty"`
 	Duration     int    `json:"duration,omitempty"`
 	BitRate      int    `json:"bitRate,omitempty"`
