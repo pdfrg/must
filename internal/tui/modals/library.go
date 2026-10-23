@@ -338,6 +338,11 @@ func (l *Library) SetArtists(artists []string) {
 func (l *Library) SetSubsonicArtists(artists []api.ArtistID3) {
 	l.PendingFetchArtistID = ""
 	l.subsonicArtistEntries = artists
+	if l.favoritesOnly {
+		// Normal-mode fetch landing mid-favorites: keep the cache for
+		// later, but never touch the favorites panes.
+		return
+	}
 	// rebuildDisplay -> applySourceFilter already loads albums+tracks for
 	// the current selection (or triggers the Subsonic fetch), so don't
 	// wipe the panes here: that blanked local selections whenever the
@@ -354,6 +359,9 @@ func (l *Library) SetSubsonicArtists(artists []api.ArtistID3) {
 func (l *Library) SetSubsonicAlbums(artistID string, albums []api.AlbumID3) {
 	l.PendingFetchAlbumID = ""
 	l.subsonicAlbumsByArtist[artistID] = albums
+	if l.favoritesOnly {
+		return
+	}
 	// Only touch the visible panes if the response is still for the
 	// currently selected artist; otherwise just keep it cached for when
 	// the user navigates back (scrolling fires one fetch per artist and
@@ -370,6 +378,9 @@ func (l *Library) SetSubsonicAlbums(artistID string, albums []api.AlbumID3) {
 
 func (l *Library) SetSubsonicTracks(albumID string, tracks []models.Track) {
 	l.subsonicTracksByAlbum[albumID] = tracks
+	if l.favoritesOnly {
+		return
+	}
 	// Same staleness guard as albums: only display if this is still the
 	// selected album. Playlist/search responses carry no albumID and are
 	// routed by the caller, so an empty albumID always displays.
@@ -455,6 +466,9 @@ func (l *Library) rebuildGenreDisplay() {
 func (l *Library) SetSubsonicGenres(genres []api.GenreID3) {
 	l.PendingFetchGenreName = ""
 	l.subsonicGenreEntries = genres
+	if l.favoritesOnly {
+		return
+	}
 	l.rebuildGenreDisplay()
 	if l.browseMode == BrowseGenres && len(l.genres) > 0 && l.genreCursor < len(l.genres) {
 		if l.genres[l.genreCursor].IsSubsonic {
@@ -493,6 +507,9 @@ func (l *Library) loadPlaylists() {
 
 func (l *Library) SetSubsonicPlaylists(playlists []api.PlaylistInfo) {
 	l.subsonicPlaylists = playlists
+	if l.favoritesOnly {
+		return
+	}
 	l.rebuildPlaylistDisplay()
 	if l.browseMode == BrowsePlaylists && len(l.playlists) > 0 && l.playlistCursor < len(l.playlists) {
 		if l.playlists[l.playlistCursor].IsSubsonic {
@@ -593,6 +610,9 @@ func (l *Library) loadPlaylistTracks() {
 
 func (l *Library) SetSubsonicPlaylistTracks(tracks []models.Track) {
 	l.PendingFetchPlaylistID = ""
+	if l.favoritesOnly {
+		return
+	}
 	if l.browseMode != BrowsePlaylists || l.playlistCursor >= len(l.playlists) {
 		return
 	}
@@ -607,6 +627,9 @@ func (l *Library) SetSubsonicPlaylistTracks(tracks []models.Track) {
 
 func (l *Library) SetSubsonicGenreAlbums(genreName string, albums []api.AlbumID3) {
 	l.PendingFetchGenreName = ""
+	if l.favoritesOnly {
+		return
+	}
 	if l.browseMode != BrowseGenres || l.genreCursor >= len(l.genres) {
 		return
 	}

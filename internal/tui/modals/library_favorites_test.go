@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/models"
 )
@@ -85,5 +86,40 @@ func TestTrackColumnShowsStar(t *testing.T) {
 	}
 	if strings.Contains(got, "⭐ Plain") {
 		t.Fatalf("plain track wrongly starred: %q", got)
+	}
+}
+
+func TestStaleNormalResponsesIgnoredInFavorites(t *testing.T) {
+	l := NewLibrary(favTestStyles(), nil)
+	l.source = SearchBoth
+	l.favoritesOnly = true
+	l.favSubTracks = []models.Track{
+		{Source: models.SourceSubsonic, RemoteID: "s1", Title: "Fav", Artist: "Fav Artist", Album: "Fav Album", TrackNum: 1, Starred: true},
+	}
+	// Simulate an in-flight normal-mode album fetch predating favorites.
+	l.subsonicAlbumIDs = []string{"stale-album"}
+	l.rebuildFavorites()
+	if len(l.albumTracks) != 1 {
+		t.Fatalf("setup: albumTracks = %d, want 1", len(l.albumTracks))
+	}
+
+	// Stale normal-mode responses land: panes must not change, data cached.
+	l.SetSubsonicTracks("stale-album", []models.Track{
+		{Source: models.SourceSubsonic, RemoteID: "x1", Title: "Wrong One", Artist: "Other", Album: "Other Album", TrackNum: 1},
+		{Source: models.SourceSubsonic, RemoteID: "x2", Title: "Wrong Two", Artist: "Other", Album: "Other Album", TrackNum: 2},
+	})
+	if len(l.albumTracks) != 1 || l.albumTracks[0].RemoteID != "s1" {
+		t.Fatalf("stale tracks clobbered favorites view: %+v", l.albumTracks)
+	}
+	if got := l.subsonicTracksByAlbum["stale-album"]; len(got) != 2 {
+		t.Fatalf("stale tracks not cached: %+v", got)
+	}
+
+	l.SetSubsonicArtists([]api.ArtistID3{{ID: "a1", Name: "Normal Artist"}})
+	if len(l.artists) != 1 || l.artists[0].Name != "Fav Artist" {
+		t.Fatalf("stale artists clobbered favorites view: %+v", l.artists)
+	}
+	if len(l.subsonicArtistEntries) != 1 {
+		t.Fatalf("stale artists not cached: %+v", l.subsonicArtistEntries)
 	}
 }

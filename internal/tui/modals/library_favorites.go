@@ -157,6 +157,9 @@ func (l *Library) favSources() (local, sub []models.Track) {
 }
 
 func (l *Library) rebuildFavorites() {
+	// Normal-mode album ID state is meaningless inside the favorites view
+	// and must not let a straggler response pass the staleness guards.
+	l.subsonicAlbumIDs = nil
 	local, sub := l.favSources()
 	var artists []artistDisplay
 	seenLocal := make(map[string]bool)
