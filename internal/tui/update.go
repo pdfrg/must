@@ -14,6 +14,7 @@ import (
 	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/config"
 	"github.com/pdfrg/must/internal/ctl"
+	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/playlist"
 	"github.com/pdfrg/must/internal/tui/modals"
 	"github.com/pdfrg/must/internal/tui/visualizer"
@@ -274,6 +275,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case artistInfoDebouncedMsg:
+		if msg.eventID != m.artistInfoEventID {
+			return m, nil
+		}
+		if !m.playing || m.currentIndex < 0 || m.currentIndex >= len(m.playlist) {
+			return m, nil
+		}
+		// Album-level artist for artist-scoped lookups (bio, MusicBrainz,
+		// Lidarr): per-track Artist varies on compilations/collaborations,
+		// and AlbumArtist tags are often missing entirely.
+		lookup := LookupFromTrack(m.playlist, m.currentIndex)
+		lookup.Artist = m.lookupArtistFor(m.currentIndex)
+		return m, fetchArtistInfoCmd(m.cfg, lookup, m.artistInfoEventID, m.artistCache)
+
 	case artistInfoFetchedMsg:
 		m.artistInfoLoading = false
 		if msg.eventID != m.artistInfoEventID {
@@ -282,10 +297,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.info != nil {
 			var artist string
 			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-				artist = m.playlist[m.currentIndex].Artist
-			}
-			if artist != "" {
-				m.artistCache[strings.ToLower(artist)] = msg.info
+				lookup := LookupFromTrack(m.playlist, m.currentIndex)
+				lookup.Artist = m.lookupArtistFor(m.currentIndex)
+				artist = lookup.Artist
+				// Cache resolved results only; transient lookup failures
+				// stay uncached so the next track change retries.
+				if msg.cacheable {
+					if key := artistCacheKey(lookup); key != "" {
+						m.artistCache[key] = msg.info
+					}
+				}
 			}
 
 			if m.bottomViewMode == BottomArtistBio && m.artistInfo != nil {
@@ -1332,7 +1353,7 @@ func (m Model) cycleView() (tea.Model, tea.Cmd) {
 			}
 			var artist string
 			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-				artist = m.playlist[m.currentIndex].Artist
+				artist = m.lookupArtistFor(m.currentIndex)
 			}
 			return m, tea.Batch(
 				loadArtistImageCmd(m.artistInfoEventID, artist, trackPath, m.artistInfo.ThumbnailURL),
@@ -1488,7 +1509,7 @@ func (m Model) openLidarr() (tea.Model, tea.Cmd) {
 		lidarrURL = lidarrClient.OpenSearchByMBID(m.artistInfo.LidarrMBID)
 	} else {
 		lidarrClient := api.NewLidarrClient(m.cfg.Lidarr.URL, m.cfg.Lidarr.APIKey, m.cfg.Lidarr.Enabled)
-		lidarrURL = lidarrClient.OpenSearchURL(m.playlist[m.currentIndex].Artist)
+		lidarrURL = lidarrClient.OpenSearchURL(m.lookupArtistFor(m.currentIndex))
 	}
 
 	api.OpenBrowser(lidarrURL)
@@ -1851,14 +1872,14 @@ func (m Model) handleOptionsModalMsg(msg modals.OptionsMsg) (tea.Model, tea.Cmd)
 }
 
 func (m Model) openArtistBio() (tea.Model, tea.Cmd) {
-	var artist string
-	var album string
+	lookup := ArtistLookup{}
 	if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-		artist = m.playlist[m.currentIndex].Artist
-		album = m.playlist[m.currentIndex].Album
+		lookup = LookupFromTrack(m.playlist, m.currentIndex)
+		lookup.Artist = m.lookupArtistFor(m.currentIndex)
 	} else if len(m.artists) > 0 {
-		artist = m.artists[0]
+		lookup.Artist = m.artists[0]
 	}
+	artist := lookup.Artist
 	if artist == "" {
 		return m, setStatus(&m, "No artist selected", true)
 	}
@@ -1890,7 +1911,7 @@ func (m Model) openArtistBio() (tea.Model, tea.Cmd) {
 	m.viewport.GotoTop()
 	m.updateBottomView()
 
-	return m, fetchArtistInfoCmd(m.cfg, artist, album, m.artistInfoEventID, m.artistCache)
+	return m, fetchArtistInfoCmd(m.cfg, lookup, m.artistInfoEventID, m.artistCache)
 }
 
 func (m Model) deleteCurrentTrack() (tea.Model, tea.Cmd) {
@@ -2108,6 +2129,77 @@ func (m Model) enqueueHighlightedNext() (tea.Model, tea.Cmd) {
 	return m, setStatus(&m, fmt.Sprintf("Enqueued next: %s", track.Title), false)
 }
 
+// lookupArtistFor returns the artist to use for artist-scoped lookups (bio,
+// MusicBrainz, Lidarr) for playlist[idx]. It prefers the track's AlbumArtist,
+// then a consensus across other playlist tracks from the same album (covers
+// compilations whose files lack AlbumArtist tags and credit per-track artists
+// like "Big Brother & The Holding Company" on a Janis Joplin record), then
+// the same consensus from the library DB, and finally the track's Artist.
+func (m Model) lookupArtistFor(idx int) string {
+	if idx < 0 || idx >= len(m.playlist) {
+		return ""
+	}
+	t := m.playlist[idx]
+	if t.AlbumArtist != "" {
+		return t.AlbumArtist
+	}
+	if t.Album != "" {
+		if a := consensusAlbumArtist(m.playlist, t.Album, idx); a != "" {
+			return a
+		}
+		if m.libraryDB != nil {
+			if tracks, err := m.libraryDB.GetTracksByAlbum(t.Album); err == nil && len(tracks) > 0 {
+				if a := consensusAlbumArtist(tracks, t.Album, -1); a != "" {
+					return a
+				}
+			}
+		}
+	}
+	return t.Artist
+}
+
+// consensusAlbumArtist finds the most common AlbumArtist (preferring it over
+// Artist) among tracks sharing albumName. skipIdx excludes the querying track
+// when scanning the playlist (-1 disables). Returns "" when nothing found.
+func consensusAlbumArtist(tracks []models.Track, albumName string, skipIdx int) string {
+	freqAA := make(map[string]int)
+	freqA := make(map[string]int)
+	for i, tr := range tracks {
+		if i == skipIdx || tr.Album != albumName {
+			continue
+		}
+		if tr.AlbumArtist != "" {
+			freqAA[tr.AlbumArtist]++
+		} else if tr.Artist != "" {
+			freqA[tr.Artist]++
+		}
+	}
+	best, bestN := "", 0
+	for a, n := range freqAA {
+		if n > bestN {
+			best, bestN = a, n
+		}
+	}
+	if best != "" {
+		return best
+	}
+	for a, n := range freqA {
+		if n > bestN {
+			best, bestN = a, n
+		}
+	}
+	return best
+}
+
+// lidarrAlbumKeys returns the map keys for normalized album matching.
+func lidarrAlbumKeys(m map[string]models.LidarrAlbumInfo) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func (m *Model) updateBottomView() {
 	if m.bottomViewMode == BottomPlaylist || m.bottomViewMode == BottomVisualizer || m.bottomViewMode == BottomOff || m.bottomViewMode == BottomSyncedLyrics {
 		return
@@ -2166,7 +2258,7 @@ func (m *Model) updateBottomView() {
 
 			var title string
 			if m.playing && m.currentIndex >= 0 && m.currentIndex < len(m.playlist) {
-				title = m.playlist[m.currentIndex].Artist
+				title = m.lookupArtistFor(m.currentIndex)
 			}
 			if title != "" {
 				b.WriteString(m.styles.Header.Render(title))
@@ -2250,7 +2342,8 @@ func (m *Model) updateBottomView() {
 						if idx := strings.LastIndex(dl, " ("); idx > 0 {
 							albumTitle = dl[:idx]
 						}
-						if albumInfo, ok := info.LidarrAlbums[albumTitle]; ok {
+						if key, ok := api.FindAlbumKey(lidarrAlbumKeys(info.LidarrAlbums), albumTitle); ok {
+							albumInfo := info.LidarrAlbums[key]
 							var indicator string
 							switch {
 							case albumInfo.PercentOfTracks == 100:

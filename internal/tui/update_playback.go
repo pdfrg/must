@@ -547,9 +547,15 @@ func (m *Model) trackChangedCmds() tea.Cmd {
 		cmds = append(cmds, fetchLyricsCmd(track))
 
 		m.artistInfoEventID++
-		artist := track.Artist
-		album := track.Album
-		cmds = append(cmds, fetchArtistInfoCmd(m.cfg, artist, album, m.artistInfoEventID, m.artistCache))
+		// Debounced: only the settled track fires the network lookup.
+		// Skipping through tracks used to burst MusicBrainz past 1 req/s
+		// (HTTP 503s), and a failed newer fetch could then win the eventID
+		// race and stick as a permanent miss. Manual bio opens stay
+		// immediate (see openArtistBio).
+		eventID := m.artistInfoEventID
+		cmds = append(cmds, tea.Tick(artistInfoDebounce, func(time.Time) tea.Msg {
+			return artistInfoDebouncedMsg{eventID: eventID}
+		}))
 	}
 
 	cmds = append(cmds, tickProgressCmd())

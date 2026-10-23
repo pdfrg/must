@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 )
 
 const musicbrainzBaseURL = "https://musicbrainz.org/ws/2"
@@ -13,6 +12,7 @@ const musicbrainzBaseURL = "https://musicbrainz.org/ws/2"
 type MBAlbum struct {
 	Title string
 	Year  string
+	ID    string
 }
 
 type MusicBrainzArtist struct {
@@ -91,7 +91,8 @@ func searchArtistMB(artistName string) ([]mbArtistEntry, error) {
 		reqURL := fmt.Sprintf("%s/artist/?query=%s&fmt=json&limit=10",
 			musicbrainzBaseURL, url.QueryEscape(query))
 
-		headers := map[string]string{"Accept": "application/json"}
+		headers := map[string]string{"Accept": "application/json", "User-Agent": MusicBrainzUserAgent()}
+		mbRateLimit()
 		body, err := fetchJSON(reqURL, headers)
 		if err != nil {
 			return nil, err
@@ -191,20 +192,26 @@ func GetDiscographyMusicBrainz(artistName string, album string) (string, []MBAlb
 	mbID := entries[0].ID
 	matchedName := entries[0].Name
 
-	time.Sleep(1 * time.Second)
-
-	mbQuery := fmt.Sprintf("arid:%s AND primarytype:Album NOT secondarytype:* AND status:official", mbID)
+	// NOTE: do NOT filter out secondary types (Compilation, Live, ...).
+	// Greatest-hits / best-of records are secondarytype:Compilation and must
+	// be included, otherwise Lidarr status can never resolve for them.
+	mbQuery := fmt.Sprintf("arid:%s AND primarytype:Album AND status:official", mbID)
 	reqURL := fmt.Sprintf("%s/release-group/?query=%s&fmt=json&limit=100",
 		musicbrainzBaseURL, strings.ReplaceAll(mbQuery, " ", "%20"))
 
-	headers := map[string]string{"Accept": "application/json"}
+	headers := map[string]string{"Accept": "application/json", "User-Agent": MusicBrainzUserAgent()}
+	mbRateLimit()
 	body, err := fetchJSON(reqURL, headers)
 	if err != nil {
+		if apiLogger != nil {
+			apiLogger.Printf("MusicBrainz: discography fetch for %q (ID=%s) failed: %v", matchedName, mbID, err)
+		}
 		return "", nil, err
 	}
 
 	var rgResult struct {
 		ReleaseGroups []struct {
+			ID               string `json:"id"`
 			Title            string `json:"title"`
 			FirstReleaseDate string `json:"first-release-date"`
 		} `json:"release-groups"`
@@ -216,6 +223,7 @@ func GetDiscographyMusicBrainz(artistName string, album string) (string, []MBAlb
 	type entry struct {
 		title string
 		year  string
+		id    string
 	}
 	seen := make(map[string]bool)
 	var entries2 []entry
@@ -230,7 +238,7 @@ func GetDiscographyMusicBrainz(artistName string, album string) (string, []MBAlb
 		if len(rg.FirstReleaseDate) >= 4 {
 			year = rg.FirstReleaseDate[:4]
 		}
-		entries2 = append(entries2, entry{rg.Title, year})
+		entries2 = append(entries2, entry{rg.Title, year, rg.ID})
 	}
 
 	for i := 1; i < len(entries2); i++ {
@@ -253,13 +261,16 @@ func GetDiscographyMusicBrainz(artistName string, album string) (string, []MBAlb
 			}
 		}
 		if !hasMatch {
+			if apiLogger != nil {
+				apiLogger.Printf("MusicBrainz: discography for %q (ID=%s) rejected: playing album %q not among their release-groups", matchedName, mbID, album)
+			}
 			return "", nil, nil
 		}
 	}
 
 	var albums []MBAlbum
 	for _, e := range entries2 {
-		albums = append(albums, MBAlbum{Title: e.title, Year: e.year})
+		albums = append(albums, MBAlbum{Title: e.title, Year: e.year, ID: e.id})
 	}
 
 	if apiLogger != nil {
@@ -275,6 +286,7 @@ func GetArtistMusicBrainz(mbid string) (*MusicBrainzLookupResponse, error) {
 		"Accept": "application/json",
 	}
 
+	mbRateLimit()
 	body, err := fetchJSON(apiURL, headers)
 	if err != nil {
 		if apiLogger != nil {

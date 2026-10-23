@@ -51,6 +51,26 @@ func (ld *LibraryDB) Close() error {
 	return ld.db.Close()
 }
 
+// mbidSchemaVersion marks databases whose tracks predate the MusicBrainz ID
+// columns. The scanner does a one-time re-read backfill when the stored
+// user_version is below this.
+const mbidSchemaVersion = 2
+
+// MBIDBackfillNeeded reports whether the library predates MBID columns and
+// still needs its one-time tag backfill scan.
+func (ld *LibraryDB) MBIDBackfillNeeded() bool {
+	var v int
+	if err := ld.db.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+		return false
+	}
+	return v < mbidSchemaVersion
+}
+
+// MarkMBIDBackfilled records that the one-time MBID backfill completed.
+func (ld *LibraryDB) MarkMBIDBackfilled() {
+	_, _ = ld.db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, mbidSchemaVersion))
+}
+
 func (ld *LibraryDB) initSchema() error {
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL",
@@ -122,6 +142,18 @@ CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path);
 		return fmt.Errorf("failed to create schema: %w", err)
 	}
 
+	// Migration for databases created before MusicBrainz ID columns existed.
+	for _, col := range []string{
+		"mb_artist_id", "mb_album_artist_id", "mb_release_id",
+		"mb_release_group_id", "mb_recording_id",
+	} {
+		if _, err := ld.db.Exec(fmt.Sprintf("ALTER TABLE tracks ADD COLUMN %s TEXT NOT NULL DEFAULT ''", col)); err != nil {
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("failed to migrate tracks table (%s): %w", col, err)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -129,11 +161,13 @@ func (ld *LibraryDB) InsertTrack(t *models.Track) (int64, error) {
 	result, err := ld.db.Exec(`
 	INSERT OR REPLACE INTO tracks
 		(path, title, artist, album, album_artist, year, genre,
-		track_num, disc_num, duration, has_cover_art, file_mod_time)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		track_num, disc_num, duration, has_cover_art, file_mod_time,
+		mb_artist_id, mb_album_artist_id, mb_release_id, mb_release_group_id, mb_recording_id)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.Path, t.Title, t.Artist, t.Album, t.AlbumArtist,
 		t.Year, t.Genre, t.TrackNum, t.DiscNum, t.Duration,
 		t.HasCoverArt, t.FileModTime,
+		t.MBArtistID, t.MBAlbumArtistID, t.MBReleaseID, t.MBReleaseGroupID, t.MBRecordingID,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("failed to insert track: %w", err)
@@ -160,8 +194,9 @@ func (ld *LibraryDB) InsertTracksBatch(tracks []*models.Track) (int, error) {
 	stmt, err := tx.Prepare(`
 	INSERT OR REPLACE INTO tracks
 		(path, title, artist, album, album_artist, year, genre,
-		track_num, disc_num, duration, has_cover_art, file_mod_time)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		track_num, disc_num, duration, has_cover_art, file_mod_time,
+		mb_artist_id, mb_album_artist_id, mb_release_id, mb_release_group_id, mb_recording_id)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		_ = tx.Rollback()
 		return 0, fmt.Errorf("failed to prepare statement: %w", err)
@@ -174,6 +209,7 @@ func (ld *LibraryDB) InsertTracksBatch(tracks []*models.Track) (int, error) {
 			t.Path, t.Title, t.Artist, t.Album, t.AlbumArtist,
 			t.Year, t.Genre, t.TrackNum, t.DiscNum, t.Duration,
 			t.HasCoverArt, t.FileModTime,
+			t.MBArtistID, t.MBAlbumArtistID, t.MBReleaseID, t.MBReleaseGroupID, t.MBRecordingID,
 		)
 		if err != nil {
 			if logger != nil {
@@ -195,14 +231,16 @@ func (ld *LibraryDB) InsertTracksBatch(tracks []*models.Track) (int, error) {
 func (ld *LibraryDB) GetTrackByPath(path string) (*models.Track, error) {
 	row := ld.db.QueryRow(`
 		SELECT id, path, title, artist, album, album_artist, year, genre,
-		       track_num, disc_num, duration, has_cover_art, file_mod_time
+		track_num, disc_num, duration, has_cover_art, file_mod_time,
+		mb_artist_id, mb_album_artist_id, mb_release_id, mb_release_group_id, mb_recording_id
 		FROM tracks WHERE path = ?`, path)
 
 	var t models.Track
 	var hasCover int
 	err := row.Scan(&t.ID, &t.Path, &t.Title, &t.Artist, &t.Album,
 		&t.AlbumArtist, &t.Year, &t.Genre, &t.TrackNum, &t.DiscNum,
-		&t.Duration, &hasCover, &t.FileModTime)
+		&t.Duration, &hasCover, &t.FileModTime,
+		&t.MBArtistID, &t.MBAlbumArtistID, &t.MBReleaseID, &t.MBReleaseGroupID, &t.MBRecordingID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -277,7 +315,8 @@ func (ld *LibraryDB) GetAlbumYear(artist, album string) (int, error) {
 func (ld *LibraryDB) GetTracksByArtistAndAlbum(artist, album string) ([]models.Track, error) {
 	rows, err := ld.db.Query(`
 	SELECT id, path, title, artist, album, album_artist, year, genre,
-	track_num, disc_num, duration, has_cover_art, file_mod_time
+		track_num, disc_num, duration, has_cover_art, file_mod_time,
+		mb_artist_id, mb_album_artist_id, mb_release_id, mb_release_group_id, mb_recording_id
 	FROM tracks
 	WHERE (COALESCE(NULLIF(album_artist, ''), artist) = ? OR COALESCE(NULLIF(album_artist, ''), artist) LIKE ?) AND album = ?
 	ORDER BY disc_num, track_num`, artist, artist+" feat.%", album)
@@ -292,7 +331,8 @@ func (ld *LibraryDB) GetTracksByArtistAndAlbum(artist, album string) ([]models.T
 func (ld *LibraryDB) GetTracksByArtist(artist string) ([]models.Track, error) {
 	rows, err := ld.db.Query(`
 	SELECT id, path, title, artist, album, album_artist, year, genre,
-	track_num, disc_num, duration, has_cover_art, file_mod_time
+		track_num, disc_num, duration, has_cover_art, file_mod_time,
+		mb_artist_id, mb_album_artist_id, mb_release_id, mb_release_group_id, mb_recording_id
 	FROM tracks
 	WHERE COALESCE(NULLIF(album_artist, ''), artist) = ? OR COALESCE(NULLIF(album_artist, ''), artist) LIKE ?
 	ORDER BY album, disc_num, track_num`, artist, artist+" feat.%")
@@ -355,7 +395,8 @@ func (ld *LibraryDB) GetAlbumsByGenre(genre string) ([]string, error) {
 func (ld *LibraryDB) GetTracksByAlbum(album string) ([]models.Track, error) {
 	rows, err := ld.db.Query(`
 		SELECT id, path, title, artist, album, album_artist, year, genre,
-		track_num, disc_num, duration, has_cover_art, file_mod_time
+		track_num, disc_num, duration, has_cover_art, file_mod_time,
+		mb_artist_id, mb_album_artist_id, mb_release_id, mb_release_group_id, mb_recording_id
 		FROM tracks
 		WHERE album = ?
 		ORDER BY disc_num, track_num`, album)
@@ -373,7 +414,8 @@ func (ld *LibraryDB) GetTracksByGenreAlbumDisplay(display string) ([]models.Trac
 	// directly instead of splitting on " - " (artist names may contain it).
 	rows, err := ld.db.Query(`
 		SELECT id, path, title, artist, album, album_artist, year, genre,
-		track_num, disc_num, duration, has_cover_art, file_mod_time
+		track_num, disc_num, duration, has_cover_art, file_mod_time,
+		mb_artist_id, mb_album_artist_id, mb_release_id, mb_release_group_id, mb_recording_id
 		FROM tracks
 		WHERE COALESCE(NULLIF(album_artist, ''), artist) || ' - ' || album = ?
 		ORDER BY disc_num, track_num`, display)
@@ -388,7 +430,8 @@ func (ld *LibraryDB) GetTracksByGenreAlbumDisplay(display string) ([]models.Trac
 func (ld *LibraryDB) GetAllTracks() ([]models.Track, error) {
 	rows, err := ld.db.Query(`
 		SELECT id, path, title, artist, album, album_artist, year, genre,
-		       track_num, disc_num, duration, has_cover_art, file_mod_time
+		track_num, disc_num, duration, has_cover_art, file_mod_time,
+		mb_artist_id, mb_album_artist_id, mb_release_id, mb_release_group_id, mb_recording_id
 		FROM tracks
 		ORDER BY artist, album, disc_num, track_num`)
 	if err != nil {
@@ -562,7 +605,8 @@ func (ld *LibraryDB) GetTracksByField(field string, values []string) ([]models.T
 
 	query := fmt.Sprintf(`
 		SELECT id, path, title, artist, album, album_artist, year, genre,
-			track_num, disc_num, duration, has_cover_art, file_mod_time
+		track_num, disc_num, duration, has_cover_art, file_mod_time,
+		mb_artist_id, mb_album_artist_id, mb_release_id, mb_release_group_id, mb_recording_id
 		FROM tracks
 		WHERE %s
 		ORDER BY artist, album, disc_num, track_num
@@ -614,7 +658,9 @@ func (ld *LibraryDB) SearchWithYearRange(ftsQuery string, yearMin, yearMax int) 
 	query := fmt.Sprintf(`
 		SELECT t.id, t.path, t.title, t.artist, t.album, t.album_artist,
 			t.year, t.genre, t.track_num, t.disc_num, t.duration,
-			t.has_cover_art, t.file_mod_time
+			t.has_cover_art, t.file_mod_time,
+			t.mb_artist_id, t.mb_album_artist_id, t.mb_release_id,
+			t.mb_release_group_id, t.mb_recording_id
 		FROM tracks t
 		JOIN tracks_fts fts ON t.id = fts.rowid
 		WHERE %s
@@ -668,7 +714,9 @@ func (ld *LibraryDB) FavoritePaths() (map[string]bool, error) {
 func (ld *LibraryDB) FavoriteTracks() ([]models.Track, error) {
 	rows, err := ld.db.Query(`
 		SELECT t.id, t.path, t.title, t.artist, t.album, t.album_artist, t.year,
-			t.genre, t.track_num, t.disc_num, t.duration, t.has_cover_art, t.file_mod_time
+			t.genre, t.track_num, t.disc_num, t.duration, t.has_cover_art, t.file_mod_time,
+			t.mb_artist_id, t.mb_album_artist_id, t.mb_release_id,
+			t.mb_release_group_id, t.mb_recording_id
 		FROM tracks t
 		JOIN favorites f ON t.path = f.path
 		ORDER BY t.artist, t.album, t.disc_num, t.track_num`)
@@ -754,14 +802,16 @@ func (ld *LibraryDB) ResetZeroDurationModTimes() (int, error) {
 func (ld *LibraryDB) GetTrackByID(id int64) (*models.Track, error) {
 	row := ld.db.QueryRow(`
 		SELECT id, path, title, artist, album, album_artist, year, genre,
-		       track_num, disc_num, duration, has_cover_art, file_mod_time
+		track_num, disc_num, duration, has_cover_art, file_mod_time,
+		mb_artist_id, mb_album_artist_id, mb_release_id, mb_release_group_id, mb_recording_id
 		FROM tracks WHERE id = ?`, id)
 
 	var t models.Track
 	var hasCover int
 	err := row.Scan(&t.ID, &t.Path, &t.Title, &t.Artist, &t.Album,
 		&t.AlbumArtist, &t.Year, &t.Genre, &t.TrackNum, &t.DiscNum,
-		&t.Duration, &hasCover, &t.FileModTime)
+		&t.Duration, &hasCover, &t.FileModTime,
+		&t.MBArtistID, &t.MBAlbumArtistID, &t.MBReleaseID, &t.MBReleaseGroupID, &t.MBRecordingID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -853,7 +903,8 @@ func (ld *LibraryDB) SearchLike(query string) ([]models.Track, error) {
 	pattern := "%" + query + "%"
 	rows, err := ld.db.Query(`
 		SELECT id, path, title, artist, album, album_artist, year, genre,
-			track_num, disc_num, duration, has_cover_art, file_mod_time
+		track_num, disc_num, duration, has_cover_art, file_mod_time,
+		mb_artist_id, mb_album_artist_id, mb_release_id, mb_release_group_id, mb_recording_id
 		FROM tracks
 		WHERE title LIKE ? OR artist LIKE ? OR album LIKE ? OR genre LIKE ?
 		ORDER BY artist, album, disc_num, track_num
@@ -873,7 +924,8 @@ func scanTracks(rows *sql.Rows) ([]models.Track, error) {
 		var hasCover int
 		err := rows.Scan(&t.ID, &t.Path, &t.Title, &t.Artist, &t.Album,
 			&t.AlbumArtist, &t.Year, &t.Genre, &t.TrackNum, &t.DiscNum,
-			&t.Duration, &hasCover, &t.FileModTime)
+			&t.Duration, &hasCover, &t.FileModTime,
+			&t.MBArtistID, &t.MBAlbumArtistID, &t.MBReleaseID, &t.MBReleaseGroupID, &t.MBRecordingID)
 		if err != nil {
 			return nil, err
 		}

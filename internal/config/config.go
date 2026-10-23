@@ -40,6 +40,7 @@ type Config struct {
 	DiscogsKey            string                `toml:"discogs_key" comment:"Discogs consumer key (developer app auth)\nalternative to discogs_token, requires both key and secret (default: '')"`
 	DiscogsSecret         string                `toml:"discogs_secret" comment:"Discogs consumer secret (developer app auth)\nalternative to discogs_token, requires both key and secret (default: '')"`
 	TheAudioDBApiKey      string                `toml:"theaudiodb_api_key" comment:"TheAudioDB API key for artist info and album art fallback\nfree key '123' is used by default\nget a custom key at: https://www.theaudiodb.com/apikey (default: '123')"`
+	MusicBrainzContact    string                `toml:"musicbrainz_contact" comment:"contact for the MusicBrainz API User-Agent (their policy requires app/version + contact)\nemail or URL, e.g. 'you@example.com' (default: project URL)"`
 	LastFM                LastFMConfig          `toml:"lastfm" comment:"Last.fm scrobbling\nrun 'must --lastfm-auth' once to obtain a session key"`
 	ListenBrainz          ListenBrainzConfig    `toml:"listenbrainz" comment:"ListenBrainz scrobbling\ntoken found at: https://listenbrainz.org/profile/"`
 	Lidarr                LidarrConfig          `toml:"lidarr" comment:"Lidarr music collection manager\nshows artist/album monitoring status, opens Lidarr web UI\napi_key from: Lidarr Settings > General"`

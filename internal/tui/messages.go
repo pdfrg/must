@@ -128,9 +128,19 @@ type scrobbleResultMsg struct {
 	results []scrobbleResult
 }
 
+// artistInfoDebouncedMsg fires after the track-change debounce interval; only
+// the settled track triggers the (network) artist-info lookup.
+type artistInfoDebouncedMsg struct {
+	eventID int64
+}
+
 type artistInfoFetchedMsg struct {
 	eventID int64
 	info    *models.ArtistInfo
+	// cacheable reports whether the MusicBrainz lookup succeeded. Failed
+	// lookups (rate limiting, outages) must not poison the cache: a
+	// transient miss would otherwise stick as a permanent "not found".
+	cacheable bool
 }
 
 type restorePlaybackMsg struct {

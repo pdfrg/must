@@ -27,6 +27,7 @@ import (
 	"github.com/pdfrg/must/internal/scanner"
 
 	"github.com/dhowden/tag"
+	"github.com/dhowden/tag/mbz"
 )
 
 type PlaybackState struct {
@@ -216,6 +217,16 @@ func readTrackFromFile(path string) models.Track {
 		t.TrackNum, _ = metadata.Track()
 		t.DiscNum, _ = metadata.Disc()
 		t.HasCoverArt = metadata.Picture() != nil
+		if mbInfo := mbz.Extract(metadata); len(mbInfo) > 0 {
+			t.MBArtistID = mbInfo.Get(mbz.Artist)
+			t.MBAlbumArtistID = mbInfo.Get(mbz.AlbumArtist)
+			t.MBReleaseID = mbInfo.Get(mbz.Album)
+			t.MBReleaseGroupID = mbInfo.Get(mbz.ReleaseGroup)
+			t.MBRecordingID = mbInfo.Get(mbz.Recording)
+			if t.MBRecordingID == "" {
+				t.MBRecordingID = mbInfo.Get(mbz.Track)
+			}
+		}
 	}
 
 	if t.Title == "" {
@@ -295,7 +306,7 @@ func subsonicSearchCmd(client *api.SubsonicClient, query string) tea.Cmd {
 				if err != nil {
 					continue
 				}
-				allTracks = append(allTracks, client.ChildrenToTracks(album.Song)...)
+				allTracks = append(allTracks, client.AlbumToTracks(album)...)
 			}
 			return subsonicSearchResultsMsg{
 				tracks: allTracks,
@@ -415,7 +426,7 @@ func subsonicArtistPlayCmd(client *api.SubsonicClient, artistID string) tea.Cmd 
 			if err != nil {
 				continue
 			}
-			allTracks = append(allTracks, client.ChildrenToTracks(albumDetail.Song)...)
+			allTracks = append(allTracks, client.AlbumToTracks(albumDetail)...)
 		}
 		return subsonicAlbumTracksMsg{tracks: allTracks}
 	}
@@ -443,7 +454,7 @@ func subsonicAlbumTracksCmd(client *api.SubsonicClient, albumID string) tea.Cmd 
 		if err != nil {
 			return subsonicAlbumTracksMsg{err: err}
 		}
-		tracks := client.ChildrenToTracks(album.Song)
+		tracks := client.AlbumToTracks(album)
 		return subsonicAlbumTracksMsg{albumID: albumID, tracks: tracks}
 	}
 }
@@ -597,6 +608,10 @@ func loadAlbumArtCmd(renderer *imgpkg.Renderer, trackPath string) tea.Cmd {
 	}
 }
 
+// artistInfoDebounce is the settle delay before a track change triggers the
+// artist-info network lookup (bio, MusicBrainz, Lidarr).
+const artistInfoDebounce = 800 * time.Millisecond
+
 func renderAlbumArtAfterDelay() tea.Cmd {
 	return tea.Tick(50*time.Millisecond, func(t time.Time) tea.Msg {
 		return renderAlbumArtMsg{}
@@ -633,9 +648,56 @@ func fetchLyricsCmd(track models.Track) tea.Cmd {
 	}
 }
 
-func fetchArtistInfoCmd(cfg *config.Config, artist, album string, eventID int64, cache map[string]*models.ArtistInfo) tea.Cmd {
+// ArtistLookup carries everything known about the playing track's artist
+// and album into the artist-info fetch. Name strings are always present;
+// MusicBrainz IDs (from file tags or Navidrome) take precedence wherever
+// accepted, since they are immune to per-track credit variations and
+// title spelling differences.
+type ArtistLookup struct {
+	Artist           string
+	Album            string
+	MBArtistID       string
+	MBAlbumArtistID  string
+	MBReleaseGroupID string
+	MBReleaseID      string
+}
+
+// LookupFromTrack builds an ArtistLookup for playlist[idx]: the display
+// artist via album-level consensus, plus the track's own MBIDs.
+func LookupFromTrack(playlist []models.Track, idx int) ArtistLookup {
+	if idx < 0 || idx >= len(playlist) {
+		return ArtistLookup{}
+	}
+	t := playlist[idx]
+	// NOTE: album-level consensus lives on Model (needs playlist + DB);
+	// callers that have it should prefer m.lookupArtistFor(idx). This helper
+	// covers the plain track-level fields.
+	return ArtistLookup{
+		Artist:           t.EffectiveArtist(),
+		Album:            t.Album,
+		MBArtistID:       t.MBArtistID,
+		MBAlbumArtistID:  t.MBAlbumArtistID,
+		MBReleaseGroupID: t.MBReleaseGroupID,
+		MBReleaseID:      t.MBReleaseID,
+	}
+}
+
+// artistCacheKey keys the artist-info cache by MB album-artist ID when
+// known (stable across compilations), else by lowercased artist name.
+func artistCacheKey(l ArtistLookup) string {
+	if l.MBAlbumArtistID != "" {
+		return "mbid:" + strings.ToLower(l.MBAlbumArtistID)
+	}
+	if l.MBArtistID != "" {
+		return "mbid:" + strings.ToLower(l.MBArtistID)
+	}
+	return strings.ToLower(l.Artist)
+}
+
+func fetchArtistInfoCmd(cfg *config.Config, lookup ArtistLookup, eventID int64, cache map[string]*models.ArtistInfo) tea.Cmd {
+	artist, album := lookup.Artist, lookup.Album
 	if cache != nil {
-		if cached, ok := cache[strings.ToLower(artist)]; ok {
+		if cached, ok := cache[artistCacheKey(lookup)]; ok {
 			return func() tea.Msg {
 				return artistInfoFetchedMsg{eventID: eventID, info: cached}
 			}
@@ -732,10 +794,21 @@ func fetchArtistInfoCmd(cfg *config.Config, artist, album string, eventID int64,
 			}
 		}
 
-		if cfg.Lidarr.Enabled && cfg.Lidarr.URL != "" && cfg.Lidarr.APIKey != "" && mb.mbid != "" {
-			info.LidarrMBID = mb.mbid
+		// Prefer tag/server MusicBrainz IDs for the Lidarr artist lookup: the
+		// MB album-artist ID identifies the canonical artist even when
+		// per-track credits (or a name search) would resolve to a backing
+		// band. Fall back to the MusicBrainz name-search result.
+		lidarrArtistMBID := lookup.MBAlbumArtistID
+		if lidarrArtistMBID == "" {
+			lidarrArtistMBID = lookup.MBArtistID
+		}
+		if lidarrArtistMBID == "" {
+			lidarrArtistMBID = mb.mbid
+		}
+		if cfg.Lidarr.Enabled && cfg.Lidarr.URL != "" && cfg.Lidarr.APIKey != "" && lidarrArtistMBID != "" {
+			info.LidarrMBID = lidarrArtistMBID
 			lidarrClient := api.NewLidarrClient(cfg.Lidarr.URL, cfg.Lidarr.APIKey, cfg.Lidarr.Enabled)
-			lidarrStatus, lidErr := lidarrClient.GetArtistByMBID(mb.mbid)
+			lidarrStatus, lidErr := lidarrClient.GetArtistByMBID(lidarrArtistMBID)
 			if lidErr != nil {
 				info.LidarrError = lidarrStatus.Error
 			} else if lidarrStatus.InLidarr {
@@ -744,29 +817,60 @@ func fetchArtistInfoCmd(cfg *config.Config, artist, album string, eventID int64,
 				info.LidarrArtistID = lidarrStatus.ArtistID
 				info.LidarrArtistName = lidarrStatus.ArtistName
 
-				if info.Discography != "" {
-					var mbTitles []string
-					for _, line := range strings.Split(info.Discography, "\n") {
-						line = strings.TrimSpace(line)
-						if line == "" {
-							continue
+				// Single fetch: build both the full Lidarr-title map (for the
+				// footer/playing-album lookup) and the MB-title map (for the
+				// discography view) from the same response. This runs even
+				// when the MB discography is empty so the playing album can
+				// still resolve directly against Lidarr's titles.
+				allEntries, allErr := lidarrClient.GetArtistAllAlbums(lidarrStatus.ArtistID)
+				if allErr == nil && len(allEntries) > 0 {
+					info.LidarrAllAlbums = make(map[string]models.LidarrAlbumInfo, len(allEntries))
+					lidarrTitles := make([]string, 0, len(allEntries))
+					for _, e := range allEntries {
+						st := models.LidarrAlbumInfo{
+							InLidarr:        e.Status.InLidarr,
+							Monitored:       e.Status.Monitored,
+							HasFiles:        e.Status.HasFiles,
+							PercentOfTracks: e.Status.PercentOfTracks,
 						}
-						if idx := strings.LastIndex(line, " ("); idx > 0 {
-							mbTitles = append(mbTitles, line[:idx])
-						} else {
-							mbTitles = append(mbTitles, line)
+						info.LidarrAllAlbums[e.Title] = st
+						// Exact MBID indexes: release-group ID matches the
+						// musicbrainz_releasegroupid tag, release ID the
+						// musicbrainz_albumid tag. Either bypasses title fuzz.
+						if e.ForeignReleaseGroupID != "" {
+							if info.LidarrAlbumsByRGID == nil {
+								info.LidarrAlbumsByRGID = make(map[string]models.LidarrAlbumInfo)
+							}
+							info.LidarrAlbumsByRGID[strings.ToLower(e.ForeignReleaseGroupID)] = st
 						}
+						if e.ForeignReleaseID != "" {
+							if info.LidarrAlbumsByReleaseID == nil {
+								info.LidarrAlbumsByReleaseID = make(map[string]models.LidarrAlbumInfo)
+							}
+							info.LidarrAlbumsByReleaseID[strings.ToLower(e.ForeignReleaseID)] = st
+						}
+						lidarrTitles = append(lidarrTitles, e.Title)
 					}
-					if len(mbTitles) > 0 {
-						lidarrAlbums, albErr := lidarrClient.GetArtistAlbums(lidarrStatus.ArtistID, mbTitles)
-						if albErr == nil && len(lidarrAlbums) > 0 {
-							info.LidarrAlbums = make(map[string]models.LidarrAlbumInfo)
-							for title, status := range lidarrAlbums {
-								info.LidarrAlbums[title] = models.LidarrAlbumInfo{
-									InLidarr:        status.InLidarr,
-									Monitored:       status.Monitored,
-									HasFiles:        status.HasFiles,
-									PercentOfTracks: status.PercentOfTracks,
+					if info.Discography != "" {
+						var mbTitles []string
+						for _, line := range strings.Split(info.Discography, "\n") {
+							line = strings.TrimSpace(line)
+							if line == "" {
+								continue
+							}
+							if idx := strings.LastIndex(line, " ("); idx > 0 {
+								mbTitles = append(mbTitles, line[:idx])
+							} else {
+								mbTitles = append(mbTitles, line)
+							}
+						}
+						if len(mbTitles) > 0 {
+							info.LidarrAlbums = make(map[string]models.LidarrAlbumInfo, len(mbTitles))
+							for _, t := range mbTitles {
+								if key, ok := api.FindAlbumKey(lidarrTitles, t); ok {
+									info.LidarrAlbums[t] = info.LidarrAllAlbums[key]
+								} else {
+									info.LidarrAlbums[t] = models.LidarrAlbumInfo{}
 								}
 							}
 						}
@@ -779,7 +883,11 @@ func fetchArtistInfoCmd(cfg *config.Config, artist, album string, eventID int64,
 			info.Bio = "No biography found."
 		}
 
-		return artistInfoFetchedMsg{eventID: eventID, info: info}
+		// Only cache when artist identity resolved: a transient MusicBrainz
+		// failure (mbid empty, no tag IDs) must not stick as a permanent
+		// "not in Lidarr". Uncached misses simply retry on the next track.
+		mbResolved := mb.err == nil && (mb.mbid != "" || lookup.MBAlbumArtistID != "" || lookup.MBArtistID != "")
+		return artistInfoFetchedMsg{eventID: eventID, info: info, cacheable: mbResolved}
 	}
 }
 
@@ -901,7 +1009,7 @@ func (m *Model) randomSubsonicAlbumTracks() ([]models.Track, error) {
 	if err != nil {
 		return nil, err
 	}
-	return m.subsonicClient.ChildrenToTracks(album.Song), nil
+	return m.subsonicClient.AlbumToTracks(album), nil
 }
 
 func (m *Model) randomTempAlbumTracks() ([]models.Track, error) {

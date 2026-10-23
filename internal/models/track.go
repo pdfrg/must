@@ -47,6 +47,15 @@ type Track struct {
 	ServerBadge string
 	ContentType string
 	Bitrate     int
+
+	// MusicBrainz identifiers (Picard/Lidarr tags locally, Navidrome
+	// musicBrainzId over Subsonic). Empty when unknown; resolution logic
+	// must always fall back to name/title matching.
+	MBArtistID       string
+	MBAlbumArtistID  string
+	MBReleaseID      string
+	MBReleaseGroupID string
+	MBRecordingID    string
 }
 
 type AudioInfo struct {
@@ -73,6 +82,23 @@ func (t *Track) GetDurationFormatted() string {
 		return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, seconds)
 	}
 	return fmt.Sprintf("%02d:%02d", minutes, seconds)
+}
+
+// EffectiveArtist returns the album artist when set, falling back to the
+// per-track artist. Tag schemas (MusicBrainz Picard, Navidrome, Lidarr)
+// treat the album artist as the canonical artist for an album, while Artist
+// may vary per track (collaborations, compilations, "per-track" credits).
+// Artist lookups (bio, MusicBrainz, Lidarr) must use this so a compilation
+// like "Janis Joplin's Greatest Hits" resolves to Janis Joplin rather than
+// e.g. "Big Brother & The Holding Company" from the playing track's tags.
+func (t *Track) EffectiveArtist() string {
+	if t == nil {
+		return ""
+	}
+	if t.AlbumArtist != "" {
+		return t.AlbumArtist
+	}
+	return t.Artist
 }
 
 func (t *Track) FormatDisplayInfo() string {

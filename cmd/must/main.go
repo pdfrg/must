@@ -306,6 +306,7 @@ func initLogging(cfg *config.Config) {
 	visualizer.SetFFTLogger(log.New(f, "[VIS.FFT] ", log.Ldate|log.Ltime))
 	api.SetAPILogger(log.New(f, "[API] ", log.Ldate|log.Ltime))
 	api.SetScrobbleLogger(log.New(f, "[SCROBBLE] ", log.Ldate|log.Ltime))
+	api.SetAPIContact(cfg.MusicBrainzContact)
 }
 
 func expandPath(path string) string {

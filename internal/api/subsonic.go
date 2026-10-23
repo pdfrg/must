@@ -432,7 +432,7 @@ func (c *SubsonicClient) getPlaylistByID(id string) (*PlaylistWithSongs, error) 
 }
 
 func (c *SubsonicClient) ChildToTrack(s Child) models.Track {
-	return models.Track{
+	t := models.Track{
 		Source:      models.SourceSubsonic,
 		RemoteID:    s.ID,
 		Path:        c.StreamURL(s.ID),
@@ -452,6 +452,14 @@ func (c *SubsonicClient) ChildToTrack(s Child) models.Track {
 		ContentType: s.ContentType,
 		Bitrate:     s.BitRate,
 	}
+	// Prefer the server-reported album artist: per-track Artist varies on
+	// compilations while the album artist is the canonical artist.
+	t.AlbumArtist = s.DisplayAlbumArtist
+	if t.AlbumArtist == "" && len(s.AlbumArtists) > 0 {
+		t.AlbumArtist = s.AlbumArtists[0].Name
+	}
+	t.MBRecordingID = s.MusicBrainzID
+	return t
 }
 
 func (c *SubsonicClient) ChildrenToTracks(children []Child) []models.Track {
@@ -527,34 +535,69 @@ type AlbumID3WithSongs struct {
 	Genre     string  `json:"genre,omitempty"`
 	Created   string  `json:"created,omitempty"`
 	Song      []Child `json:"song"`
+	// Navidrome extension: MusicBrainz release ID of the album.
+	MusicBrainzID string `json:"musicBrainzId,omitempty"`
+}
+
+// AlbumToTracks converts a getAlbum response to tracks, stamping album-level
+// metadata (MusicBrainz release ID, album artist fallback) onto each track.
+// Song entries don't always repeat what the album response already knows.
+func (c *SubsonicClient) AlbumToTracks(album *AlbumID3WithSongs) []models.Track {
+	if album == nil {
+		return nil
+	}
+	tracks := c.ChildrenToTracks(album.Song)
+	for i := range tracks {
+		if tracks[i].MBReleaseID == "" {
+			tracks[i].MBReleaseID = album.MusicBrainzID
+		}
+		if tracks[i].AlbumArtist == "" {
+			tracks[i].AlbumArtist = album.Artist
+		}
+		if tracks[i].Album == "" {
+			tracks[i].Album = album.Name
+		}
+	}
+	return tracks
+}
+
+type ChildArtist struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type Child struct {
-	ID           string `json:"id"`
-	Parent       string `json:"parent,omitempty"`
-	IsDir        bool   `json:"isDir"`
-	Title        string `json:"title"`
-	Album        string `json:"album"`
-	Artist       string `json:"artist"`
-	Track        int    `json:"track,omitempty"`
-	Year         int    `json:"year,omitempty"`
-	CoverArt     string `json:"coverArt,omitempty"`
-	AlbumID      string `json:"albumId,omitempty"`
-	Size         int64  `json:"size,omitempty"`
-	ContentType  string `json:"contentType,omitempty"`
-	Starred      string `json:"starred,omitempty"`
-	Suffix       string `json:"suffix,omitempty"`
-	Duration     int    `json:"duration,omitempty"`
-	BitRate      int    `json:"bitRate,omitempty"`
-	BitDepth     int    `json:"bitDepth,omitempty"`
-	SamplingRate int    `json:"samplingRate,omitempty"`
-	ChannelCount int    `json:"channelCount,omitempty"`
-	Path         string `json:"path,omitempty"`
-	DiscNumber   int    `json:"discNumber,omitempty"`
-	Genre        string `json:"genre,omitempty"`
-	PlayCount    int    `json:"playCount,omitempty"`
-	Type         string `json:"type,omitempty"`
-	IsVideo      bool   `json:"isVideo"`
+	ID     string `json:"id"`
+	Parent string `json:"parent,omitempty"`
+	IsDir  bool   `json:"isDir"`
+	Title  string `json:"title"`
+	Album  string `json:"album"`
+	Artist string `json:"artist"`
+	// Navidrome (OpenSubsonic) extensions. displayAlbumArtist / albumArtists
+	// carry the album artist even when per-track artist credits differ
+	// (compilations, collaborations); musicBrainzId is the recording MBID.
+	AlbumArtists       []ChildArtist `json:"albumArtists,omitempty"`
+	DisplayAlbumArtist string        `json:"displayAlbumArtist,omitempty"`
+	MusicBrainzID      string        `json:"musicBrainzId,omitempty"`
+	Track              int           `json:"track,omitempty"`
+	Year               int           `json:"year,omitempty"`
+	CoverArt           string        `json:"coverArt,omitempty"`
+	AlbumID            string        `json:"albumId,omitempty"`
+	Size               int64         `json:"size,omitempty"`
+	ContentType        string        `json:"contentType,omitempty"`
+	Starred            string        `json:"starred,omitempty"`
+	Suffix             string        `json:"suffix,omitempty"`
+	Duration           int           `json:"duration,omitempty"`
+	BitRate            int           `json:"bitRate,omitempty"`
+	BitDepth           int           `json:"bitDepth,omitempty"`
+	SamplingRate       int           `json:"samplingRate,omitempty"`
+	ChannelCount       int           `json:"channelCount,omitempty"`
+	Path               string        `json:"path,omitempty"`
+	DiscNumber         int           `json:"discNumber,omitempty"`
+	Genre              string        `json:"genre,omitempty"`
+	PlayCount          int           `json:"playCount,omitempty"`
+	Type               string        `json:"type,omitempty"`
+	IsVideo            bool          `json:"isVideo"`
 }
 
 type SearchResult3 struct {

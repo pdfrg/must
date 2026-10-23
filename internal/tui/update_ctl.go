@@ -1284,7 +1284,7 @@ func (m *Model) resolveResultIndex(n int) ([]models.Track, string, error) {
 				if err != nil {
 					continue
 				}
-				allTracks = append(allTracks, m.subsonicClient.ChildrenToTracks(albumDetail.Song)...)
+				allTracks = append(allTracks, m.subsonicClient.AlbumToTracks(albumDetail)...)
 			}
 			return allTracks, r.Display, nil
 		}
@@ -1303,7 +1303,7 @@ func (m *Model) resolveResultIndex(n int) ([]models.Track, string, error) {
 			if err != nil {
 				return nil, "", fmt.Errorf("failed to get subsonic album: %v", err)
 			}
-			return m.subsonicClient.ChildrenToTracks(album.Song), r.Display, nil
+			return m.subsonicClient.AlbumToTracks(album), r.Display, nil
 		}
 		if m.libraryDB == nil {
 			return nil, "", fmt.Errorf("library not loaded")
@@ -1708,7 +1708,7 @@ func (m *Model) resolveSubsonicQuery(arg string) ([]models.Track, string, error)
 			if err != nil {
 				continue
 			}
-			allTracks = append(allTracks, m.subsonicClient.ChildrenToTracks(albumDetail.Song)...)
+			allTracks = append(allTracks, m.subsonicClient.AlbumToTracks(albumDetail)...)
 		}
 		return allTracks, fmt.Sprintf("subsonic artist: %s", artist.Name), nil
 
@@ -1721,7 +1721,7 @@ func (m *Model) resolveSubsonicQuery(arg string) ([]models.Track, string, error)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to get subsonic album: %v", err)
 		}
-		tracks := m.subsonicClient.ChildrenToTracks(album.Song)
+		tracks := m.subsonicClient.AlbumToTracks(album)
 		return tracks, fmt.Sprintf("subsonic album: %s - %s", album.Artist, album.Name), nil
 
 	case "song", "track", "title":
@@ -1751,7 +1751,7 @@ func (m *Model) resolveSubsonicQuery(arg string) ([]models.Track, string, error)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to get subsonic album: %v", err)
 		}
-		tracks := m.subsonicClient.ChildrenToTracks(album.Song)
+		tracks := m.subsonicClient.AlbumToTracks(album)
 		return tracks, fmt.Sprintf("subsonic album: %s - %s", album.Artist, album.Name), nil
 
 	case "playlist":
@@ -1794,7 +1794,7 @@ func (m *Model) resolveSubsonicQuery(arg string) ([]models.Track, string, error)
 			if err != nil {
 				continue
 			}
-			allTracks = append(allTracks, m.subsonicClient.ChildrenToTracks(album.Song)...)
+			allTracks = append(allTracks, m.subsonicClient.AlbumToTracks(album)...)
 		}
 		if len(allTracks) == 0 {
 			return nil, "", fmt.Errorf("no subsonic tracks for year '%s'", value)
@@ -1818,7 +1818,7 @@ func (m *Model) resolveSubsonicQuery(arg string) ([]models.Track, string, error)
 			if err != nil {
 				return nil, "", fmt.Errorf("failed to get subsonic album: %v", err)
 			}
-			tracks := m.subsonicClient.ChildrenToTracks(album.Song)
+			tracks := m.subsonicClient.AlbumToTracks(album)
 			return tracks, fmt.Sprintf("subsonic album: %s - %s", album.Artist, album.Name), nil
 		}
 		artist, err := m.subsonicClient.GetArtist(result.Artist[0].ID)
@@ -1831,7 +1831,7 @@ func (m *Model) resolveSubsonicQuery(arg string) ([]models.Track, string, error)
 			if err != nil {
 				continue
 			}
-			allTracks = append(allTracks, m.subsonicClient.ChildrenToTracks(albumDetail.Song)...)
+			allTracks = append(allTracks, m.subsonicClient.AlbumToTracks(albumDetail)...)
 		}
 		return allTracks, fmt.Sprintf("subsonic artist: %s", artist.Name), nil
 	}

@@ -110,7 +110,20 @@ func (lc *LidarrClient) GetArtistByMBID(mbid string) (*LidarrArtistStatus, error
 	}, nil
 }
 
-func (lc *LidarrClient) GetArtistAlbums(artistID int, mbAlbumTitles []string) (map[string]*LidarrAlbumStatus, error) {
+// LidarrAlbumEntry is one album row from Lidarr's /api/v1/album endpoint,
+// keyed by Lidarr's own title (not MusicBrainz's). The foreign IDs are
+// MusicBrainz identifiers: ForeignReleaseGroupID matches the
+// musicbrainz_releasegroupid tag (and /album/<id> URLs), ForeignReleaseID
+// matches musicbrainz_albumid. Either enables exact matching without any
+// title fuzz.
+type LidarrAlbumEntry struct {
+	Title                 string
+	Status                LidarrAlbumStatus
+	ForeignReleaseGroupID string
+	ForeignReleaseID      string
+}
+
+func (lc *LidarrClient) fetchArtistAlbums(artistID int) ([]LidarrAlbumEntry, error) {
 	if !lc.IsConfigured() || artistID == 0 {
 		return nil, nil
 	}
@@ -127,9 +140,11 @@ func (lc *LidarrClient) GetArtistAlbums(artistID int, mbAlbumTitles []string) (m
 	}
 
 	var albums []struct {
-		Title      string `json:"title"`
-		Monitored  bool   `json:"monitored"`
-		Statistics struct {
+		Title            string `json:"title"`
+		ForeignAlbumID   string `json:"foreignAlbumId"`
+		ForeignReleaseID string `json:"foreignReleaseId"`
+		Monitored        bool   `json:"monitored"`
+		Statistics       struct {
 			TrackFileCount  int     `json:"trackFileCount"`
 			TrackCount      int     `json:"trackCount"`
 			PercentOfTracks float64 `json:"percentOfTracks"`
@@ -138,34 +153,82 @@ func (lc *LidarrClient) GetArtistAlbums(artistID int, mbAlbumTitles []string) (m
 	if err := json.NewDecoder(resp.Body).Decode(&albums); err != nil {
 		return nil, err
 	}
-
-	type albumInfo struct {
-		monitored       bool
-		hasFiles        bool
-		percentOfTracks float64
-	}
-	lidarrLookup := make(map[string]albumInfo)
+	entries := make([]LidarrAlbumEntry, 0, len(albums))
 	for _, a := range albums {
-		key := strings.ToLower(strings.TrimSpace(a.Title))
-		lidarrLookup[key] = albumInfo{
-			monitored:       a.Monitored,
-			hasFiles:        a.Statistics.TrackFileCount > 0,
-			percentOfTracks: a.Statistics.PercentOfTracks,
+		entries = append(entries, LidarrAlbumEntry{
+			Title:                 a.Title,
+			ForeignReleaseGroupID: a.ForeignAlbumID,
+			ForeignReleaseID:      a.ForeignReleaseID,
+			Status: LidarrAlbumStatus{
+				InLidarr:        true,
+				Monitored:       a.Monitored,
+				HasFiles:        a.Statistics.TrackFileCount > 0,
+				PercentOfTracks: a.Statistics.PercentOfTracks,
+			},
+		})
+	}
+	if apiLogger != nil {
+		apiLogger.Printf("Lidarr: fetched %d albums for artist ID %d", len(entries), artistID)
+	}
+	return entries, nil
+}
+
+// GetArtistAllAlbums returns every album Lidarr knows for the artist,
+// keyed by Lidarr's own title. Use this to resolve the *playing* album
+// directly instead of going through the MusicBrainz discography titles,
+// which may omit compilations or spell titles differently.
+func (lc *LidarrClient) GetArtistAllAlbums(artistID int) ([]LidarrAlbumEntry, error) {
+	return lc.fetchArtistAlbums(artistID)
+}
+
+func (lc *LidarrClient) GetArtistAlbums(artistID int, mbAlbumTitles []string) (map[string]*LidarrAlbumStatus, error) {
+	entries, err := lc.fetchArtistAlbums(artistID)
+	if err != nil || len(entries) == 0 {
+		if len(mbAlbumTitles) == 0 {
+			return nil, err
 		}
+		result := make(map[string]*LidarrAlbumStatus)
+		for _, title := range mbAlbumTitles {
+			result[title] = &LidarrAlbumStatus{}
+		}
+		return result, err
 	}
 
+	// Match on normalized titles (see NormalizeAlbumName): Lidarr, MusicBrainz
+	// and local file tags often disagree on punctuation, case, subtitles and
+	// edition suffixes ("Greatest Hits" vs "Janis Joplin's Greatest Hits",
+	// "Remastered", etc). Exact string equality misses those.
 	result := make(map[string]*LidarrAlbumStatus)
 	for _, title := range mbAlbumTitles {
-		key := strings.ToLower(strings.TrimSpace(title))
-		info, inLidarr := lidarrLookup[key]
-		result[title] = &LidarrAlbumStatus{
-			InLidarr:        inLidarr,
-			Monitored:       info.monitored,
-			HasFiles:        info.hasFiles,
-			PercentOfTracks: info.percentOfTracks,
+		matched := false
+		var st LidarrAlbumStatus
+		for _, e := range entries {
+			if AlbumNamesMatch(title, e.Title) {
+				matched = true
+				st = e.Status
+				break
+			}
 		}
+		if !matched {
+			result[title] = &LidarrAlbumStatus{}
+			continue
+		}
+		s := st
+		result[title] = &s
 	}
 	return result, nil
+}
+
+// FindAlbumKey returns the key in titles that matches target under
+// AlbumNamesMatch normalization, so local file tags can be resolved against
+// MusicBrainz/Lidarr titles that differ in punctuation or edition suffixes.
+func FindAlbumKey(titles []string, target string) (string, bool) {
+	for _, t := range titles {
+		if AlbumNamesMatch(t, target) {
+			return t, true
+		}
+	}
+	return "", false
 }
 
 func (lc *LidarrClient) OpenArtistURL(mbid string) string {

@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/pdfrg/must/internal/api"
 	"github.com/pdfrg/must/internal/models"
 	"github.com/pdfrg/must/internal/tui/widgets"
 )
@@ -538,6 +539,67 @@ func (m Model) renderSyncedLyrics(height int) string {
 	return b.String()
 }
 
+// currentAlbumLidarrState resolves the Lidarr indicator state for the
+// currently playing album (normalized title match). The second return value
+// is false when there is no album-level data to report, in which case the
+// caller falls back to artist-level status.
+func lidarrStateForAlbum(st models.LidarrAlbumInfo) int {
+	switch {
+	case st.PercentOfTracks == 100 || st.PercentOfTracks > 0:
+		return widgets.LidarrStateMonitored
+	case st.Monitored, st.InLidarr:
+		// Wanted, or present-but-unmonitored: the album IS in Lidarr,
+		// so never report grey (NotInLidarr) here.
+		return widgets.LidarrStateInLidarr
+	default:
+		return widgets.LidarrStateNotInLidarr
+	}
+}
+
+func (m Model) currentAlbumLidarrState() (int, bool) {
+	if m.artistInfo == nil {
+		return widgets.LidarrStateNotInLidarr, false
+	}
+	if !m.playing || m.currentIndex < 0 || m.currentIndex >= len(m.playlist) {
+		return widgets.LidarrStateNotInLidarr, false
+	}
+	if m.artistInfo.LidarrError != "" {
+		return widgets.LidarrStateError, true
+	}
+	track := m.playlist[m.currentIndex]
+	// Primary: exact MusicBrainz ID match (release-group, then release).
+	// Immune to title spelling differences and per-track credit noise.
+	if track.MBReleaseGroupID != "" && len(m.artistInfo.LidarrAlbumsByRGID) > 0 {
+		if st, ok := m.artistInfo.LidarrAlbumsByRGID[strings.ToLower(track.MBReleaseGroupID)]; ok {
+			return lidarrStateForAlbum(st), true
+		}
+	}
+	if track.MBReleaseID != "" && len(m.artistInfo.LidarrAlbumsByReleaseID) > 0 {
+		if st, ok := m.artistInfo.LidarrAlbumsByReleaseID[strings.ToLower(track.MBReleaseID)]; ok {
+			return lidarrStateForAlbum(st), true
+		}
+	}
+	albumTitle := track.Album
+	if albumTitle == "" {
+		return widgets.LidarrStateNotInLidarr, false
+	}
+	// Secondary: match the playing album directly against Lidarr's own album
+	// titles. This works even when MusicBrainz omits/renames the record
+	// (compilations, etc).
+	if len(m.artistInfo.LidarrAllAlbums) > 0 {
+		if key, ok := api.FindAlbumKey(lidarrAlbumKeys(m.artistInfo.LidarrAllAlbums), albumTitle); ok {
+			return lidarrStateForAlbum(m.artistInfo.LidarrAllAlbums[key]), true
+		}
+	}
+	// Secondary: fall back to the MB-discography-keyed map.
+	if len(m.artistInfo.LidarrAlbums) > 0 {
+		if key, ok := api.FindAlbumKey(lidarrAlbumKeys(m.artistInfo.LidarrAlbums), albumTitle); ok {
+			return lidarrStateForAlbum(m.artistInfo.LidarrAlbums[key]), true
+		}
+	}
+	return widgets.LidarrStateNotInLidarr, false
+}
+
 func (m Model) renderFooter() string {
 	if m.activeModal != ModalNone {
 		m.footer.SetMiniMode(true)
@@ -561,15 +623,23 @@ func (m Model) renderFooter() string {
 	lidarrConfigured := m.cfg.Lidarr.Enabled && m.cfg.Lidarr.URL != "" && m.cfg.Lidarr.APIKey != ""
 	m.footer.SetLidarrConfigured(lidarrConfigured)
 	if lidarrConfigured && m.artistInfo != nil {
-		switch {
-		case m.artistInfo.LidarrError != "":
-			m.footer.SetLidarrState(widgets.LidarrStateError)
-		case m.artistInfo.LidarrMonitored:
-			m.footer.SetLidarrState(widgets.LidarrStateMonitored)
-		case m.artistInfo.LidarrInLidarr:
-			m.footer.SetLidarrState(widgets.LidarrStateInLidarr)
-		default:
-			m.footer.SetLidarrState(widgets.LidarrStateNotInLidarr)
+		// Prefer the album-level status for the currently playing album so the
+		// [L] indicator answers "is THIS album in Lidarr?" rather than only
+		// "is this artist in Lidarr?". Falls back to artist status when the
+		// album isn't matched (e.g. discography not loaded yet).
+		if albumState, ok := m.currentAlbumLidarrState(); ok {
+			m.footer.SetLidarrState(albumState)
+		} else {
+			switch {
+			case m.artistInfo.LidarrError != "":
+				m.footer.SetLidarrState(widgets.LidarrStateError)
+			case m.artistInfo.LidarrMonitored:
+				m.footer.SetLidarrState(widgets.LidarrStateMonitored)
+			case m.artistInfo.LidarrInLidarr:
+				m.footer.SetLidarrState(widgets.LidarrStateInLidarr)
+			default:
+				m.footer.SetLidarrState(widgets.LidarrStateNotInLidarr)
+			}
 		}
 	} else {
 		m.footer.SetLidarrState(widgets.LidarrStateNotInLidarr)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dhowden/tag"
+	"github.com/dhowden/tag/mbz"
 	"github.com/pdfrg/must/internal/db"
 	"github.com/pdfrg/must/internal/duration"
 	"github.com/pdfrg/must/internal/genre"
@@ -64,6 +65,11 @@ func (s *Scanner) Scan(musicDirs []string) (*ScanResult, error) {
 	if resetCount > 0 && logger != nil {
 		logger.Printf("Resetting modtime for %d tracks with zero duration (will re-scan)", resetCount)
 	}
+
+	// One-time backfill: rows stored before MusicBrainz ID columns existed
+	// are re-read on the next scan so artist/album resolution can use exact
+	// IDs. Tracked via PRAGMA user_version so it runs exactly once.
+	backfillMBIDs := s.db.MBIDBackfillNeeded()
 
 	existingPaths := make(map[string]bool)
 	var batch []*models.Track
@@ -129,7 +135,7 @@ func (s *Scanner) Scan(musicDirs []string) (*ScanResult, error) {
 				return nil
 			}
 
-			if existing != nil && existing.FileModTime == modTime {
+			if existing != nil && existing.FileModTime == modTime && !backfillMBIDs {
 				return nil
 			}
 
@@ -167,6 +173,10 @@ func (s *Scanner) Scan(musicDirs []string) (*ScanResult, error) {
 	}
 	result.RemovedFiles = removed
 
+	if backfillMBIDs && walkErr == nil {
+		s.db.MarkMBIDBackfilled()
+	}
+
 	result.Duration = time.Since(start)
 	return result, nil
 }
@@ -198,6 +208,19 @@ func (s *Scanner) readTrack(path string, modTime int64) (*models.Track, error) {
 		track.TrackNum = trackNum
 		track.DiscNum = discNum
 		_, _ = totalTracks, totalDiscs
+		// MusicBrainz IDs (Picard TXXX/UFID, Vorbis, MP4): the robust key for
+		// artist/album resolution, immune to per-track credit variations
+		// and title spelling differences.
+		if mbInfo := mbz.Extract(tags); len(mbInfo) > 0 {
+			track.MBArtistID = mbInfo.Get(mbz.Artist)
+			track.MBAlbumArtistID = mbInfo.Get(mbz.AlbumArtist)
+			track.MBReleaseID = mbInfo.Get(mbz.Album)
+			track.MBReleaseGroupID = mbInfo.Get(mbz.ReleaseGroup)
+			track.MBRecordingID = mbInfo.Get(mbz.Recording)
+			if track.MBRecordingID == "" {
+				track.MBRecordingID = mbInfo.Get(mbz.Track)
+			}
+		}
 		track.HasCoverArt = tags.Picture() != nil
 		if track.HasCoverArt {
 			if err := imgpkg.CacheArtData(path, tags.Picture().Data); err != nil && logger != nil {

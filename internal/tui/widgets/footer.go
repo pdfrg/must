@@ -88,7 +88,6 @@ func NewFooter(accentStyle, mutedStyle, foregroundStyle lipgloss.Style) *Footer 
 			{Key: "L", Icon: "", Label: "Lidarr"},
 			{Key: "o", Icon: "", Label: "Opt"},
 			{Key: "z", Icon: "", Label: "Zzz"},
-			{Key: "R", Icon: "", Label: "Rescan"},
 			{Key: "?", Icon: "", Label: "Help"},
 			{Key: "q", Icon: "", Label: "Quit"},
 		},
