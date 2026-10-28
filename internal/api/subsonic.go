@@ -382,13 +382,16 @@ func (c *SubsonicClient) GetStarred2() ([]Child, error) {
 	return resp.SubsonicResponse.Starred.Song, nil
 }
 
-func (c *SubsonicClient) Scrobble(id string, submission bool, time int64) error {
+// Scrobble submits a now-playing notification (submission=false) or a completed
+// play (submission=true). timeMs is milliseconds since the Unix epoch, as
+// required by the Subsonic API.
+func (c *SubsonicClient) Scrobble(id string, submission bool, timeMs int64) error {
 	params := url.Values{
 		"id":         {id},
 		"submission": {fmt.Sprintf("%t", submission)},
 	}
-	if time > 0 {
-		params.Set("time", fmt.Sprintf("%d", time))
+	if timeMs > 0 {
+		params.Set("time", fmt.Sprintf("%d", timeMs))
 	}
 	return c.getJSON("scrobble", params, nil)
 }

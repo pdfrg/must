@@ -863,7 +863,7 @@ func sendNowPlayingCmd(cfg *config.Config, subsonicClient *api.SubsonicClient, t
 		}
 
 		if subsonicClient != nil && track.Source == models.SourceSubsonic && track.RemoteID != "" {
-			if err := subsonicClient.Scrobble(track.RemoteID, false, time.Now().Unix()); err != nil {
+			if err := subsonicClient.Scrobble(track.RemoteID, false, time.Now().UnixMilli()); err != nil {
 				logf("Now-playing to subsonic failed: %v", err)
 			}
 		}
@@ -916,7 +916,7 @@ func scrobbleTrackCmd(cfg *config.Config, subsonicClient *api.SubsonicClient, tr
 		}
 
 		if subsonicClient != nil && track.Source == models.SourceSubsonic && track.RemoteID != "" {
-			err := subsonicClient.Scrobble(track.RemoteID, true, startTime.Unix())
+			err := subsonicClient.Scrobble(track.RemoteID, true, startTime.UnixMilli())
 			if err != nil {
 				logf("Scrobble to subsonic failed: %v", err)
 			} else {
