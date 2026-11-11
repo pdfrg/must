@@ -181,7 +181,11 @@ func (s *Search) AddSubsonicPlaylists(playlists []api.PlaylistInfo) {
 		})
 	}
 
-	s.entries = append(s.entries, entries...)
+	// Keep playlists visible alongside the other field results instead of
+	// burying them below every track result. This matches localSearch's
+	// ordering and prevents a matching playlist from landing off-screen
+	// after the Subsonic track limit is filled.
+	s.entries = append(entries, s.entries...)
 	s.cursor = 0
 	s.scrollOffset = 0
 }
